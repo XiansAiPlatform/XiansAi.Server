@@ -93,6 +93,38 @@ public class TimeSpanTypeConverterTests
         Assert.Throws<ArgumentOutOfRangeException>(() => _serializer.Serialize(negativeTimeSpan));
     }
 
+    [Theory]
+    [MemberData(nameof(ValidTimeSpanData))]
+    public void TryParse_ValidTimespan_ReturnsSameResultAsYaml(string input, TimeSpan expected)
+    {
+        Assert.True(TimeSpanTypeConverter.TryParse(input, out var result));
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void TryParse_Zero_IsAccepted()
+    {
+        Assert.True(TimeSpanTypeConverter.TryParse("0s", out var result));
+        Assert.Equal(TimeSpan.Zero, result);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("abc")]
+    [InlineData("10x")]
+    [InlineData("1 d")]
+    [InlineData("d1")]
+    [InlineData("1d 2")]
+    [InlineData("-5d")]
+    [InlineData("99999999999d")]
+    [InlineData("30000d")]
+    public void TryParse_InvalidOrOutOfRange_ReturnsFalse(string? input)
+    {
+        Assert.False(TimeSpanTypeConverter.TryParse(input, out _));
+    }
+
     private object? DeserializeTimeSpan(string yaml)
     {
         var parser = new Parser(new StringReader(yaml));

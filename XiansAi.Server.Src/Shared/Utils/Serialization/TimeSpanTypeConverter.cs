@@ -14,6 +14,53 @@ public partial class TimeSpanTypeConverter : IYamlTypeConverter
         return type == typeof(TimeSpan) || type == typeof(TimeSpan?);
     }
 
+    /// <summary>
+    /// Parses the same duration format as the YAML converter ("30d", "5d 6h") without throwing.
+    /// Rejects blank or malformed input and anything above int.MaxValue seconds
+    /// </summary>
+    public static bool TryParse(string? value, out TimeSpan result)
+    {
+        result = TimeSpan.Zero;
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var matches = TimeSpanRegex.Matches(value);
+        if (matches.Count == 0 || !string.IsNullOrEmpty(TimeSpanRegex.Replace(value, "").Trim()))
+        {
+            return false;
+        }
+
+        double totalSeconds = 0;
+        foreach (Match match in matches)
+        {
+            if (!int.TryParse(match.Groups[1].Value, out var number))
+            {
+                return false;
+            }
+
+            totalSeconds += match.Groups[2].Value switch
+            {
+                "s" => number,
+                "m" => number * 60d,
+                "h" => number * 3600d,
+                "d" => number * 86400d,
+                "w" => number * 604800d,
+                _ => throw new FormatException($"Invalid time unit: {match.Groups[2].Value}")
+            };
+        }
+
+        if (totalSeconds > int.MaxValue)
+        {
+            return false;
+        }
+
+        result = TimeSpan.FromSeconds(totalSeconds);
+        return true;
+    }
+
     public object? ReadYaml(IParser parser, Type type)
     {
         var scalar = parser.Consume<Scalar>();

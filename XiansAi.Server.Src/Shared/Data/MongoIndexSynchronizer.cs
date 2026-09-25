@@ -1,5 +1,6 @@
 using MongoDB.Driver;
 using MongoDB.Bson;
+using Shared.Utils;
 using Shared.Utils.Serialization;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -71,6 +72,7 @@ public class MongoIndexDefinition
 
 public class MongoIndexSynchronizer(
     IDatabaseService databaseService,
+    IConfiguration configuration,
     ILogger<MongoIndexSynchronizer> logger) : IMongoIndexSynchronizer
 { 
     private const string EmbeddedResourceFileName = "mongodb-indexes.yaml";
@@ -313,6 +315,61 @@ public class MongoIndexSynchronizer(
             .WithTypeConverter(new TimeSpanTypeConverter())
             .Build();
 
-        return deserializer.Deserialize<Dictionary<string, List<MongoIndexDefinition>>>(yamlContent);
+        var definitions = deserializer.Deserialize<Dictionary<string, List<MongoIndexDefinition>>>(yamlContent);
+        return ApplyExpireAfterOverrides(definitions, configuration, logger);
+    }
+
+    /// <summary>
+    /// Replaces the yaml "expire_after" of any index that has a valid override in configuration, read from
+    /// MongoIndexes:{collection}:{indexName}:ExpireAfter (env var MongoIndexes__{collection}__{indexName}__ExpireAfter).
+    /// Missing, blank or invalid overrides leave the yaml value in place; indexes without "expire_after" are ignored.
+    /// </summary>
+    public static Dictionary<string, List<MongoIndexDefinition>> ApplyExpireAfterOverrides(
+        Dictionary<string, List<MongoIndexDefinition>> definitions,
+        IConfiguration configuration,
+        ILogger logger)
+    {
+        var result = new Dictionary<string, List<MongoIndexDefinition>>(definitions.Count);
+
+        foreach (var (collectionName, collectionDefinitions) in definitions)
+        {
+            result[collectionName] = collectionDefinitions
+                .Select(definition => ApplyExpireAfterOverride(collectionName, definition, configuration, logger))
+                .ToList();
+        }
+
+        return result;
+    }
+
+    private static MongoIndexDefinition ApplyExpireAfterOverride(
+        string collectionName,
+        MongoIndexDefinition definition,
+        IConfiguration configuration,
+        ILogger logger)
+    {
+        if (!definition.ExpireAfter.HasValue)
+        {
+            return definition;
+        }
+
+        var key = $"MongoIndexes:{collectionName}:{definition.Name}:ExpireAfter";
+        var overrideValue = ConfigDuration.Get(configuration, key, logger);
+        if (!overrideValue.HasValue)
+        {
+            return definition;
+        }
+
+        logger.LogInformation("Overriding expire_after for index {IndexName} on collection {CollectionName}: {YamlValue} -> {OverrideValue}",
+            definition.Name, collectionName, definition.ExpireAfter.Value, overrideValue.Value);
+
+        return new MongoIndexDefinition
+        {
+            Name = definition.Name,
+            Keys = definition.Keys,
+            Unique = definition.Unique,
+            Sparse = definition.Sparse,
+            Background = definition.Background,
+            ExpireAfter = overrideValue.Value
+        };
     }
 } 
