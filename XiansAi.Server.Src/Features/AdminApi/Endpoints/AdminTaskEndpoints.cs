@@ -21,7 +21,8 @@ public static class AdminTaskEndpoints
         var taskGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/tasks")
             .WithTags("AdminAPI - Tasks")
             .RequireAuthorization("AdminEndpointAuthPolicy")
-            .AddEndpointFilter<TenantRouteScopeFilter>();
+            .AddEndpointFilter<TenantRouteScopeFilter>()
+            .EnforceCapabilities();
 
         // List all tasks for a tenant with optional filters
         taskGroup.MapGet("", async (
@@ -60,7 +61,7 @@ public static class AdminTaskEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status500InternalServerError)
         .WithName("ListTasks")
-        ;
+        .RequireCapability(CapabilityActions.TenantTasksList);
 
         // Get task by workflow ID
         taskGroup.MapGet("/by-id", async Task<IResult> (
@@ -82,7 +83,7 @@ public static class AdminTaskEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status404NotFound)
         .WithName("GetTask")
-        ;
+        .RequireCapability(CapabilityActions.TenantTasksGet);
 
         // Update draft for a task
         taskGroup.MapPut("/draft", async Task<IResult> (
@@ -104,7 +105,7 @@ public static class AdminTaskEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status404NotFound)
         .WithName("UpdateTaskDraft")
-        ;
+        .RequireCapability(CapabilityActions.TenantTasksUpdateDraft);
 
         // Merge metadata for a task
         taskGroup.MapPut("/metadata", async Task<IResult> (
@@ -126,7 +127,7 @@ public static class AdminTaskEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status404NotFound)
         .WithName("UpdateTaskMetadata")
-        ;
+        .RequireCapability(CapabilityActions.TenantTasksUpdateMetadata);
 
         // Perform action on a task
         taskGroup.MapPost("/actions", async Task<IResult> (
@@ -148,7 +149,7 @@ public static class AdminTaskEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status404NotFound)
         .WithName("PerformTaskAction")
-        ;
+        .RequireCapability(CapabilityActions.TenantTasksPerformAction);
     }
 
     /// <summary>

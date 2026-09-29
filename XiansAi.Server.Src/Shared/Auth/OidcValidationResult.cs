@@ -28,6 +28,9 @@ public class OidcValidationResult
 
     public string? Email { get; init; }
 
+
+    public bool EmailVerified { get; init; }
+
     /// <summary>
     /// Whether the token was checked against the audiences the provider declared, rather than being
     /// accepted on its issuer's signature alone.
@@ -58,7 +61,8 @@ public class OidcValidationResult
         string? email,
         string? name,
         DateTimeOffset? tokenExpiresAt = null,
-        bool audienceValidated = false) =>
+        bool audienceValidated = false,
+        bool emailVerified = false) =>
         new()
         {
             Success = true,
@@ -66,6 +70,7 @@ public class OidcValidationResult
             ProviderUserId = providerUserId,
             ProviderAuthority = providerAuthority,
             Email = email,
+            EmailVerified = emailVerified,
             AudienceValidated = audienceValidated,
             Name = name,
             TokenExpiresAt = tokenExpiresAt

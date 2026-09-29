@@ -70,6 +70,25 @@ public static class AdminTenantScopeGuard
         Results.Json(
             new { message = "Access denied: Only system administrators can perform this operation" },
             statusCode: StatusCodes.Status403Forbidden);
+
+    /// <summary>
+    /// Standard 403 response used when the capability matrix does not grant the caller's roles the
+    /// action a route declared. Names the action so an operator can go straight to the rule that
+    /// produced the refusal rather than guessing which one applied.
+    /// </summary>
+    public static IResult CapabilityDenied(string action) =>
+        Results.Json(
+            new { message = $"Access denied: your roles do not permit '{action}'", action },
+            statusCode: StatusCodes.Status403Forbidden);
+
+    /// <summary>
+    /// Standard 401 response used when a route that forwards the raw API key downstream is called
+    /// by a ID-token-only caller who has none to forward.
+    /// </summary>
+    public static IResult ApiKeyRequired() =>
+        Results.Json(
+            new { message = "This operation requires an API key; the ID-token-only path is not supported here" },
+            statusCode: StatusCodes.Status401Unauthorized);
 }
 
 /// <summary>
@@ -96,6 +115,44 @@ public sealed class SysAdminOnlyFilter : IEndpointFilter
 
         return await next(context);
     }
+}
+
+/// <summary>
+/// Endpoint filter that rejects a ID-token-only caller.
+/// Apply to route groups that forward the API key downstream (AdminMessagingEndpoints,
+/// AdminHeartbeatEndpoints both forward it to agents via Temporal signals).
+/// </summary>
+public sealed class RequireApiKeyFilter : IEndpointFilter
+{
+    public async ValueTask<object?> InvokeAsync(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        var httpContext = context.HttpContext;
+        var tenantContext = httpContext.RequestServices.GetRequiredService<ITenantContext>();
+
+        if (string.IsNullOrEmpty(tenantContext.Authorization))
+        {
+            var logger = httpContext.RequestServices
+                .GetRequiredService<ILoggerFactory>()
+                .CreateLogger("AdminApiKeyRequired");
+            logger.LogWarning(
+                "Rejected ID-token-only caller on a route that requires an API key. Caller: {UserId}",
+                LogSanitizer.Sanitize(tenantContext.LoggedInUser));
+            return AdminTenantScopeGuard.ApiKeyRequired();
+        }
+
+        return await next(context);
+    }
+}
+
+/// <summary>
+/// Endpoint metadata marking a route as operating on a fixed/global resource rather than any
+/// caller-supplied tenant. Apply via <c>.WithMetadata(TenantOptionalForSysAdminMetadata.Instance)</c>
+/// on a route group that never reads <see cref="ITenantContext.TenantId"/>.
+/// </summary>
+public sealed class TenantOptionalForSysAdminMetadata
+{
+    public static readonly TenantOptionalForSysAdminMetadata Instance = new();
+    private TenantOptionalForSysAdminMetadata() { }
 }
 
 /// <summary>

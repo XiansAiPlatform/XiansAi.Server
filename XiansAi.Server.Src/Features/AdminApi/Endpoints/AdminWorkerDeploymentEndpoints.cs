@@ -54,8 +54,8 @@ public static class AdminWorkerDeploymentEndpoints
         var deploymentGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/worker-deployments")
             .WithTags("AdminAPI - Worker Deployments")
             .RequireAuthorization("AdminEndpointAuthPolicy")
-            .AddEndpointFilter<SysAdminOnlyFilter>()
-            .AddEndpointFilter<TenantRouteScopeFilter>();
+            .AddEndpointFilter<TenantRouteScopeFilter>()
+            .EnforceCapabilities();
 
         deploymentGroup.MapGet("", async (
             string tenantId,
@@ -67,6 +67,7 @@ public static class AdminWorkerDeploymentEndpoints
         .Produces<List<WorkerDeploymentModel>>()
         .Produces(StatusCodes.Status500InternalServerError)
         .WithName("AdminListWorkerDeployments")
+        .RequireCapability(CapabilityActions.TenantWorkerDeploymentsList)
         .WithSummary("List Worker Deployments")
         .WithDescription(
             "Lists the tenant's Temporal Worker Deployments and their routing configuration. " +
@@ -85,6 +86,7 @@ public static class AdminWorkerDeploymentEndpoints
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status500InternalServerError)
         .WithName("AdminDescribeWorkerDeployment")
+        .RequireCapability(CapabilityActions.TenantWorkerDeploymentsGet)
         .WithSummary("Describe a Worker Deployment")
         .WithDescription("Returns routing configuration and the known versions of a single Worker Deployment, including each version's drainage status.");
 
@@ -105,6 +107,7 @@ public static class AdminWorkerDeploymentEndpoints
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status409Conflict)
         .WithName("AdminSetWorkerDeploymentCurrentVersion")
+        .RequireCapability(CapabilityActions.TenantWorkerDeploymentsSetCurrentVersion)
         .WithSummary("Promote a build to the current version")
         .WithDescription(
             "Routes all new executions for this deployment to the given build. Required before a versioned " +
@@ -129,6 +132,7 @@ public static class AdminWorkerDeploymentEndpoints
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status409Conflict)
         .WithName("AdminSetWorkerDeploymentRampingVersion")
+        .RequireCapability(CapabilityActions.TenantWorkerDeploymentsSetRampingVersion)
         .WithSummary("Ramp a percentage of traffic to a build")
         .WithDescription(
             "Routes the given percentage (0-100) of new executions to a build while the rest continue on the " +

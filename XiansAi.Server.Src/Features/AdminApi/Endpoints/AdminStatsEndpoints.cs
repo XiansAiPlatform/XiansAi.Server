@@ -21,7 +21,8 @@ public static class AdminStatsEndpoints
         var statsGroup = adminApiGroup.MapGroup("/tenants/{tenantId}")
             .WithTags("AdminAPI - Statistics")
             .RequireAuthorization("AdminEndpointAuthPolicy")
-            .AddEndpointFilter<TenantRouteScopeFilter>();
+            .AddEndpointFilter<TenantRouteScopeFilter>()
+            .EnforceCapabilities();
 
         // Get aggregated statistics for a tenant
         statsGroup.MapGet("/stats", async (
@@ -44,6 +45,6 @@ public static class AdminStatsEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status500InternalServerError)
         .WithName("GetAdminStatistics")
-        ;
+        .RequireCapability(CapabilityActions.TenantStatsGet);
     }
 }

@@ -1,3 +1,4 @@
+using Features.AdminApi.Auth;
 using Microsoft.AspNetCore.Mvc;
 using Shared.Auth;
 using Shared.Services;
@@ -12,7 +13,9 @@ public static class AdminSecretVaultEndpoints
     {
         var group = adminApiGroup.MapGroup("/secrets")
             .WithTags("AdminAPI - Secret Vault")
-            .RequireAuthorization("AdminEndpointAuthPolicy");
+            .RequireAuthorization("AdminEndpointAuthPolicy")
+            .EnforceCapabilities()
+            .WithMetadata(TenantOptionalForSysAdminMetadata.Instance);
 
         group.MapPost("", async (
             [FromBody] SecretVaultCreateRequest request,
@@ -48,6 +51,7 @@ public static class AdminSecretVaultEndpoints
             return RedactValue(result).ToHttpResult();
         })
         .WithName("CreateSecret")
+        .RequireCapability(CapabilityActions.TenantSecretsCreate)
         ;
 
         group.MapGet("", async (
@@ -76,6 +80,7 @@ public static class AdminSecretVaultEndpoints
             return result.ToHttpResult();
         })
         .WithName("ListSecrets")
+        .RequireCapability(CapabilityActions.TenantSecretsList)
         ;
 
         group.MapGet("/fetch", async (
@@ -108,6 +113,7 @@ public static class AdminSecretVaultEndpoints
             return result.ToHttpResult();
         })
         .WithName("FetchSecretByKey")
+        .RequireCapability(CapabilityActions.TenantSecretsFetch)
         ;
 
         group.MapGet("/{id}", async (
@@ -124,6 +130,7 @@ public static class AdminSecretVaultEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetSecretById")
+        .RequireCapability(CapabilityActions.TenantSecretsGet)
         ;
 
         group.MapPut("/{id}", async (
@@ -166,6 +173,7 @@ public static class AdminSecretVaultEndpoints
             return RedactValue(result).ToHttpResult();
         })
         .WithName("UpdateSecret")
+        .RequireCapability(CapabilityActions.TenantSecretsUpdate)
         ;
 
         group.MapDelete("/{id}", async (
@@ -182,6 +190,7 @@ public static class AdminSecretVaultEndpoints
             return result.ToHttpResult();
         })
         .WithName("DeleteSecret")
+        .RequireCapability(CapabilityActions.TenantSecretsDelete)
         ;
     }
 

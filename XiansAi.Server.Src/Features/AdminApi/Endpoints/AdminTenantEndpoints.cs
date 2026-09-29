@@ -25,9 +25,11 @@ public static class AdminTenantEndpoints
     {
         var adminTenantGroup = adminApiGroup.MapGroup("/tenants")
             .WithTags("AdminAPI - Tenant Management")
-            .RequireAuthorization("AdminEndpointAuthPolicy");
+            .RequireAuthorization("AdminEndpointAuthPolicy")
+            .EnforceCapabilities();
 
-        // List All Tenants - SysAdmin only (prevents TenantAdmin from enumerating all tenants).
+        // List All Tenants - SysAdmin only by default (prevents TenantAdmin from enumerating all
+        // tenants), enforced by the capability matrix (tenants.list); see CapabilityActions.
         // Supports pagination via optional "page" (default 1) and "pageSize" (default 20, max 100)
         // query params, plus an optional "search" term matched case-insensitively against
         // tenantId, name, domain and description.
@@ -37,18 +39,8 @@ public static class AdminTenantEndpoints
             [FromQuery] int? pageSize,
             [FromQuery] string? search,
             [FromServices] LinkGenerator linkGenerator,
-            [FromServices] ITenantContext tenantContext,
-            [FromServices] ITenantService tenantService,
-            [FromServices] ILogger<ITenantService> logger) =>
+            [FromServices] ITenantService tenantService) =>
         {
-            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
-            {
-                logger.LogWarning("Access denied: List tenants requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
-                return Results.Json(
-                    new { message = "Access denied: Only system administrators can list all tenants" },
-                    statusCode: StatusCodes.Status403Forbidden);
-            }
-
             var result = await tenantService.GetAllTenants(page, pageSize, search);
             if (result.IsSuccess && result.Data != null)
             {
@@ -60,25 +52,19 @@ public static class AdminTenantEndpoints
             return result.ToHttpResult();
         })
         .WithName("ListTenants")
+        .RequireCapability(CapabilityActions.TenantsList)
         .Produces(StatusCodes.Status403Forbidden)
+        .WithMetadata(TenantOptionalForSysAdminMetadata.Instance)
         ;
 
-        // Get Tenant by TenantId - SysAdmin only (TenantAdmin should use tenant-scoped endpoints)
+        // Get Tenant by TenantId - SysAdmin only by default (TenantAdmin should use tenant-scoped
+        // endpoints), enforced by the capability matrix (tenants.get); see CapabilityActions.
         adminTenantGroup.MapGet("/{tenantId}", async (
             string tenantId,
             HttpContext httpContext,
             [FromServices] LinkGenerator linkGenerator,
-            [FromServices] ITenantContext tenantContext,
-            [FromServices] ITenantService tenantService,
-            [FromServices] ILogger<ITenantService> logger) =>
+            [FromServices] ITenantService tenantService) =>
         {
-            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
-            {
-                logger.LogWarning("Access denied: Get tenant by ID requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
-                return Results.Json(
-                    new { message = "Access denied: Only system administrators can retrieve tenant details by ID" },
-                    statusCode: StatusCodes.Status403Forbidden);
-            }
             // Honor the standard "Cache-Control: no-cache" request header: when present, read the
             // tenant directly from the database (bypassing, then refreshing, the tenant cache).
             var bypassCache = httpContext.Request.IsNoCacheRequested();
@@ -90,110 +76,80 @@ public static class AdminTenantEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetTenantByTenantId")
+        .RequireCapability(CapabilityActions.TenantsGet)
         .Produces(StatusCodes.Status403Forbidden)
         ;
 
-        // Get Tenant Metadata - SysAdmin only. This is the only endpoint that returns
+        // Get Tenant Metadata - SysAdmin only by default, enforced by the capability matrix
+        // (tenants.metadata.list); see CapabilityActions. This is the only endpoint that returns
         // metadata with Secret values decrypted; tenant payloads elsewhere carry the
         // stored (encrypted) form.
         adminTenantGroup.MapGet("/{tenantId}/metadata", async (
             string tenantId,
             HttpContext httpContext,
-            [FromServices] ITenantContext tenantContext,
-            [FromServices] ITenantService tenantService,
-            [FromServices] ILogger<ITenantService> logger) =>
+            [FromServices] ITenantService tenantService) =>
         {
-            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
-            {
-                logger.LogWarning("Access denied: Get tenant metadata requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
-                return Results.Json(
-                    new { message = "Access denied: Only system administrators can retrieve tenant metadata" },
-                    statusCode: StatusCodes.Status403Forbidden);
-            }
-
             var bypassCache = httpContext.Request.IsNoCacheRequested();
             var result = await tenantService.GetTenantMetadata(tenantId, httpContext.RequestAborted, bypassCache);
             return result.ToHttpResult();
         })
         .WithName("GetTenantMetadata")
+        .RequireCapability(CapabilityActions.TenantsMetadataList)
         .Produces(StatusCodes.Status403Forbidden)
         ;
 
-        // Get a single Tenant Metadata entry by key (case-insensitive) - SysAdmin only.
+        // Get a single Tenant Metadata entry by key (case-insensitive) - SysAdmin only by default,
+        // enforced by the capability matrix (tenants.metadata.get); see CapabilityActions.
         // Returns the entry with its value decrypted when the type is Secret.
         adminTenantGroup.MapGet("/{tenantId}/metadata/{key}", async (
             string tenantId,
             string key,
             HttpContext httpContext,
-            [FromServices] ITenantContext tenantContext,
-            [FromServices] ITenantService tenantService,
-            [FromServices] ILogger<ITenantService> logger) =>
+            [FromServices] ITenantService tenantService) =>
         {
-            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
-            {
-                logger.LogWarning("Access denied: Get tenant metadata requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
-                return Results.Json(
-                    new { message = "Access denied: Only system administrators can retrieve tenant metadata" },
-                    statusCode: StatusCodes.Status403Forbidden);
-            }
-
             var bypassCache = httpContext.Request.IsNoCacheRequested();
             var result = await tenantService.GetTenantMetadataByKey(tenantId, key, httpContext.RequestAborted, bypassCache);
             return result.ToHttpResult();
         })
         .WithName("GetTenantMetadataByKey")
+        .RequireCapability(CapabilityActions.TenantsMetadataGet)
         .Produces(StatusCodes.Status403Forbidden)
         .Produces(StatusCodes.Status404NotFound)
         ;
 
-        // Upsert a single Tenant Metadata entry by key (case-insensitive) - SysAdmin only.
-        // Adds the entry when the key does not exist, otherwise replaces its value/type.
-        // Secret values are encrypted before persisting.
+        // Upsert a single Tenant Metadata entry by key (case-insensitive) - SysAdmin only by
+        // default, enforced by the capability matrix (tenants.metadata.upsert); see
+        // CapabilityActions. Adds the entry when the key does not exist, otherwise replaces its
+        // value/type. Secret values are encrypted before persisting.
         adminTenantGroup.MapPut("/{tenantId}/metadata/{key}", async (
             string tenantId,
             string key,
             [FromBody] UpsertTenantMetadataRequest request,
-            [FromServices] ITenantContext tenantContext,
-            [FromServices] ITenantService tenantService,
-            [FromServices] ILogger<ITenantService> logger) =>
+            [FromServices] ITenantService tenantService) =>
         {
-            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
-            {
-                logger.LogWarning("Access denied: Upsert tenant metadata requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
-                return Results.Json(
-                    new { message = "Access denied: Only system administrators can modify tenant metadata" },
-                    statusCode: StatusCodes.Status403Forbidden);
-            }
-
             var result = await tenantService.UpsertTenantMetadata(tenantId, key, request);
             return result.ToHttpResult();
         })
         .WithName("UpsertTenantMetadata")
+        .RequireCapability(CapabilityActions.TenantsMetadataUpsert)
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status403Forbidden)
         .Produces(StatusCodes.Status404NotFound)
         ;
 
-        // Delete a single Tenant Metadata entry by key (case-insensitive) - SysAdmin only.
+        // Delete a single Tenant Metadata entry by key (case-insensitive) - SysAdmin only by
+        // default, enforced by the capability matrix (tenants.metadata.delete); see
+        // CapabilityActions.
         adminTenantGroup.MapDelete("/{tenantId}/metadata/{key}", async (
             string tenantId,
             string key,
-            [FromServices] ITenantContext tenantContext,
-            [FromServices] ITenantService tenantService,
-            [FromServices] ILogger<ITenantService> logger) =>
+            [FromServices] ITenantService tenantService) =>
         {
-            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
-            {
-                logger.LogWarning("Access denied: Delete tenant metadata requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
-                return Results.Json(
-                    new { message = "Access denied: Only system administrators can modify tenant metadata" },
-                    statusCode: StatusCodes.Status403Forbidden);
-            }
-
             var result = await tenantService.DeleteTenantMetadata(tenantId, key);
             return result.ToHttpResult();
         })
         .WithName("DeleteTenantMetadata")
+        .RequireCapability(CapabilityActions.TenantsMetadataDelete)
         .Produces(StatusCodes.Status403Forbidden)
         .Produces(StatusCodes.Status404NotFound)
         ;
@@ -245,6 +201,7 @@ public static class AdminTenantEndpoints
             return Results.File(imageBytes, contentType);
         })
         .WithName(TenantLogoHelper.LogoRouteName)
+        .RequireCapability(CapabilityActions.TenantLogoGet)
         .Produces(StatusCodes.Status302Found)
         .Produces(StatusCodes.Status404NotFound)
         ;
@@ -265,6 +222,7 @@ public static class AdminTenantEndpoints
             return Results.Ok(new { theme = result.Data.Theme });
         })
         .WithName("GetTenantTheme")
+        .RequireCapability(CapabilityActions.TenantThemeGet)
         .Produces(StatusCodes.Status404NotFound)
         ;
 
@@ -285,6 +243,7 @@ public static class AdminTenantEndpoints
             return result.ToHttpResult();
         })
         .WithName("SetTenantTheme")
+        .RequireCapability(CapabilityActions.TenantThemeSet)
         .Produces(StatusCodes.Status404NotFound)
         ;
 
@@ -304,6 +263,7 @@ public static class AdminTenantEndpoints
             return result.ToHttpResult();
         })
         .WithName("ClearTenantTheme")
+        .RequireCapability(CapabilityActions.TenantThemeClear)
         .Produces(StatusCodes.Status404NotFound)
         ;
 
@@ -331,6 +291,7 @@ public static class AdminTenantEndpoints
             return result.ToHttpResult();
         })
         .WithName("SetTenantLogo")
+        .RequireCapability(CapabilityActions.TenantLogoSet)
         .Produces(StatusCodes.Status404NotFound)
         ;
 
@@ -350,26 +311,19 @@ public static class AdminTenantEndpoints
             return result.ToHttpResult();
         })
         .WithName("ClearTenantLogo")
+        .RequireCapability(CapabilityActions.TenantLogoClear)
         .Produces(StatusCodes.Status404NotFound)
         ;
 
-        // Create Tenant - No X-Tenant-Id header required (creating new tenant)
+        // Create Tenant - No X-Tenant-Id header required (creating new tenant). SysAdmin only by
+        // default, enforced by the capability matrix (tenants.create); see CapabilityActions.
         adminTenantGroup.MapPost("", async (
             [FromBody] CreateTenantRequest request,
             HttpContext httpContext,
             [FromServices] LinkGenerator linkGenerator,
             [FromServices] ITenantContext tenantContext,
-            [FromServices] ITenantService tenantService,
-            [FromServices] ILogger<ITenantService> logger) =>
+            [FromServices] ITenantService tenantService) =>
         {
-            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
-            {
-                logger.LogWarning("Access denied: Create tenant requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
-                return Results.Json(
-                    new { message = "Access denied: Only system administrators can create tenants" },
-                    statusCode: StatusCodes.Status403Forbidden);
-            }
-
             var createdBy = tenantContext.LoggedInUser ?? "system";
             var result = await tenantService.CreateTenant(request, createdBy);
             if (result.IsSuccess && result.Data != null)
@@ -379,27 +333,20 @@ public static class AdminTenantEndpoints
             return result.ToHttpResult();
         })
         .WithName("CreateTenant")
+        .RequireCapability(CapabilityActions.TenantsCreate)
         .Produces(StatusCodes.Status403Forbidden)
+        .WithMetadata(TenantOptionalForSysAdminMetadata.Instance)
         ;
 
-        // Update Tenant - SysAdmin only
+        // Update Tenant - SysAdmin only by default, enforced by the capability matrix
+        // (tenants.update); see CapabilityActions.
         adminTenantGroup.MapPatch("/{tenantId}", async (
             string tenantId,
             [FromBody] UpdateTenantRequest request,
             HttpContext httpContext,
             [FromServices] LinkGenerator linkGenerator,
-            [FromServices] ITenantContext tenantContext,
-            [FromServices] ITenantService tenantService,
-            [FromServices] ILogger<ITenantService> logger) =>
+            [FromServices] ITenantService tenantService) =>
         {
-            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
-            {
-                logger.LogWarning("Access denied: Update tenant requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
-                return Results.Json(
-                    new { message = "Access denied: Only system administrators can update tenants" },
-                    statusCode: StatusCodes.Status403Forbidden);
-            }
-
             // First get tenant by tenantId to get the ObjectId
             var tenantResult = await tenantService.GetTenantByTenantId(tenantId, httpContext.RequestAborted);
             if (!tenantResult.IsSuccess || tenantResult.Data == null)
@@ -416,25 +363,17 @@ public static class AdminTenantEndpoints
             return result.ToHttpResult();
         })
         .WithName("UpdateTenant")
+        .RequireCapability(CapabilityActions.TenantsUpdate)
         .Produces(StatusCodes.Status403Forbidden)
         ;
 
-        // Delete Tenant - SysAdmin only
+        // Delete Tenant - SysAdmin only by default, enforced by the capability matrix
+        // (tenants.delete); see CapabilityActions.
         adminTenantGroup.MapDelete("/{tenantId}", async (
             string tenantId,
             HttpContext httpContext,
-            [FromServices] ITenantContext tenantContext,
-            [FromServices] ITenantService tenantService,
-            [FromServices] ILogger<ITenantService> logger) =>
+            [FromServices] ITenantService tenantService) =>
         {
-            if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
-            {
-                logger.LogWarning("Access denied: Delete tenant requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
-                return Results.Json(
-                    new { message = "Access denied: Only system administrators can delete tenants" },
-                    statusCode: StatusCodes.Status403Forbidden);
-            }
-
             // First get tenant by tenantId to get the ObjectId
             var tenantResult = await tenantService.GetTenantByTenantId(tenantId, httpContext.RequestAborted);
             if (!tenantResult.IsSuccess || tenantResult.Data == null)
@@ -447,6 +386,7 @@ public static class AdminTenantEndpoints
             return result.ToHttpResult();
         })
         .WithName("DeleteTenant")
+        .RequireCapability(CapabilityActions.TenantsDelete)
         .Produces(StatusCodes.Status403Forbidden)
         ;
 
@@ -467,8 +407,8 @@ public static class AdminTenantEndpoints
         var temporalGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/temporal-config")
             .WithTags("AdminAPI - Tenant Temporal Config")
             .RequireAuthorization("AdminEndpointAuthPolicy")
-            .AddEndpointFilter<SysAdminOnlyFilter>()
-            .AddEndpointFilter<TenantRouteScopeFilter>();
+            .AddEndpointFilter<TenantRouteScopeFilter>()
+            .EnforceCapabilities();
 
         // Get the tenant's Temporal override. Returns the config directly, or null when none exists.
         temporalGroup.MapGet("", async (
@@ -479,28 +419,33 @@ public static class AdminTenantEndpoints
             return result.ToHttpResult();
         })
         .WithName("AdminGetTenantTemporalConfig")
+        .RequireCapability(CapabilityActions.TenantTemporalConfigGet)
         .WithSummary("Get the tenant Temporal connection override")
         .WithDescription("Returns the tenant's dedicated Temporal connection, or null when none is configured.");
 
         // Create or replace the tenant's Temporal override.
         temporalGroup.MapPut("", UpsertTenantTemporalConfig)
             .WithName("AdminUpdateTenantTemporalConfig")
+        .RequireCapability(CapabilityActions.TenantTemporalConfigSet)
             .WithSummary("Set the tenant Temporal connection override")
             .WithDescription("Creates or replaces the tenant's dedicated Temporal server connection. The tenantId is taken from the route.");
 
         temporalGroup.MapPost("", UpsertTenantTemporalConfig)
             .WithName("AdminCreateTenantTemporalConfig")
+        .RequireCapability(CapabilityActions.TenantTemporalConfigSet)
             .WithSummary("Set the tenant Temporal connection override")
             .WithDescription("Creates or replaces the tenant's dedicated Temporal server connection. The tenantId is taken from the route.");
 
 
         temporalGroup.MapPost("/revert", RevertTenantTemporalConfig)
         .WithName("AdminRevertTenantTemporalConfig")
+        .RequireCapability(CapabilityActions.TenantTemporalConfigRevert)
         .WithSummary("Revert the tenant Temporal connection")
         .WithDescription("Reverts the tenant to the platform's default Temporal server.");
 
         temporalGroup.MapPost("/test-connection", TestTenantTemporalConnection)
         .WithName("AdminTestTenantTemporalConnection")
+        .RequireCapability(CapabilityActions.TenantTemporalConfigTestConnection)
         .WithSummary("Test a Temporal connection")
         .WithDescription("Attempts to connect with the given server URL/namespace/credentials without saving anything.");
     }
@@ -550,41 +495,33 @@ public static class AdminTenantEndpoints
         var oidcGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/oidc-config")
             .WithTags("AdminAPI - Tenant OIDC Config")
             .RequireAuthorization("AdminEndpointAuthPolicy")
-            .AddEndpointFilter<SysAdminOnlyFilter>()
-            .AddEndpointFilter<TenantRouteScopeFilter>();
+            .AddEndpointFilter<TenantRouteScopeFilter>()
+            .EnforceCapabilities();
 
         // Get the tenant's OIDC configuration (null when none is configured).
-        oidcGroup.MapGet("", async (
-            string tenantId,
-            [FromServices] ITenantOidcConfigService service) =>
-        {
-            var result = await service.GetForTenantAsync(tenantId);
-            return result.ToHttpResult();
-        })
+        oidcGroup.MapGet("", GetOidcConfig)
         .WithName("AdminGetTenantOidcConfig")
+        .RequireCapability(CapabilityActions.TenantOidcConfigGet)
         .WithSummary("Get the tenant OIDC configuration")
         .WithDescription("Returns the tenant-scoped OIDC token-acceptance configuration, or null when none exists.");
 
         // Create or replace the tenant's OIDC configuration.
-        oidcGroup.MapPost("", UpsertTenantOidcConfig)
+        oidcGroup.MapPost("", UpsertOidcConfigCore)
             .WithName("AdminCreateTenantOidcConfig")
+        .RequireCapability(CapabilityActions.TenantOidcConfigUpsert)
             .WithSummary("Create the tenant OIDC configuration")
             .WithDescription("Creates or replaces the tenant-scoped OIDC configuration. The tenantId is taken from the route.");
 
-        oidcGroup.MapPut("", UpsertTenantOidcConfig)
+        oidcGroup.MapPut("", UpsertOidcConfigCore)
             .WithName("AdminUpdateTenantOidcConfig")
+        .RequireCapability(CapabilityActions.TenantOidcConfigUpsert)
             .WithSummary("Update the tenant OIDC configuration")
             .WithDescription("Creates or replaces the tenant-scoped OIDC configuration. The tenantId is taken from the route.");
 
         // Remove the tenant's OIDC configuration.
-        oidcGroup.MapDelete("", async (
-            string tenantId,
-            [FromServices] ITenantOidcConfigService service) =>
-        {
-            var result = await service.DeleteAsync(tenantId);
-            return result.ToHttpResult();
-        })
+        oidcGroup.MapDelete("", DeleteOidcConfig)
         .WithName("AdminDeleteTenantOidcConfig")
+        .RequireCapability(CapabilityActions.TenantOidcConfigDelete)
         .WithSummary("Delete the tenant OIDC configuration")
         .WithDescription("Removes the tenant-scoped OIDC configuration.");
 
@@ -593,15 +530,42 @@ public static class AdminTenantEndpoints
         oidcGroup.MapGet("/template", (string tenantId) =>
             Results.Ok(BuildOidcConfigTemplate(tenantId)))
         .WithName("AdminGetTenantOidcConfigTemplate")
+        .RequireCapability(CapabilityActions.TenantOidcConfigTemplate)
         .WithSummary("Get an OIDC configuration template")
         .WithDescription("Returns a sample OIDC configuration (with the tenantId filled in) to use as a starting point.");
     }
 
     /// <summary>
-    /// Shared handler for POST/PUT: validates the body, forces the tenant id to the route value
-    /// (so callers cannot point a config at another tenant), and upserts via the service.
+    /// Reads a tenant's OIDC configuration. Internal (not private) so
+    /// <see cref="AdminConsoleOidcEndpoints"/> can reuse it for the "admin-console" pseudo-tenant
+    /// instead of duplicating the body.
     /// </summary>
-    private static async Task<IResult> UpsertTenantOidcConfig(
+    internal static async Task<IResult> GetOidcConfig(
+        string tenantId,
+        [FromServices] ITenantOidcConfigService service)
+    {
+        var result = await service.GetForTenantAsync(tenantId);
+        return result.ToHttpResult();
+    }
+
+    /// <summary>
+    /// Removes a tenant's OIDC configuration. Internal for the same reason as <see cref="GetOidcConfig"/>.
+    /// </summary>
+    internal static async Task<IResult> DeleteOidcConfig(
+        string tenantId,
+        [FromServices] ITenantOidcConfigService service)
+    {
+        var result = await service.DeleteAsync(tenantId);
+        return result.ToHttpResult();
+    }
+
+    /// <summary>
+    /// Shared handler for POST/PUT: validates the body, forces the tenant id to the given value
+    /// (so callers cannot point a config at another tenant), and upserts via the service. Internal
+    /// for the same reason as <see cref="GetOidcConfig"/> — <see cref="AdminConsoleOidcEndpoints"/>
+    /// calls this directly with the "admin-console" pseudo-tenant instead of duplicating the body.
+    /// </summary>
+    internal static async Task<IResult> UpsertOidcConfigCore(
         string tenantId,
         [FromBody] JsonObject? config,
         [FromServices] ITenantOidcConfigService service,
@@ -624,8 +588,10 @@ public static class AdminTenantEndpoints
     /// <summary>
     /// Builds a sample <see cref="TenantOidcRules"/> for the given tenant. Kept in sync with the
     /// schema enforced by <see cref="TenantOidcConfigService"/> so it can be used directly as a starting point.
+    /// Internal (not private) so <see cref="AdminConsoleOidcEndpoints"/> can reuse it for the
+    /// "admin-console" pseudo-tenant instead of duplicating the template.
     /// </summary>
-    private static TenantOidcRules BuildOidcConfigTemplate(string tenantId) => new()
+    internal static TenantOidcRules BuildOidcConfigTemplate(string tenantId) => new()
     {
         TenantId = tenantId,
         AllowedProviders = new List<string> { "google", "microsoft" },

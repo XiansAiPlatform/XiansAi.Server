@@ -46,7 +46,8 @@ public static class AdminApiKeyEndpoints
         var group = adminApiGroup.MapGroup("/tenants/{tenantId}/agent-certificates")
             .WithTags("AdminAPI - Agent Certificates")
             .RequireAuthorization("AdminEndpointAuthPolicy")
-            .AddEndpointFilter<TenantRouteScopeFilter>();
+            .AddEndpointFilter<TenantRouteScopeFilter>()
+            .EnforceCapabilities();
 
         // POST /tenants/{tenantId}/agent-certificates/generate?userId=&name=&revokePrevious=
         group.MapPost("/generate", async (
@@ -71,7 +72,8 @@ public static class AdminApiKeyEndpoints
             "Generates a new X.509 client certificate issued to the specified user. " +
             "Supply an optional 'name' to label the certificate for identification in the UI. " +
             "SysAdmins may supply any userId; other callers must supply their own. " +
-            "Set revokePrevious=true to revoke all previous certificates issued to the same user.");
+            "Set revokePrevious=true to revoke all previous certificates issued to the same user.")
+        .RequireCapability(CapabilityActions.TenantAgentCertificatesGenerate);
 
         // GET /tenants/{tenantId}/agent-certificates?userId=
         group.MapGet("", async (
@@ -104,7 +106,8 @@ public static class AdminApiKeyEndpoints
         .WithDescription(
             "Returns all active agent certificates issued to the specified user. " +
             "Revoked certificates are permanently deleted and will not appear here. " +
-            "SysAdmins may supply any userId; other callers must supply their own.");
+            "SysAdmins may supply any userId; other callers must supply their own.")
+        .RequireCapability(CapabilityActions.TenantAgentCertificatesList);
 
         // POST /tenants/{tenantId}/agent-certificates/{thumbprint}/revoke?userId=
         group.MapPost("/{thumbprint}/revoke", async (
@@ -131,7 +134,8 @@ public static class AdminApiKeyEndpoints
         .WithSummary("Revoke an agent certificate")
         .WithDescription(
             "Revokes an agent certificate by thumbprint. " +
-            "SysAdmins may supply any userId; other callers must supply their own.");
+            "SysAdmins may supply any userId; other callers must supply their own.")
+        .RequireCapability(CapabilityActions.TenantAgentCertificatesRevoke);
     }
 
     // =========================================================================
@@ -143,7 +147,8 @@ public static class AdminApiKeyEndpoints
         var group = adminApiGroup.MapGroup("/tenants/{tenantId}/admin-apikeys")
             .WithTags("AdminAPI - Admin API Keys")
             .RequireAuthorization("AdminEndpointAuthPolicy")
-            .AddEndpointFilter<TenantRouteScopeFilter>();
+            .AddEndpointFilter<TenantRouteScopeFilter>()
+            .EnforceCapabilities();
 
         // POST /tenants/{tenantId}/admin-apikeys?userId=
         group.MapPost("", async (
@@ -180,7 +185,8 @@ public static class AdminApiKeyEndpoints
         .WithSummary("Create an admin API key")
         .WithDescription(
             "Creates a named, revocable admin API key attributed to the specified user. " +
-            "SysAdmins may supply any userId; other callers must supply their own.");
+            "SysAdmins may supply any userId; other callers must supply their own.")
+        .RequireCapability(CapabilityActions.TenantAdminApiKeysCreate);
 
         // GET /tenants/{tenantId}/admin-apikeys?userId=
         group.MapGet("", async (
@@ -213,7 +219,8 @@ public static class AdminApiKeyEndpoints
         .WithSummary("List admin API keys for a user")
         .WithDescription(
             "Returns all admin API keys created by the specified user within the tenant. " +
-            "SysAdmins may supply any userId; other callers must supply their own.");
+            "SysAdmins may supply any userId; other callers must supply their own.")
+        .RequireCapability(CapabilityActions.TenantAdminApiKeysList);
 
         // GET /tenants/{tenantId}/admin-apikeys/{id}?userId=
         group.MapGet("/{id}", async (
@@ -238,7 +245,8 @@ public static class AdminApiKeyEndpoints
         })
         .WithName("AdminApiKey_Get")
         .WithSummary("Get a single admin API key")
-        .WithDescription("Returns an admin API key by ID. Only returns the key if it was created by the specified user.");
+        .WithDescription("Returns an admin API key by ID. Only returns the key if it was created by the specified user.")
+        .RequireCapability(CapabilityActions.TenantAdminApiKeysGet);
 
         // POST /tenants/{tenantId}/admin-apikeys/{id}/revoke?userId=
         group.MapPost("/{id}/revoke", async (
@@ -259,7 +267,8 @@ public static class AdminApiKeyEndpoints
         })
         .WithName("AdminApiKey_Revoke")
         .WithSummary("Revoke an admin API key")
-        .WithDescription("Permanently deletes an admin API key. The name becomes available for reuse. Only keys created by the specified user can be revoked.");
+        .WithDescription("Permanently deletes an admin API key. The name becomes available for reuse. Only keys created by the specified user can be revoked.")
+        .RequireCapability(CapabilityActions.TenantAdminApiKeysRevoke);
 
         // POST /tenants/{tenantId}/admin-apikeys/{id}/rotate?userId=
         group.MapPost("/{id}/rotate", async (
@@ -293,7 +302,8 @@ public static class AdminApiKeyEndpoints
         })
         .WithName("AdminApiKey_Rotate")
         .WithSummary("Rotate an admin API key")
-        .WithDescription("Invalidates the current admin API key and issues a new one. Only keys created by the specified user can be rotated.");
+        .WithDescription("Invalidates the current admin API key and issues a new one. Only keys created by the specified user can be rotated.")
+        .RequireCapability(CapabilityActions.TenantAdminApiKeysRotate);
     }
 
     // =========================================================================

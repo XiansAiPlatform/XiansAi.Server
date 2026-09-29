@@ -20,7 +20,8 @@ public static class AdminDataEndpoints
         var dataGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/data")
             .WithTags("AdminAPI - Data")
             .RequireAuthorization("AdminEndpointAuthPolicy")
-            .AddEndpointFilter<TenantRouteScopeFilter>();
+            .AddEndpointFilter<TenantRouteScopeFilter>()
+            .EnforceCapabilities();
 
         dataGroup.MapGet("/schema", async (
             string tenantId,
@@ -47,7 +48,7 @@ public static class AdminDataEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status500InternalServerError)
         .WithName("GetAdminDataSchema")
-        ;
+        .RequireCapability(CapabilityActions.TenantDataSchema);
 
         dataGroup.MapGet("", async (
             string tenantId,
@@ -80,7 +81,7 @@ public static class AdminDataEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status500InternalServerError)
         .WithName("GetAdminData")
-        ;
+        .RequireCapability(CapabilityActions.TenantDataList);
 
         dataGroup.MapPost("", async (
             string tenantId,
@@ -166,7 +167,7 @@ public static class AdminDataEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status500InternalServerError)
         .WithName("DeleteAdminData")
-        ;
+        .RequireCapability(CapabilityActions.TenantDataDelete);
 
         dataGroup.MapDelete("/{recordId}", async (
             string tenantId,
@@ -200,7 +201,7 @@ public static class AdminDataEndpoints
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status500InternalServerError)
         .WithName("DeleteAdminDataRecord")
-        ;
+        .RequireCapability(CapabilityActions.TenantDataDeleteRecord);
 
         // Delete all documents (every type) for a given agent activation.
         // Note: "activationId" here is the activation's name, not the AgentActivation record's id.
@@ -220,6 +221,6 @@ public static class AdminDataEndpoints
         .Produces(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
         .WithName("DeleteDocumentsByActivation")
-        ;
+        .RequireCapability(CapabilityActions.TenantDataDeleteByActivation);
     }
 }

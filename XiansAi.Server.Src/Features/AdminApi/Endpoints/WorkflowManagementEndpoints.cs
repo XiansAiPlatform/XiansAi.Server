@@ -21,7 +21,8 @@ public static class WorkflowManagementEndpoints
         var adminWorkflowGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/workflows")
             .WithTags("AdminAPI - Workflow Management")
             .RequireAuthorization("AdminEndpointAuthPolicy")
-            .AddEndpointFilter<TenantRouteScopeFilter>();
+            .AddEndpointFilter<TenantRouteScopeFilter>()
+            .EnforceCapabilities();
 
         // Activate Workflow (Start/Create New Workflow)
         adminWorkflowGroup.MapPost("/activate", async (
@@ -34,7 +35,7 @@ public static class WorkflowManagementEndpoints
             return result.ToHttpResult();
         })
         .WithName("ActivateWorkflow")
-        ;
+        .RequireCapability(CapabilityActions.TenantWorkflowsActivate);
 
         // Get Workflow by ID
         adminWorkflowGroup.MapGet("", async Task<IResult> (
@@ -53,7 +54,7 @@ public static class WorkflowManagementEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetWorkflow")
-        ;
+        .RequireCapability(CapabilityActions.TenantWorkflowsGet);
 
         // List Workflows
         adminWorkflowGroup.MapGet("/list", async (
@@ -71,7 +72,7 @@ public static class WorkflowManagementEndpoints
             return result.ToHttpResult();
         })
         .WithName("ListWorkflows")
-        ;
+        .RequireCapability(CapabilityActions.TenantWorkflowsList);
 
         // Get Workflow Events
         adminWorkflowGroup.MapGet("/events", async Task<IResult> (
@@ -91,7 +92,7 @@ public static class WorkflowManagementEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetWorkflowEvents")
-        ;
+        .RequireCapability(CapabilityActions.TenantWorkflowsEvents);
 
         // Stream Workflow Events
         adminWorkflowGroup.MapGet("/events/stream", (
@@ -108,7 +109,7 @@ public static class WorkflowManagementEndpoints
             return workflowEventsService.StreamWorkflowEvents(workflowId);
         })
         .WithName("StreamWorkflowEvents")
-        ;
+        .RequireCapability(CapabilityActions.TenantWorkflowsEventsStream);
 
         // Get Workflow Types
         adminWorkflowGroup.MapGet("/types", async (
@@ -120,7 +121,7 @@ public static class WorkflowManagementEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetWorkflowTypes")
-        ;
+        .RequireCapability(CapabilityActions.TenantWorkflowsTypes);
 
         // Cancel Workflow
         adminWorkflowGroup.MapPost("/cancel", async Task<IResult> (
@@ -139,7 +140,7 @@ public static class WorkflowManagementEndpoints
             return result.ToHttpResult();
         })
         .WithName("CancelWorkflow")
-        ;
+        .RequireCapability(CapabilityActions.TenantWorkflowsCancel);
     }
 }
 

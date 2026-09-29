@@ -156,6 +156,16 @@ public static class OidcTokenInspector
         FirstPresent(jwt, ["email", ClaimTypes.Email, "emails", "emailAddress", "preferred_username", "upn"]).Value;
 
     /// <summary>
+    /// Whether the provider marked <see cref="GetEmail"/>'s address as verified. Only an explicit
+    /// literal true counts. Absence, false, or anything else reads as unverified.
+    /// </summary>
+    public static bool GetEmailVerified(JsonWebToken jwt)
+    {
+        var value = GetClaim(jwt, "email_verified");
+        return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
     /// The display name to record.
     ///
     /// A directory that issues the given and family names separately carries no single name claim,

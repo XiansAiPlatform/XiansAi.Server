@@ -23,7 +23,8 @@ public static class AdminAgentActivationEndpoints
         var activationGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/agentActivations")
             .WithTags("AdminAPI - Agent Activation")
             .RequireAuthorization("AdminEndpointAuthPolicy")
-            .AddEndpointFilter<TenantRouteScopeFilter>();
+            .AddEndpointFilter<TenantRouteScopeFilter>()
+            .EnforceCapabilities();
 
         // List all activations for a tenant
         activationGroup.MapGet("", async (
@@ -35,7 +36,7 @@ public static class AdminAgentActivationEndpoints
             return result.ToHttpResult();
         })
         .WithName("ListActivations")
-        ;
+        .RequireCapability(CapabilityActions.TenantAgentActivationsList);
 
         // Get activation by ID
         activationGroup.MapGet("/{activationId}", async (
@@ -56,7 +57,7 @@ public static class AdminAgentActivationEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetActivation")
-        ;
+        .RequireCapability(CapabilityActions.TenantAgentActivationsGet);
 
         // Create a new activation
         activationGroup.MapPost("", async (
@@ -70,7 +71,7 @@ public static class AdminAgentActivationEndpoints
             return result.ToHttpResult();
         })
         .WithName("CreateActivation")
-        ;
+        .RequireCapability(CapabilityActions.TenantAgentActivationsCreate);
 
         // Update an existing activation
         activationGroup.MapPut("/{activationId}", async (
@@ -83,7 +84,7 @@ public static class AdminAgentActivationEndpoints
             return result.ToHttpResult();
         })
         .WithName("UpdateActivation")
-        ;
+        .RequireCapability(CapabilityActions.TenantAgentActivationsUpdate);
 
         // Activate an agent (start workflow)
         activationGroup.MapPost("/{activationId}/activate", async (
@@ -108,7 +109,7 @@ public static class AdminAgentActivationEndpoints
             });
         })
         .WithName("ActivateAgent")
-        ;
+        .RequireCapability(CapabilityActions.TenantAgentActivationsActivate);
 
         // Deactivate an agent (cancel workflow)
         activationGroup.MapPost("/{activationId}/deactivate", async (
@@ -129,7 +130,7 @@ public static class AdminAgentActivationEndpoints
             });
         })
         .WithName("DeactivateAgent")
-        ;
+        .RequireCapability(CapabilityActions.TenantAgentActivationsDeactivate);
 
         // Delete an activation
         activationGroup.MapDelete("/{activationId}", async (
@@ -158,6 +159,6 @@ public static class AdminAgentActivationEndpoints
             return Results.Ok(new { message = $"Activation '{activationId}' deleted successfully" });
         })
         .WithName("DeleteActivation")
-        ;
+        .RequireCapability(CapabilityActions.TenantAgentActivationsDelete);
     }
 }

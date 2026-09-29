@@ -95,18 +95,22 @@ public static class AdminAppIntegrationEndpoints
         // Metadata endpoints (no tenant context required)
         var metadataGroup = adminApiGroup.MapGroup("/integrations/metadata")
             .WithTags("AdminAPI - Integration Metadata")
-            .RequireAuthorization("AdminEndpointAuthPolicy");
+            .RequireAuthorization("AdminEndpointAuthPolicy")
+            .EnforceCapabilities()
+            .WithMetadata(TenantOptionalForSysAdminMetadata.Instance);
 
         metadataGroup.MapGet("/types", GetIntegrationTypes)
             .WithName("GetIntegrationMetadataTypes")
             .Produces<List<IntegrationTypeMetadata>>(StatusCodes.Status200OK)
+            .RequireCapability(CapabilityActions.GlobalIntegrationMetadataList)
             ;
 
         // Builtin webhook endpoints (stored as app integrations with platformId=builtin_webhook)
         var webhookGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/webhooks")
             .WithTags("AdminAPI - Webhooks")
             .RequireAuthorization("AdminEndpointAuthPolicy")
-            .AddEndpointFilter<TenantRouteScopeFilter>();
+            .AddEndpointFilter<TenantRouteScopeFilter>()
+            .EnforceCapabilities();
 
         webhookGroup.MapPost("", async (
             string tenantId,
@@ -119,11 +123,12 @@ public static class AdminAppIntegrationEndpoints
             return result.ToHttpResult();
         })
         .WithName("CreateWebhook")
-        
+
         .Produces<AppIntegrationResponse>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status404NotFound)
-        .Produces(StatusCodes.Status409Conflict);
+        .Produces(StatusCodes.Status409Conflict)
+        .RequireCapability(CapabilityActions.TenantWebhooksCreate);
 
         webhookGroup.MapGet("", async (
             string tenantId,
@@ -139,8 +144,9 @@ public static class AdminAppIntegrationEndpoints
             return Results.Ok(new { webhooks = result.Data });
         })
         .WithName("ListWebhooks")
-        
-        .Produces(StatusCodes.Status200OK);
+
+        .Produces(StatusCodes.Status200OK)
+        .RequireCapability(CapabilityActions.TenantWebhooksList);
 
         // Delete all builtin webhooks for a given agent activation.
         // Note: "activationId" here is the activation's name (matching
@@ -161,7 +167,8 @@ public static class AdminAppIntegrationEndpoints
         .WithName("DeleteWebhooksByActivation")
 
         .Produces(StatusCodes.Status200OK)
-        .Produces(StatusCodes.Status404NotFound);
+        .Produces(StatusCodes.Status404NotFound)
+        .RequireCapability(CapabilityActions.TenantWebhooksDeleteByActivation);
 
         webhookGroup.MapDelete("{integrationId}", async (
             string tenantId,
@@ -176,15 +183,17 @@ public static class AdminAppIntegrationEndpoints
             return Results.Ok(new { message = "Webhook deleted successfully" });
         })
         .WithName("DeleteWebhook")
-        
+
         .Produces(StatusCodes.Status200OK)
-        .Produces(StatusCodes.Status404NotFound);
+        .Produces(StatusCodes.Status404NotFound)
+        .RequireCapability(CapabilityActions.TenantWebhooksDelete);
 
         // Tenant-specific integration endpoints
         var integrationGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/integrations")
             .WithTags("AdminAPI - App Integrations")
             .RequireAuthorization("AdminEndpointAuthPolicy")
-            .AddEndpointFilter<TenantRouteScopeFilter>();
+            .AddEndpointFilter<TenantRouteScopeFilter>()
+            .EnforceCapabilities();
 
         // List all integrations for a tenant
         integrationGroup.MapGet("", async (
@@ -199,6 +208,7 @@ public static class AdminAppIntegrationEndpoints
             return result.ToHttpResult();
         })
         .WithName("ListAppIntegrations")
+        .RequireCapability(CapabilityActions.TenantIntegrationsList)
         ;
 
         // Get integration by ID
@@ -211,6 +221,7 @@ public static class AdminAppIntegrationEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetAppIntegration")
+        .RequireCapability(CapabilityActions.TenantIntegrationsGet)
         ;
 
         // Create a new integration
@@ -225,6 +236,7 @@ public static class AdminAppIntegrationEndpoints
             return result.ToHttpResult();
         })
         .WithName("CreateAppIntegration")
+        .RequireCapability(CapabilityActions.TenantIntegrationsCreate)
         ;
 
         // Update an existing integration
@@ -241,6 +253,7 @@ public static class AdminAppIntegrationEndpoints
             return result.ToHttpResult();
         })
         .WithName("UpdateAppIntegration")
+        .RequireCapability(CapabilityActions.TenantIntegrationsUpdate)
         ;
 
         // Delete an integration
@@ -257,6 +270,7 @@ public static class AdminAppIntegrationEndpoints
             return Results.Ok(new { message = $"Integration '{integrationId}' deleted successfully" });
         })
         .WithName("DeleteAppIntegration")
+        .RequireCapability(CapabilityActions.TenantIntegrationsDelete)
         ;
 
         // Enable an integration
@@ -279,6 +293,7 @@ public static class AdminAppIntegrationEndpoints
             });
         })
         .WithName("EnableAppIntegration")
+        .RequireCapability(CapabilityActions.TenantIntegrationsEnable)
         ;
 
         // Disable an integration
@@ -301,6 +316,7 @@ public static class AdminAppIntegrationEndpoints
             });
         })
         .WithName("DisableAppIntegration")
+        .RequireCapability(CapabilityActions.TenantIntegrationsDisable)
         ;
 
         // Test an integration
@@ -313,6 +329,7 @@ public static class AdminAppIntegrationEndpoints
             return result.ToHttpResult();
         })
         .WithName("TestAppIntegration")
+        .RequireCapability(CapabilityActions.TenantIntegrationsTest)
         ;
 
         // Get webhook URL for an integration (convenience endpoint)
@@ -336,6 +353,7 @@ public static class AdminAppIntegrationEndpoints
             });
         })
         .WithName("GetAppIntegrationWebhookUrl")
+        .RequireCapability(CapabilityActions.TenantIntegrationsWebhookUrl)
         ;
     }
 

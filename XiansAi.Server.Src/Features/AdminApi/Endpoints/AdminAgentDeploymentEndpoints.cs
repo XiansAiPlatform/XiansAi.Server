@@ -22,7 +22,8 @@ public static class AdminAgentDeploymentEndpoints
         var adminAgentGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/agentDeployments")
             .WithTags("AdminAPI - Agent Deployment")
             .RequireAuthorization("AdminEndpointAuthPolicy")
-            .AddEndpointFilter<TenantRouteScopeFilter>();
+            .AddEndpointFilter<TenantRouteScopeFilter>()
+            .EnforceCapabilities();
 
         // List Agent deployments
         adminAgentGroup.MapGet("", async (
@@ -35,7 +36,7 @@ public static class AdminAgentDeploymentEndpoints
             return result.ToHttpResult();
         })
         .WithName("ListAgentDeployments")
-        ;
+        .RequireCapability(CapabilityActions.TenantAgentDeploymentsList);
 
         // Get Agent Instance
         adminAgentGroup.MapGet("/{agentName}", async (
@@ -47,7 +48,7 @@ public static class AdminAgentDeploymentEndpoints
             return result.ToHttpResult();
         })
         .WithName("GetAgentDeployment")
-        ;
+        .RequireCapability(CapabilityActions.TenantAgentDeploymentsGet);
 
         // Update Agent Instance
         adminAgentGroup.MapPatch("/{agentName}", async (
@@ -60,7 +61,7 @@ public static class AdminAgentDeploymentEndpoints
             return result.ToHttpResult();
         })
         .WithName("UpdateAgentDeployment")
-        ;
+        .RequireCapability(CapabilityActions.TenantAgentDeploymentsUpdate);
 
         // Delete Agent Instance
         adminAgentGroup.MapDelete("/{agentName}", async (
@@ -77,7 +78,7 @@ public static class AdminAgentDeploymentEndpoints
             return Results.Ok(new { message = $"Agent '{agentName}' deleted successfully" });
         })
         .WithName("DeleteAgentDeployment")
-        ;
+        .RequireCapability(CapabilityActions.TenantAgentDeploymentsDelete);
 
         // Promote a running tenant-scoped agent into a new system-scoped template
         adminAgentGroup.MapPost("/{agentName}/promote-to-template", async (
@@ -86,14 +87,6 @@ public static class AdminAgentDeploymentEndpoints
             [FromServices] ITemplateService templateService,
             [FromServices] ITenantContext tenantContext) =>
         {
-            // Promoting creates a new system-scoped (global) template; only SysAdmins may do this.
-            if (!AdminTenantScopeGuard.IsSysAdmin(tenantContext))
-            {
-                return Results.Json(
-                    new { message = "Access denied: Only system administrators can promote an agent to a template" },
-                    statusCode: StatusCodes.Status403Forbidden);
-            }
-
             if (string.IsNullOrWhiteSpace(tenantContext.LoggedInUser))
             {
                 return Results.Json(
@@ -105,7 +98,7 @@ public static class AdminAgentDeploymentEndpoints
             return result.ToHttpResult();
         })
         .WithName("PromoteAgentDeploymentToTemplate")
-        ;
+        .RequireCapability(CapabilityActions.TenantAgentDeploymentsPromoteToTemplate);
     }
 }
 

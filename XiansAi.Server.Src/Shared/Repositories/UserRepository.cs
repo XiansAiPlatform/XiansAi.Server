@@ -41,6 +41,12 @@ public interface IUserRepository
     Task<User?> GetByUserIdOrEmailAsync(string userIdOrEmail);
     Task<List<TenantInfoDto>> GetUserTenantsAsync(string userId);
     Task<List<string>> GetUserRolesAsync(string userId, string tenantId);
+    /// <summary>
+    /// Gets the user's roles for the specified tenant without fetching the user from the database.
+    /// Applies the disabled-account check, approved-tenant-role lookup, and SysAdmin role resolution.
+    /// Use this method when the <see cref="User"/> record has already been loaded.
+    /// </summary>
+    List<string> GetUserRoles(User user, string tenantId);
     Task<User?> GetAnyUserAsync();
     Task<bool> CreateAsync(User user);
     Task<bool> UpdateAsync(string userId, User user);
@@ -437,6 +443,11 @@ public class UserRepository : IUserRepository
             return new List<string>();
         }
 
+        return GetUserRoles(user, tenantId);
+    }
+
+    public List<string> GetUserRoles(User user, string tenantId)
+    {
         // A disabled account carries nothing, matching what an address resolves to through
         // EmailIdentityResolution. Without this a credential naming the id kept its roles after the
         // account was turned off.

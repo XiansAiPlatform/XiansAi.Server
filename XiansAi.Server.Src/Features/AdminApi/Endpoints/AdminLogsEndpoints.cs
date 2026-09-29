@@ -23,7 +23,8 @@ public static class AdminLogsEndpoints
         var logsGroup = adminApiGroup.MapGroup("/tenants/{tenantId}")
             .WithTags("AdminAPI - Logs")
             .RequireAuthorization("AdminEndpointAuthPolicy")
-            .AddEndpointFilter<TenantRouteScopeFilter>();
+            .AddEndpointFilter<TenantRouteScopeFilter>()
+            .EnforceCapabilities();
 
         // Step 1: list distinct log streams (unique workflow_id) sorted by recent activity.
         logsGroup.MapGet("/logs/streams", async (
@@ -59,7 +60,8 @@ public static class AdminLogsEndpoints
         .Produces<AdminLogStreamsResponse>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status500InternalServerError)
-        .WithName("GetAdminLogStreams");
+        .WithName("GetAdminLogStreams")
+        .RequireCapability(CapabilityActions.TenantLogsStreams);
 
         // Step 2 (or general query): get logs with comprehensive filtering. Supports filtering
         // by one workflow_id (workflowId) or many (workflowIds, comma-separated) - the latter is
@@ -101,7 +103,8 @@ public static class AdminLogsEndpoints
         .Produces<AdminLogsResponse>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status500InternalServerError)
-        .WithName("GetAdminLogs");
+        .WithName("GetAdminLogs")
+        .RequireCapability(CapabilityActions.TenantLogsList);
 
         // Delete all logs for a given agent activation.
         // Note: "activationId" here is the activation's name, not the AgentActivation record's id.
@@ -120,7 +123,8 @@ public static class AdminLogsEndpoints
         })
         .Produces(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
-        .WithName("DeleteLogsByActivation");
+        .WithName("DeleteLogsByActivation")
+        .RequireCapability(CapabilityActions.TenantLogsDeleteByActivation);
     }
 
     /// <summary>
