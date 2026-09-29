@@ -79,7 +79,7 @@ public static class TenantEndpoints
         .WithName("Update Tenant")
         
         .WithSummary("Update a tenant")
-        .WithDescription("Updates an existing tenant record").RequiresValidSysAdmin();
+        .WithDescription("Updates an existing tenant record. Setting enabled=false deactivates all of the tenant's active agents (workflows cancelled, schedules deleted); re-enabling the tenant does NOT reactivate them. Sending enabled=false again retries any agents that failed to deactivate.").RequiresValidSysAdmin();
 
         tenantsGroup.MapDelete("/{id}", async (
             string id,
