@@ -8,6 +8,7 @@ namespace Shared.Utils.Serialization;
 public partial class TimeSpanTypeConverter : IYamlTypeConverter
 {
     private static readonly Regex TimeSpanRegex = TimeSpanFormatRegex();
+    private static readonly Regex FullFormatRegex = FullDurationFormatRegex();
     
     public bool Accepts(Type type)
     {
@@ -15,41 +16,28 @@ public partial class TimeSpanTypeConverter : IYamlTypeConverter
     }
 
     /// <summary>
-    /// Parses the same duration format as the YAML converter ("30d", "5d 6h") without throwing.
-    /// Rejects blank or malformed input and anything above int.MaxValue seconds
+    /// Parses a duration without throwing.
+    /// Rejects blank or malformed input and anything above int.MaxValue seconds.
     /// </summary>
     public static bool TryParse(string? value, out TimeSpan result)
     {
         result = TimeSpan.Zero;
 
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return false;
-        }
-
-        var matches = TimeSpanRegex.Matches(value);
-        if (matches.Count == 0 || !string.IsNullOrEmpty(TimeSpanRegex.Replace(value, "").Trim()))
+        if (string.IsNullOrWhiteSpace(value) || !FullFormatRegex.IsMatch(value))
         {
             return false;
         }
 
         double totalSeconds = 0;
-        foreach (Match match in matches)
+        foreach (Match match in TimeSpanRegex.Matches(value))
         {
-            if (!int.TryParse(match.Groups[1].Value, out var number))
+            if (!int.TryParse(match.Groups[1].Value, out var number) ||
+                !TryGetUnitSeconds(match.Groups[2].Value, out var unitSeconds))
             {
                 return false;
             }
 
-            totalSeconds += match.Groups[2].Value switch
-            {
-                "s" => number,
-                "m" => number * 60d,
-                "h" => number * 3600d,
-                "d" => number * 86400d,
-                "w" => number * 604800d,
-                _ => throw new FormatException($"Invalid time unit: {match.Groups[2].Value}")
-            };
+            totalSeconds += number * unitSeconds;
         }
 
         if (totalSeconds > int.MaxValue)
@@ -59,6 +47,20 @@ public partial class TimeSpanTypeConverter : IYamlTypeConverter
 
         result = TimeSpan.FromSeconds(totalSeconds);
         return true;
+    }
+
+    private static bool TryGetUnitSeconds(string unit, out double seconds)
+    {
+        seconds = unit switch
+        {
+            "s" => 1d,
+            "m" => 60d,
+            "h" => 3600d,
+            "d" => 86400d,
+            "w" => 604800d,
+            _ => 0d
+        };
+        return seconds > 0;
     }
 
     public object? ReadYaml(IParser parser, Type type)
@@ -73,34 +75,12 @@ public partial class TimeSpanTypeConverter : IYamlTypeConverter
             return null;
         }
 
-        var value = scalar.Value;
-        var totalTimeSpan = TimeSpan.Zero;
-    
-        var matches = TimeSpanRegex.Matches(value);
-        var replaced = TimeSpanRegex.Replace(value, "").Trim();
-        
-        if (matches.Count is 0 || !string.IsNullOrEmpty(replaced))
+        if (!TryParse(scalar.Value, out var result))
         {
-            throw new FormatException($"Invalid time span format: {value}. Expected format like '30d', '12h', '5d 6h' etc.");
+            throw new FormatException($"Invalid time span format: {scalar.Value}. Expected format like '30d', '12h', '5d 6h' etc.");
         }
 
-        foreach (Match match in matches)
-        {
-            var number = int.Parse(match.Groups[1].Value);
-            var unit = match.Groups[2].Value;
-        
-            totalTimeSpan += unit switch
-            {
-                "s" => TimeSpan.FromSeconds(number),
-                "m" => TimeSpan.FromMinutes(number),
-                "h" => TimeSpan.FromHours(number),
-                "d" => TimeSpan.FromDays(number),
-                "w" => TimeSpan.FromDays(number * 7),
-                // This case should not be reachable due to the regex pattern
-                _ => throw new FormatException($"Invalid time unit: {unit}")
-            };
-        }
-        return totalTimeSpan;
+        return result;
     }
 
     public void WriteYaml(IEmitter emitter, object? value, Type type)
@@ -154,4 +134,7 @@ public partial class TimeSpanTypeConverter : IYamlTypeConverter
 
     [GeneratedRegex(@"(\d+)([smhdw])", RegexOptions.Compiled)]
     private static partial Regex TimeSpanFormatRegex();
+
+    [GeneratedRegex(@"^\s*(\d+[smhdw]\s*)+$", RegexOptions.Compiled)]
+    private static partial Regex FullDurationFormatRegex();
 } 
