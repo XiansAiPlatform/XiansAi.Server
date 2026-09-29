@@ -18,7 +18,7 @@ Once an agent is in production the only liveness signal today is the AdminApi he
 | **R1** test defs attach to AgentActivation | `AgentTest` doc keyed by `tenant_id` + `activation_id` in **new** `agent_tests` collection (§5); create/update validate the activation exists (§6). See ADR-0012. |
 | **R2** webhook uses **inbound** path | `AgentTestRunnerService` calls the already-Shared static `UpdateService.SendWebhookUpdate(...)` (`Shared/Utils/Temporal/UpdateService.cs`) — the exact call `WebhookReceiverService.ProcessWebhook` makes; never `WebhookDispatcherService` (§7.2). |
 | **R3** schedule = metadata check | Runner calls **new** `Shared/Services/IScheduleMetadataProbe` reading `state.Paused` + `Info.RecentActions` via its own `DescribeAsync()` through `ITemporalGatewayFactory` (§7.3, ADR-0009). No synthetic execution. |
-| **R4** periodic runner + persisted, queryable results | `AgentTestRunnerService : BackgroundService` (§7.4, ADR-0010); results in **new** `agent_test_runs`; `GET .../runs` endpoint (§6). |
+| **R4** periodic runner + persisted, queryable results | `AgentTestRunnerService : BackgroundService` (§7.4, ADR-0010); **multi-replica-safe** via a per-test atomic claim (D3 resolved — server is multi-replica); results in **new** `agent_test_runs`; `GET .../runs` endpoint (§6). |
 | **R5** chat assertions contains / does-not-contain, case-insensitive | `AssertionEvaluator` using `IndexOf(..., OrdinalIgnoreCase)`; runner reuses `SyncMessageHandler` (§7.1). |
 | **R6** single capability gates all access | **new** `CapabilityActions.TenantAgentTestsManage` + `.RequireCapability(...)` on every route (§8, ADR-0011). |
 | **R7** per-test interval, min 5 min | `AgentTest.IntervalMinutes` validated `>= 5` on create/update (§5, §6). |
@@ -50,7 +50,7 @@ Constraints `ARCH-001..012` in `docs/architecture/constraints.md` are `Status: p
 **New**
 - `XiansAi.Server.Src/Shared/Data/Models/AgentTest.cs` — test definition model.
 - `XiansAi.Server.Src/Shared/Data/Models/AgentTestRun.cs` — run-result model.
-- `XiansAi.Server.Src/Shared/Repositories/AgentTestRepository.cs` — CRUD + `GetEnabledDueAsync`.
+- `XiansAi.Server.Src/Shared/Repositories/AgentTestRepository.cs` — CRUD + `ClaimNextDueAsync` (atomic `findOneAndUpdate` claim, multi-replica-safe — D3).
 - `XiansAi.Server.Src/Shared/Repositories/AgentTestRunRepository.cs` — insert + paged query by test/activation.
 - `XiansAi.Server.Src/Shared/Services/AgentTestRunnerService.cs` — `BackgroundService`; polls due tests, probes, evaluates, persists.
 - `XiansAi.Server.Src/Shared/Services/AssertionEvaluator.cs` — case-insensitive contains / does-not-contain.
@@ -103,7 +103,7 @@ Indexes: `{ tenant_id, activation_id }`; `{ enabled, last_run_at }` (runner due-
 | DurationMs | `duration_ms` | |
 | Status | `status` | `Passed` / `Failed` / `Skipped` / `Error` |
 
-Indexes: `{ test_id, ran_at desc }`; `{ tenant_id, activation_id, ran_at desc }`; optional TTL on `ran_at` for retention (open decision D2).
+Indexes: `{ test_id, ran_at desc }`; `{ tenant_id, activation_id, ran_at desc }`; **TTL index on `ran_at` with a 30-day expiry** to bound growth (D2 resolved — default accepted; window made configurable later).
 
 ## 6. Interfaces / API
 
@@ -130,7 +130,7 @@ flowchart LR
   EP --> MSvc[AgentTestManagementService]
   MSvc --> TRepo[(agent_tests)]
   Runner[AgentTestRunnerService BackgroundService] -->|scope + tenant ctx| Scope[IServiceScopeFactory scope]
-  Runner -->|due scan| TRepo
+  Runner -->|atomic claim findOneAndUpdate| TRepo
   Scope --> ARepo[ActivationRepository]
   Scope -->|chat| Sync[SyncMessageHandler]
   Scope -->|webhook| US[UpdateService.SendWebhookUpdate static]
@@ -152,14 +152,14 @@ sequenceDiagram
   participant P as Probe (chat/webhook/schedule)
   participant E as AssertionEvaluator
   participant RR as AgentTestRunRepository
-  R->>TR: GetEnabledDueAsync(now)
+  R->>TR: ClaimNextDueAsync(now) [findOneAndUpdate: set last_run_at=now]
+  TR-->>R: claimed test (or null → sleep)
   R->>A: GetByIdAsync(activationId)
   R->>P: probe(config, timeout)
   P-->>R: response text / schedule state
   R->>E: evaluate(assertion, response)
   E-->>R: pass/fail + detail
   R->>RR: insert AgentTestRun(status, snippet)
-  R->>TR: set last_run_at
 ```
 
 Failure / edge rows:
@@ -182,7 +182,9 @@ Inside the per-test DI scope (§7.4), the runner calls the already-Shared static
 `IScheduleMetadataProbe.CheckAsync(tenantId, agentName, scheduleId)` obtains a Temporal client via `ITemporalGatewayFactory`, then `GetScheduleHandle(scheduleId).DescribeAsync()`. Pass iff: schedule exists (no `not found`), `!state.Paused` (enabled), and `Info.RecentActions` non-empty (a last run is present). Detail names the first failing condition. The probe is self-contained (does its own `DescribeAsync`) and does not depend on `ScheduleService`. No synthetic execution.
 
 ### 7.4 Runner mechanism (R4/R7, ADR-0010)
-`BackgroundService` (not a Temporal schedule), following `ExpiredMessageFileCleanupService`. Loop: initial delay → every ~1 min, `GetEnabledDueAsync(now)` (tests whose `last_run_at + interval <= now`), process each in its own try/catch, `Task.Delay` between cycles.
+`BackgroundService` (not a Temporal schedule), following `ExpiredMessageFileCleanupService`. Loop: initial delay → every ~1 min, atomically claim and process due tests one at a time, `Task.Delay` between cycles, each claim/probe in its own try/catch.
+
+**Multi-replica claim (D3 — resolved: server is multi-replica).** The server runs multiple replicas, so a plain due-scan (`find` where `last_run_at + interval <= now`) would let two replicas probe the same test in the same window. Instead the runner claims each due test atomically: `AgentTestRepository.ClaimNextDueAsync(now)` issues a single `findOneAndUpdate` that matches `{ enabled: true, $expr: last_run_at + interval_minutes <= now }` and, in the same operation, sets `last_run_at = now` (the claim), returning the claimed document (or null when none remain). Because Mongo `findOneAndUpdate` is atomic per document, only one replica wins each test per window; the runner loops on `ClaimNextDueAsync` until it returns null, then sleeps. The `{ enabled, last_run_at }` index (§5) backs the match. Advancing `last_run_at` at claim time (rather than after the probe) both records the claim and prevents re-claim within the interval; the run result is written to `agent_test_runs` when the probe completes. A stale-claim risk (a replica that crashes mid-probe) is acceptable for v1 — the test simply runs again next interval — and can be tightened later with a short claim lease if needed.
 
 **Per-test DI scope + tenant context.** `ITenantContext` is registered `AddScoped` (`SharedServices.cs:39`) and both the chat path and `UpdateService.SendWebhookUpdate` read `TenantId` / `ParticipantId` / temporal config from it. A `BackgroundService` has no HTTP request scope, so for **each** due test the runner: (1) creates a scope via `IServiceScopeFactory.CreateScope()`, (2) resolves `ITenantContext` from that scope and populates it (TenantId, ParticipantId, and per-tenant temporal config) from the persisted `AgentTest` before invoking the chat/webhook probe, (3) resolves the repositories/probe from the same scope, (4) disposes the scope after the run. (`ExpiredMessageFileCleanupService` needs no tenant context and so is a precedent only for the loop shape, not for scoping.)
 
@@ -198,16 +200,19 @@ Both `ActivationService.DeactivateAgentAsync(activationId, tenantId)` and `Delet
 - **Auth/capability (R6):** single `TenantAgentTestsManage` action gates create/edit/view/delete; SysAdmin bypass via existing `CapabilityMatrixFilter`; no-capability → `CapabilityDenied` (403). Default roles: `[TenantAdmin]` (ADR-0011 / D1).
 - **Tenant isolation:** `TenantRouteScopeFilter` on the route group; repos filter `tenant_id` + `activation_id`; the runner has no request scope, so it establishes a per-test scope and populates `ITenantContext` from the persisted `AgentTest` before probing (§7.4).
 - **Scoped services in a BackgroundService:** the runner is a singleton; `ITenantContext` and request-scoped dependencies must be resolved from a `IServiceScopeFactory.CreateScope()` per test, not captured in the constructor. This is the main correctness pitfall of the runner and is called out in the implementation plan (§11).
+- **Multi-replica safety (D3):** the server runs multiple replicas; the atomic `ClaimNextDueAsync` (`findOneAndUpdate` claiming `last_run_at`) guarantees at-most-one replica probes a given test per interval (§7.4).
 - **Error handling:** per-test try/catch in the runner loop guarantees one failing probe never aborts the sweep; deactivated activations produce `Skipped`, not `Error` (AC).
 - **Timeouts:** chat/webhook use per-test `TimeoutSeconds` (bounded 1–30, as in `AdminHeartbeatEndpoints`); schedule probe bounded by the Temporal RPC.
 - **Logging:** structured logs per run with `LogSanitizer` on tenant/agent/schedule ids (matches existing services).
 - **Self-referential Temporal risk:** chat and webhook probes both traverse Temporal; if Temporal is down those tests correctly record `Failed`/`Error` (a real signal) while the BackgroundService keeps running, so failures surface rather than being masked. A Temporal-schedule runner would have hidden them (ADR-0010).
 
-## 9. Open decisions
+## 9. Decisions (resolved)
 
-- **D1 — Capability default roles / delegable.** *Recommended:* `[TenantAdmin]`, delegable (not `NonDelegable`), matching other tenant-scoped management actions.
-- **D2 — Run-result retention.** *Recommended:* TTL index on `agent_test_runs.ran_at` (default 30 days) to bound growth; make the window configurable later.
-- **D3 — Runner scale / distributed lock.** *Recommended:* single-instance BackgroundService for v1; if multiple server replicas run, add a per-test claim (`findOneAndUpdate` on `last_run_at`) to prevent double execution. Confirm deployment topology.
+All three decisions are resolved (hasith, 2026-09-29); none remain open.
+
+- **D1 — Capability default roles / delegable.** *Resolved: default accepted.* `TenantAgentTestsManage` gated to `[TenantAdmin]`, delegable (not `NonDelegable`), matching other tenant-scoped management actions (§8, ADR-0011).
+- **D2 — Run-result retention.** *Resolved: default accepted.* TTL index on `agent_test_runs.ran_at` with a 30-day expiry to bound growth (§5); the window is made configurable later.
+- **D3 — Runner scale / distributed lock.** *Resolved: server is multi-replica.* The runner claims each due test atomically via `AgentTestRepository.ClaimNextDueAsync` (`findOneAndUpdate` setting `last_run_at` in the same operation), so only one replica runs each test per interval (§7.4, ADR-0010). This is built into v1, not deferred.
 
 ## 10. Proposed ADRs
 
@@ -222,12 +227,12 @@ R2's inbound webhook path needs no ADR: `UpdateService.SendWebhookUpdate` is alr
 
 ## 11. Implementation plan
 
-1. Models + repos: `AgentTest`, `AgentTestRun`, `AgentTestRepository`, `AgentTestRunRepository` (indexes). Register in `SharedServices`.
+1. Models + repos: `AgentTest`, `AgentTestRun`, `AgentTestRepository` (incl. atomic `ClaimNextDueAsync`, D3), `AgentTestRunRepository` (indexes incl. 30-day TTL on `ran_at`, D2). Register in `SharedServices`.
 2. `IScheduleMetadataProbe` / `ScheduleMetadataProbe` (ADR-0009): self-contained read-only `DescribeAsync()` via `ITemporalGatewayFactory` → exists / enabled / last-run status. No changes to `ScheduleService` or `WebhookService`. Unit tests with a mocked Temporal client.
 3. `AssertionEvaluator` (R5) + tests.
 4. `AgentTestManagementService` (validation: interval ≥ 5, activation exists, kind/config/assertion consistency).
 5. `AdminAgentTestEndpoints` (CRUD + `/runs`); add `TenantAgentTestsManage` to `CapabilityActions`; wire in `AdminApiConfiguration`.
-6. `AgentTestRunnerService : BackgroundService`: per-cycle due-scan; **per due test, open an `IServiceScopeFactory` scope and populate `ITenantContext`** (§7.4), then activation `IsActive` gate, three probes (chat via `SyncMessageHandler`, webhook via static `UpdateService.SendWebhookUpdate`, schedule via `IScheduleMetadataProbe`), evaluate, persist, advance `last_run_at`. `AddHostedService` in `SharedServices`.
+6. `AgentTestRunnerService : BackgroundService`: per cycle, loop on `ClaimNextDueAsync` (atomic per-test claim, multi-replica-safe, D3) until null; **per claimed test, open an `IServiceScopeFactory` scope and populate `ITenantContext`** (§7.4), then activation `IsActive` gate, three probes (chat via `SyncMessageHandler`, webhook via static `UpdateService.SendWebhookUpdate`, schedule via `IScheduleMetadataProbe`), evaluate, persist. `AddHostedService` in `SharedServices`.
 7. `AgentTestLifecycleService` + hooks: `ActivationService.DeactivateAgentAsync(activationId, tenantId)` and `DeleteActivationAsync(activationId)` (tenantId from loaded doc) (R8).
 8. Integration tests (ARCH-011, Mongo2Go + mocked `ITemporalGatewayFactory`): each AC — chat pass/fail + snippet, webhook, schedule, 403, deactivated→skipped, run retrievable. Include a test that the runner resolves `ITenantContext` per test scope correctly.
-9. Decide D2 retention TTL; confirm D3 topology before enabling in multi-replica deploys.
+9. Add a concurrency integration test asserting two runner instances never double-run a single due test (D3 claim). D1/D2/D3 are all resolved (§9) — no pre-implementation decisions remain.

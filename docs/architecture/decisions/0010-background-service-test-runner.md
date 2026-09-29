@@ -16,8 +16,11 @@ However, the probes themselves exercise Temporal: the chat probe sends a workflo
 
 Implement the runner as a `Shared/` `BackgroundService` (`AgentTestRunnerService`), following the existing `ExpiredMessageFileCleanupService` precedent. It polls `agent_tests` for due runs (~1 min cadence), enforces the per-test interval with a server-side 5-minute minimum (R7) in-process, and processes each test in its own try/catch so one failing probe never aborts the sweep.
 
+Because the server runs multiple replicas (D3 confirmed, #517), the runner does **not** use a plain due-scan — two replicas would probe the same test in the same window. Instead each due test is claimed atomically via `AgentTestRepository.ClaimNextDueAsync`, a single `findOneAndUpdate` that matches an enabled, due test and sets `last_run_at = now` in the same operation, returning the claimed document. Mongo's per-document atomicity guarantees only one replica wins each test per interval; the runner loops on the claim until it returns null, then sleeps.
+
 ## Consequences
 
 - Runner liveness is independent of Temporal; Temporal outages surface as `Failed`/`Error` runs instead of silent non-execution.
 - No test-schedule namespace to clean up on deactivation, simplifying R8 (the lifecycle service just flips `enabled=false`).
-- A distributed-execution guard is required if the server runs multiple replicas (per-test `findOneAndUpdate` claim on `last_run_at`) — tracked as open decision D3.
+- Multi-replica execution is safe by construction via the atomic `ClaimNextDueAsync` claim (D3 resolved — server is multi-replica; the guard ships in v1, not deferred).
+- Residual: a replica crashing mid-probe leaves the test claimed until its next interval (it simply runs one cycle later). Acceptable for v1; a short claim lease can tighten this later if needed.
