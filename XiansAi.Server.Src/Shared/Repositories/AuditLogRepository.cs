@@ -10,6 +10,19 @@ public interface IAuditLogRepository
 {
     Task CreateAsync(AuditLogEntry entry);
 
+    /// <summary>
+    /// Atomically records another access on the latest matching row created at or after
+    /// <paramref name="createdAtOrAfter"/>. Leaves CreatedAt, Description, ActivationName,
+    /// Details, and LoggedInUser unchanged.
+    /// </summary>
+    Task<AuditLogEntry?> TouchRecentMatchingAsync(
+        string tenantId,
+        string action,
+        string participantId,
+        string targetParticipantId,
+        DateTime createdAtOrAfter,
+        DateTime lastSeenAt);
+
     Task<(IEnumerable<AuditLogEntry> entries, long totalCount)> GetFilteredAsync(
         string tenantId,
         string? performedBy = null,
@@ -49,6 +62,35 @@ public class AuditLogRepository : IAuditLogRepository
     {
         await _auditLogs.InsertOneAsync(entry);
         InvalidateDistinctCaches(entry.TenantId);
+    }
+
+    public async Task<AuditLogEntry?> TouchRecentMatchingAsync(
+        string tenantId,
+        string action,
+        string participantId,
+        string targetParticipantId,
+        DateTime createdAtOrAfter,
+        DateTime lastSeenAt)
+    {
+        var filter = Builders<AuditLogEntry>.Filter.And(
+            Builders<AuditLogEntry>.Filter.Eq(x => x.TenantId, tenantId),
+            Builders<AuditLogEntry>.Filter.Eq(x => x.Action, action),
+            Builders<AuditLogEntry>.Filter.Eq(x => x.ParticipantId, participantId),
+            Builders<AuditLogEntry>.Filter.Eq("details.targetParticipantId", targetParticipantId),
+            Builders<AuditLogEntry>.Filter.Gte(x => x.CreatedAt, createdAtOrAfter));
+
+        var update = Builders<AuditLogEntry>.Update
+            .Set(x => x.LastSeenAt, lastSeenAt)
+            .Inc(x => x.AccessCount, 1);
+
+        return await _auditLogs.FindOneAndUpdateAsync(
+            filter,
+            update,
+            new FindOneAndUpdateOptions<AuditLogEntry>
+            {
+                ReturnDocument = ReturnDocument.After,
+                Sort = Builders<AuditLogEntry>.Sort.Descending(x => x.CreatedAt)
+            });
     }
 
     public async Task<(IEnumerable<AuditLogEntry> entries, long totalCount)> GetFilteredAsync(
