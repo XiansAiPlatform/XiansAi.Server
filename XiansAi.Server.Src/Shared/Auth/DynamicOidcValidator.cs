@@ -172,7 +172,8 @@ public class DynamicOidcValidator : IDynamicOidcValidator
                 // The parameters record whether the provider declared any audience to check
                 // against, so callers can tell an audience-checked token from one accepted on its
                 // issuer's signature alone.
-                parameters.ValidateAudience);
+                parameters.ValidateAudience,
+                OidcTokenInspector.GetEmailVerified(jwt));
         }
         catch (SecurityTokenException ex)
         {

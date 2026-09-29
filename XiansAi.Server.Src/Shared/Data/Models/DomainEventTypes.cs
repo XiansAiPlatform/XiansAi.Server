@@ -43,6 +43,20 @@ public static class DomainEventTypes
     /// <summary>The platform was bootstrapped (first SysAdmin, tenant, and API key).</summary>
     public const string PlatformBootstrapped = "platform.bootstrapped";
 
+    // ----- AdminApi authorization -----
+
+    /// <summary>
+    /// A capability-matrix row was created or updated, changing which roles may perform an AdminApi
+    /// action. Payload carries the action, the previous allowed-roles list and the new one, so a
+    /// widening is reconstructible after the fact rather than only visible as current state.
+    /// </summary>
+    public const string CapabilityMatrixUpdated = "admin.capability.updated";
+
+    /// <summary>
+    /// A capability-matrix row was deleted, reverting its action to the code-level default.
+    /// </summary>
+    public const string CapabilityMatrixDeleted = "admin.capability.deleted";
+
     // ----- User lifecycle (tenant-scoped and global) -----
 
     /// <summary>A brand-new user account was created.</summary>
@@ -197,6 +211,9 @@ public static class DomainEventTypes
     /// <summary>A builtin webhook integration was created. (Deletion emits the generic integration.deleted event.)</summary>
     public const string IntegrationWebhookCreated = "integration.webhook.created";
 
+    /// <summary>A privileged admin viewed another tenant member's conversations (view-as read).</summary>
+    public const string ConversationViewAs = "conversation.view_as";
+
     /// <summary>
     /// Canonical audit-log sentence for <paramref name="eventType"/>. Callers should pass a more
     /// specific description (names, ids) when they have them; this is the fallback so a row is
@@ -214,6 +231,8 @@ public static class DomainEventTypes
         TenantTemporalUpdated => "A tenant's Temporal configuration was created or updated.",
         TenantTemporalReverted => "A tenant's Temporal configuration was reverted to the platform default.",
         PlatformBootstrapped => "The platform was bootstrapped (first SysAdmin, tenant, and API key).",
+        CapabilityMatrixUpdated => "A capability-matrix row was created or updated.",
+        CapabilityMatrixDeleted => "A capability-matrix row was deleted, reverting its action to the code-level default.",
         UserCreated => "A new user account was created.",
         UserTenantAdded => "An existing user was granted membership in a tenant.",
         UserTenantRemoved => "A user's membership in a tenant was removed.",
@@ -260,6 +279,7 @@ public static class DomainEventTypes
         IntegrationEnabled => "An app integration was enabled.",
         IntegrationDisabled => "An app integration was disabled.",
         IntegrationWebhookCreated => "A builtin webhook integration was created.",
+        ConversationViewAs => "A system admin viewed another user's conversations.",
         _ => null
     };
 }

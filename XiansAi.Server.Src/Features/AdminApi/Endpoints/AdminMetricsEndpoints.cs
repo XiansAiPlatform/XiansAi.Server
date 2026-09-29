@@ -22,7 +22,8 @@ public static class AdminMetricsEndpoints
         var metricsGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/metrics")
             .WithTags("AdminAPI - Metrics")
             .RequireAuthorization("AdminEndpointAuthPolicy")
-            .AddEndpointFilter<TenantRouteScopeFilter>();
+            .AddEndpointFilter<TenantRouteScopeFilter>()
+            .EnforceCapabilities();
 
         // Get aggregated metrics statistics
         metricsGroup.MapGet("/stats", async (
@@ -62,7 +63,7 @@ public static class AdminMetricsEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status500InternalServerError)
         .WithName("GetAdminMetricsStats")
-        ;
+        .RequireCapability(CapabilityActions.TenantMetricsStats);
 
         // Get time-series metrics data
         metricsGroup.MapGet("/timeseries", async (
@@ -112,7 +113,7 @@ public static class AdminMetricsEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status500InternalServerError)
         .WithName("GetAdminMetricsTimeSeries")
-        ;
+        .RequireCapability(CapabilityActions.TenantMetricsTimeSeries);
 
         // Discover available metric categories and types
         metricsGroup.MapGet("/categories", async (
@@ -140,7 +141,7 @@ public static class AdminMetricsEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status500InternalServerError)
         .WithName("GetAdminMetricsCategories")
-        ;
+        .RequireCapability(CapabilityActions.TenantMetricsCategories);
 
         // Delete all performance-metric records for a given agent activation.
         // Note: "activationId" here is the activation's name, not the AgentActivation record's id.
@@ -161,6 +162,6 @@ public static class AdminMetricsEndpoints
         .Produces(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status400BadRequest)
         .WithName("DeleteMetricsByActivation")
-        ;
+        .RequireCapability(CapabilityActions.TenantMetricsDeleteByActivation);
     }
 }

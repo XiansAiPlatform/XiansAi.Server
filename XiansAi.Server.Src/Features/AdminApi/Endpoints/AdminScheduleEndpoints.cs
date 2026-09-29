@@ -23,7 +23,8 @@ public static class AdminScheduleEndpoints
         var scheduleGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/agents/{agentName}/schedules")
             .WithTags("AdminAPI - Schedules")
             .RequireAuthorization("AdminEndpointAuthPolicy")
-            .AddEndpointFilter<TenantRouteScopeFilter>();
+            .AddEndpointFilter<TenantRouteScopeFilter>()
+            .EnforceCapabilities();
 
         // List all schedules for the agent (with optional filtering)
         scheduleGroup.MapGet("", async (
@@ -52,6 +53,7 @@ public static class AdminScheduleEndpoints
         .Produces<List<ScheduleModel>>()
         .Produces(StatusCodes.Status500InternalServerError)
         .WithName("AdminGetAgentSchedules")
+        .RequireCapability(CapabilityActions.TenantSchedulesList)
         .WithSummary("Get all schedules for an agent")
         .WithDescription("Retrieves all schedules for the specified agent with optional filtering by workflow type, status, and search term.")
         ;
@@ -75,6 +77,7 @@ public static class AdminScheduleEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status404NotFound)
         .WithName("AdminGetAgentScheduleById")
+        .RequireCapability(CapabilityActions.TenantSchedulesGet)
         .WithSummary("Get a schedule by ID")
         .WithDescription("Retrieves detailed information about a specific schedule belonging to the agent. Provide scheduleId as a query parameter.")
         ;
@@ -105,6 +108,7 @@ public static class AdminScheduleEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status404NotFound)
         .WithName("AdminGetAgentScheduleUpcomingRuns")
+        .RequireCapability(CapabilityActions.TenantSchedulesUpcomingRuns)
         .WithSummary("Get upcoming runs for a schedule")
         .WithDescription("Retrieves the next scheduled executions for a specific schedule belonging to the agent. Provide scheduleId as a query parameter.")
         ;
@@ -135,6 +139,7 @@ public static class AdminScheduleEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status404NotFound)
         .WithName("AdminGetAgentScheduleHistory")
+        .RequireCapability(CapabilityActions.TenantSchedulesHistory)
         .WithSummary("Get schedule execution history")
         .WithDescription("Retrieves the execution history for a specific schedule belonging to the agent. Provide scheduleId as a query parameter.")
         ;
@@ -164,6 +169,7 @@ public static class AdminScheduleEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status404NotFound)
         .WithName("AdminPauseAgentSchedule")
+        .RequireCapability(CapabilityActions.TenantSchedulesPause)
         .WithSummary("Pause a schedule")
         .WithDescription("Pauses (suspends) a specific schedule belonging to the agent. Provide scheduleId as a query parameter and an optional note.")
         ;
@@ -193,6 +199,7 @@ public static class AdminScheduleEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status404NotFound)
         .WithName("AdminResumeAgentSchedule")
+        .RequireCapability(CapabilityActions.TenantSchedulesResume)
         .WithSummary("Resume a schedule")
         .WithDescription("Resumes (unpauses) a specific schedule belonging to the agent. Provide scheduleId as a query parameter and an optional note.")
         ;
@@ -221,6 +228,7 @@ public static class AdminScheduleEndpoints
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status404NotFound)
         .WithName("AdminDeleteAgentScheduleById")
+        .RequireCapability(CapabilityActions.TenantSchedulesDelete)
         .WithSummary("Delete a schedule by ID")
         .WithDescription("Deletes a specific schedule belonging to the agent. Provide scheduleId as a query parameter.")
         ;
@@ -238,6 +246,7 @@ public static class AdminScheduleEndpoints
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status500InternalServerError)
         .WithName("AdminDeleteAllAgentSchedules")
+        .RequireCapability(CapabilityActions.TenantSchedulesDeleteAll)
         .WithSummary("Delete all schedules for an agent")
         .WithDescription("Deletes all schedules associated with the specified agent. This operation cannot be undone.")
         ;
@@ -259,6 +268,7 @@ public static class AdminScheduleEndpoints
         .Produces<ScheduleCleanupResult>()
         .Produces(StatusCodes.Status500InternalServerError)
         .WithName("AdminDeleteSchedulesByActivation")
+        .RequireCapability(CapabilityActions.TenantSchedulesDeleteByActivation)
         .WithSummary("Delete all schedules for an agent activation")
         .WithDescription("Deletes all Temporal schedules matching the given agent and activation (idPostfix). This operation cannot be undone.")
         ;

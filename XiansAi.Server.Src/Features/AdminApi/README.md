@@ -41,6 +41,25 @@ Authorization: Bearer your-admin-api-key-here
 
 **Authorization header only.** The API key must be passed in the `Authorization: Bearer` header. Query parameters (e.g. `?apikey=`) are **not supported** because they can leak into reverse-proxy access logs, CDN logs, and browser history.
 
+### Optional: ID-token-only auth (`X-User-Token`, no API key)
+
+Any AdminApi client (a custom admin UI, a CLI, another service) may authenticate with no API
+key at all, presenting just a verified OIDC ID token in the `X-User-Token` header. This is
+opt-in and configured at runtime via `PUT /api/v1/admin/admin-console/oidc-config` (SysAdmin-only)
+— see
+[Admin Console OIDC](../../docs/AUTH_CONFIGURATION.md#admin-console-oidc-id-token-only-auth-for-adminapi)
+for the bootstrap flow and configuration schema. Unlike API-key auth, the caller may hold any
+tenant role (`TenantUser`, `TenantParticipant`, `TenantParticipantAdmin`, `TenantAdmin`, or
+`SysAdmin`) — an approved membership in one tenant is enough to authenticate; there is no
+API-key-owner identity to fall back to. What the caller may then *do* is decided per-route by the
+capability matrix (see `AdminCapabilityMatrixEndpoints`), not by this authentication step. When an
+API key **is** present, authorization
+works exactly as it always has (via `AdminRoleTenantResolver`) — `X-User-Token` is only consulted
+when there is no API key, it never modifies or upgrades an API-key-authenticated request. Two
+endpoint groups — `AdminMessagingEndpoints` and `AdminHeartbeatEndpoints` forward the raw API
+key downstream to agents via Temporal signals and are **not** reachable this way; they still
+require an API key.
+
 ### Authentication Implementation
 
 - **Authentication Scheme**: `AdminEndpointApiKeyScheme`

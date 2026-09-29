@@ -1,3 +1,4 @@
+using Features.AdminApi.Auth;
 using Shared.Auth;
 using Shared.Repositories;
 using Shared.Data.Models;
@@ -64,13 +65,14 @@ public static class AdminParticipantsEndpoints
     {
         var participantGroup = adminApiGroup.MapGroup("/participants")
             .WithTags("AdminAPI - Participants")
-            .RequireAuthorization("AdminEndpointAuthPolicy");
+            .RequireAuthorization("AdminEndpointAuthPolicy")
+            .EnforceCapabilities()
+            .WithMetadata(TenantOptionalForSysAdminMetadata.Instance);
 
         // Get participant by email (tenants + role per tenant)
         participantGroup.MapGet("/{email}", async (
             string email,
             HttpContext httpContext,
-            [FromServices] ITenantContext tenantContext,
             [FromServices] IUserRepository userRepository,
             [FromServices] ITenantRepository tenantRepository,
             [FromServices] LinkGenerator linkGenerator,
@@ -78,15 +80,6 @@ public static class AdminParticipantsEndpoints
         {
             try
             {
-                // Restrict to SysAdmin only - prevents cross-tenant information disclosure
-                if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
-                {
-                    logger.LogWarning("Access denied: Participants endpoint requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
-                    return Results.Problem(
-                        detail: "Access denied: Only system administrators can retrieve participant information across tenants",
-                        statusCode: StatusCodes.Status403Forbidden);
-                }
-
                 // Validate and sanitize email input (format, length) before use
                 var validatedEmail = ValidationHelpers.SanitizeAndValidateEmail(email);
                 if (validatedEmail == null)
@@ -130,6 +123,7 @@ public static class AdminParticipantsEndpoints
             }
         })
         .WithName("GetParticipantTenants")
+        .RequireCapability(CapabilityActions.GlobalParticipantsGetByEmail)
         .Produces<ParticipantTenantsResponse>()
 
         .Produces(StatusCodes.Status400BadRequest)
@@ -145,7 +139,6 @@ public static class AdminParticipantsEndpoints
         participantGroup.MapGet("/by-user-id/{userId}", async (
             string userId,
             HttpContext httpContext,
-            [FromServices] ITenantContext tenantContext,
             [FromServices] IUserRepository userRepository,
             [FromServices] ITenantRepository tenantRepository,
             [FromServices] LinkGenerator linkGenerator,
@@ -153,15 +146,6 @@ public static class AdminParticipantsEndpoints
         {
             try
             {
-                // Restrict to SysAdmin only - prevents cross-tenant information disclosure
-                if (tenantContext.UserRoles?.Contains(SystemRoles.SysAdmin) != true)
-                {
-                    logger.LogWarning("Access denied: Participants endpoint requires SysAdmin role. User: {UserId}", tenantContext.LoggedInUser);
-                    return Results.Problem(
-                        detail: "Access denied: Only system administrators can retrieve participant information across tenants",
-                        statusCode: StatusCodes.Status403Forbidden);
-                }
-
                 if (string.IsNullOrWhiteSpace(userId) || userId.Length > MaxUserIdLength)
                 {
                     logger.LogWarning("Invalid user id for participant lookup: {Length} characters", userId?.Length ?? 0);
@@ -192,6 +176,7 @@ public static class AdminParticipantsEndpoints
             }
         })
         .WithName("GetParticipantTenantsByUserId")
+        .RequireCapability(CapabilityActions.GlobalParticipantsGetByUserId)
         .Produces<ParticipantTenantsResponse>()
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status403Forbidden)

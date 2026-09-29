@@ -1227,10 +1227,25 @@ Result: Deletes only the prod activation version, keeps tenant-level and other a
             string tenantId,
             string agentName,
             string activationId,
-            [FromServices] IKnowledgeService knowledgeService) =>
+            [FromServices] IKnowledgeService knowledgeService,
+            [FromServices] IAgentRepository agentRepository,
+            [FromServices] ITenantContext tenantContext) =>
         {
             try
             {
+                var agent = await agentRepository.GetByNameInternalAsync(agentName, tenantId);
+                if (agent == null)
+                {
+                    return Results.Json(new { error = "NotFound", message = $"Agent '{agentName}' not found" }, statusCode: 404);
+                }
+
+                if (!CanModifyAgentResource(tenantContext, agent))
+                {
+                    return Results.Json(
+                        new { error = "Forbidden", message = "Access denied: insufficient permissions to delete this agent's knowledge" },
+                        statusCode: 403);
+                }
+
                 var deletedCount = await knowledgeService.DeleteAllByAgentAndActivationForTenantAsync(tenantId, agentName, activationId);
                 return Results.Ok(new { message = $"Deleted {deletedCount} knowledge item(s)", deletedCount });
             }
