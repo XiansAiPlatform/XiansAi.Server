@@ -755,7 +755,12 @@ public class AppIntegrationService : IAppIntegrationService
         if (existing.Configuration.TryGetValue("apiKeyId", out var apiKeyIdVal) && apiKeyIdVal != null)
         {
             var apiKeyId = apiKeyIdVal.ToString();
-            if (!string.IsNullOrEmpty(apiKeyId))
+            var credentialIsShared = !string.IsNullOrEmpty(apiKeyId) &&
+                (await _repository.GetByTenantAndPlatformAsync(tenantId, "builtin_webhook"))
+                .Any(webhook => webhook.Id != integrationId &&
+                    webhook.Configuration.TryGetValue("apiKeyId", out var otherApiKeyId) &&
+                    otherApiKeyId?.ToString() == apiKeyId);
+            if (!string.IsNullOrEmpty(apiKeyId) && !credentialIsShared)
             {
                 var revokeResult = await _apiKeyService.RevokeApiKeyAsync(apiKeyId, tenantId);
                 if (!revokeResult.IsSuccess)
