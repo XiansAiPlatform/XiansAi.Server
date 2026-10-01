@@ -118,18 +118,78 @@ expire_after: 2w 1d        # 2 weeks and 1 day
 
 ### Format Validation
 
-The format is validated by regex: `^((\\d+)\\s*([smhdw])\\s*)+$`
+The whole value must be one or more `<number><unit>` parts, optionally separated by whitespace
+(`^\s*(\d+[smhdw]\s*)+$`). The same rules apply to the yaml and to environment variable overrides, and
+the total must not exceed `int.MaxValue` seconds (about 68 years).
 
 **Valid Examples**:
 - `30d`
 - `12h`
 - `5d 6h`
+- `5d6h` (the space is optional)
 - `1w 2d 12h 30m`
 
 **Invalid Examples**:
 - `30 days` (use `30d`)
 - `12hours` (use `12h`)
-- `5d6h` (need space: `5d 6h`)
+- `5d,6h` (only whitespace may separate parts)
+- `-5d`, `5` (a unit is required and negatives are not allowed)
+
+## Overriding TTL Durations with Environment Variables
+
+The `expire_after` value of a TTL index can be overridden per deployment without editing the yaml.
+The variable name is built from the collection and the index name:
+
+```
+MongoIndexes__{collection}__{index_name}__ExpireAfter=<duration>
+```
+
+The value uses the same format as the yaml (`30d`, `12h`, `5d 6h`, `1w`).
+
+**Supported indexes** (fixed-duration TTL, where `expire_after` is the actual retention):
+
+| Environment variable | Yaml default |
+|---|---|
+| `MongoIndexes__logs__logs_ttl_created_at__ExpireAfter` | `15d` |
+| `MongoIndexes__usage_metrics__usage_metrics_ttl__ExpireAfter` | `90d` |
+| `MongoIndexes__webhook_deliveries__webhook_delivery_ttl__ExpireAfter` | `15d` |
+
+**Behavior**
+
+- Unset or empty: the yaml value is used.
+- Not a valid duration (or above `int.MaxValue` seconds): a warning is logged and the yaml value is used.
+- Read once at startup. A change takes effect on the next restart.
+- A changed value is treated like any other index change: the existing index is dropped and recreated
+  with the new duration. The new duration applies to every document already in the collection, so
+  shortening it deletes older documents shortly after the restart, and lengthening it does not bring back
+  documents that were already deleted. Removing the variable reverts to the yaml value (another recreate).
+- There is no minimum value; `0s` would expire every document. The person setting the variable is responsible.
+- On Cosmos DB the synchronizer does not modify existing indexes, so an override only takes effect when the
+  index is first created.
+- Indexes whose yaml value is `expire_after: 0s` (`conversation_message_ttl`, `documents_ttl`) expire documents
+  at their own `expires_at` timestamp. Overriding them through this mechanism is not supported.
+
+## Overriding Conversation Message Retention
+
+`conversation_message_ttl` (`expire_after: 0s`) deletes each message at the `expires_at` timestamp stored on
+it. That timestamp is set when the message is saved, so the retention window is configured in the server,
+not in the yaml:
+
+| Environment variable | Applies to | Default |
+|---|---|---|
+| `Messaging__HeartbeatRetention` | Heartbeat messages (incoming and outgoing) | `1h` |
+| `Messaging__MessageRetention` | All other messages | `180d` |
+
+The value uses the same format as above (`30d`, `12h`, `5d 6h`). Unset, empty or invalid values use the
+default (an invalid value also logs a warning). The settings are read once at startup.
+
+- Only messages saved after the restart are affected. Existing messages keep the `expires_at` they were given,
+  so lowering `MessageRetention` (for example from `180d` to `30d`) does not delete existing messages sooner,
+  and raising it does not extend messages that already carry an earlier `expires_at`. There is no automatic
+  backfill; shortening retention for existing data requires a one-off manual update of `expires_at`.
+- The same applies to documents, whose `expires_at` is set when the document is saved.
+- No index change is involved, so there is no index rebuild.
+- Feedback copies of a message keep the expiry of the message they were copied from.
 
 ## Adding New TTL Indexes
 

@@ -150,6 +150,8 @@ public class MessageService : IMessageService
     private readonly IActivationValidationService _activationValidationService;
     private readonly IIncomingOriginCache _incomingOriginCache;
     private readonly bool _validateActivation;
+    private readonly TimeSpan _heartbeatRetention;
+    private readonly TimeSpan _messageRetention;
 
     public MessageService(
         ILogger<MessageService> logger,
@@ -171,6 +173,8 @@ public class MessageService : IMessageService
         _activationValidationService = activationValidationService ?? throw new ArgumentNullException(nameof(activationValidationService));
         _incomingOriginCache = incomingOriginCache ?? throw new ArgumentNullException(nameof(incomingOriginCache));
         _validateActivation = configuration.GetValue("Messaging:ValidateActivation", defaultValue: true);
+        _heartbeatRetention = ConfigDuration.Get(configuration, "Messaging:HeartbeatRetention", logger) ?? TimeSpan.FromHours(1);
+        _messageRetention = ConfigDuration.Get(configuration, "Messaging:MessageRetention", logger) ?? TimeSpan.FromDays(180);
     }
 
     public async Task<ServiceResult<string>> ProcessHandoff(HandoffRequest request)
@@ -612,10 +616,10 @@ public class MessageService : IMessageService
         var normalizedScope = string.IsNullOrWhiteSpace(request.Scope) ? null : request.Scope.Trim();
 
         var now = DateTime.UtcNow;
-        // Heartbeat messages (incoming or outgoing) get short TTL (1h) to avoid database bloat
+        // Heartbeat messages (incoming or outgoing) get a short TTL (default 1h) to avoid database bloat
         var isHeartbeat = messageType == MessageType.Heartbeat ||
             string.Equals(request.Origin, "heartbeat", StringComparison.OrdinalIgnoreCase);
-        var expiresAt = isHeartbeat ? now.AddHours(1) : now.AddDays(180);
+        var expiresAt = now.Add(isHeartbeat ? _heartbeatRetention : _messageRetention);
 
         var message = new ConversationMessage
         {

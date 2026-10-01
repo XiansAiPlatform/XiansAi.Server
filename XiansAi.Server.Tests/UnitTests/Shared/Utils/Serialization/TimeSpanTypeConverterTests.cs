@@ -30,6 +30,9 @@ public class TimeSpanTypeConverterTests
         new object[] { "1d 12h", TimeSpan.FromDays(1) + TimeSpan.FromHours(12) },
         new object[] { "2w 3d 6h", TimeSpan.FromDays(17) + TimeSpan.FromHours(6) },
         new object[] { "10m 30s", TimeSpan.FromMinutes(10) + TimeSpan.FromSeconds(30) },
+        new object[] { "5d6h", TimeSpan.FromDays(5) + TimeSpan.FromHours(6) },
+        new object[] { "1d 1d", TimeSpan.FromDays(2) },
+        new object[] { "  5d  ", TimeSpan.FromDays(5) },
     };
 
     public static IEnumerable<object[]> ValidTimeSpanSerializationData => new List<object[]>
@@ -66,6 +69,10 @@ public class TimeSpanTypeConverterTests
     [InlineData("d1")]
     [InlineData("1d 2")]
     [InlineData("1w 2x")]
+    [InlineData("5d,6h")]
+    [InlineData("-5d")]
+    [InlineData("99999999999d")]
+    [InlineData("30000d")]
     public void ReadYaml_InvalidTimespan_ThrowsFormatException(string input)
     {
         Assert.Throws<FormatException>(() => DeserializeTimeSpan(input));
@@ -91,6 +98,62 @@ public class TimeSpanTypeConverterTests
     {
         var negativeTimeSpan = new Foo<TimeSpan> { TimeToLive = TimeSpan.FromSeconds(-1) };
         Assert.Throws<ArgumentOutOfRangeException>(() => _serializer.Serialize(negativeTimeSpan));
+    }
+
+    [Theory]
+    [MemberData(nameof(ValidTimeSpanData))]
+    public void TryParse_ValidTimespan_ReturnsSameResultAsYaml(string input, TimeSpan expected)
+    {
+        Assert.True(TimeSpanTypeConverter.TryParse(input, out var result));
+        Assert.Equal(expected, result);
+    }
+
+    [Fact]
+    public void TryParse_Zero_IsAccepted()
+    {
+        Assert.True(TimeSpanTypeConverter.TryParse("0s", out var result));
+        Assert.Equal(TimeSpan.Zero, result);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    [InlineData("abc")]
+    [InlineData("10x")]
+    [InlineData("1 d")]
+    [InlineData("d1")]
+    [InlineData("1d 2")]
+    [InlineData("-5d")]
+    [InlineData("99999999999d")]
+    [InlineData("30000d")]
+    [InlineData("5d,6h")]
+    [InlineData("5")]
+    [InlineData("2147483648s")]
+    public void TryParse_InvalidOrOutOfRange_ReturnsFalse(string? input)
+    {
+        Assert.False(TimeSpanTypeConverter.TryParse(input, out _));
+    }
+
+    [Theory]
+    [InlineData("30d")]
+    [InlineData("5d6h")]
+    [InlineData("1d 2")]
+    [InlineData("5d,6h")]
+    [InlineData("30000d")]
+    [InlineData("abc")]
+    public void ReadYaml_AndTryParse_AgreeOnAcceptance(string input)
+    {
+        var parsed = TimeSpanTypeConverter.TryParse(input, out var expected);
+
+        if (parsed)
+        {
+            Assert.Equal(expected, DeserializeTimeSpan(input));
+        }
+        else
+        {
+            Assert.Throws<FormatException>(() => DeserializeTimeSpan(input));
+        }
     }
 
     private object? DeserializeTimeSpan(string yaml)
