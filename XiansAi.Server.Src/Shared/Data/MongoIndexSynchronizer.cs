@@ -347,7 +347,7 @@ public class MongoIndexSynchronizer(
         IConfiguration configuration,
         ILogger logger)
     {
-        if (!definition.ExpireAfter.HasValue)
+        if (!definition.ExpireAfter.HasValue || definition.ExpireAfter.Value == TimeSpan.Zero)
         {
             return definition;
         }

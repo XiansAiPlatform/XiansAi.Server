@@ -34,6 +34,16 @@ public class MongoIndexExpireAfterOverrideTests
                 Keys = new Dictionary<string, string> { ["created_at"] = "asc" },
                 ExpireAfter = TimeSpan.FromDays(90)
             }
+        ],
+        ["conversation_message"] =
+        [
+            new MongoIndexDefinition
+            {
+                Name = "conversation_message_ttl",
+                Keys = new Dictionary<string, string> { ["expires_at"] = "asc" },
+                Background = true,
+                ExpireAfter = TimeSpan.Zero
+            }
         ]
     };
 
@@ -111,5 +121,13 @@ public class MongoIndexExpireAfterOverrideTests
         var result = Apply(Config(("MongoIndexes:logs:does_not_exist:ExpireAfter", "1d")));
 
         Assert.Equal(TimeSpan.FromDays(15), Find(result, "logs", "logs_ttl_created_at").ExpireAfter);
+    }
+
+    [Fact]
+    public void OverrideForZeroExpireAfterIndex_IsIgnored()
+    {
+        var result = Apply(Config(("MongoIndexes:conversation_message:conversation_message_ttl:ExpireAfter", "30d")));
+
+        Assert.Equal(TimeSpan.Zero, Find(result, "conversation_message", "conversation_message_ttl").ExpireAfter);
     }
 }
