@@ -32,6 +32,7 @@ public class TenantServiceMetadataTests
     private readonly Mock<IActivationRepository> _activationRepository = new();
     private readonly Mock<IActivationService> _activationService = new();
     private readonly Mock<IKnowledgeRepository> _knowledgeRepository = new();
+    private readonly Mock<ITenantAgentDeactivationQueue> _agentDeactivationQueue = new();
     private readonly TenantMetadataProtector _protector;
     private readonly TenantService _service;
 
@@ -76,7 +77,8 @@ public class TenantServiceMetadataTests
             _activationRepository.Object,
             _activationService.Object,
             _knowledgeRepository.Object,
-            _audit.Object);
+            _audit.Object,
+            _agentDeactivationQueue.Object);
     }
 
     private static Tenant CreateStoredTenant(List<TenantMetadata>? metadata = null)

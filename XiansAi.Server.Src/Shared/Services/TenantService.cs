@@ -96,6 +96,7 @@ public class TenantService : ITenantService
     private readonly IActivationService _activationService;
     private readonly IKnowledgeRepository _knowledgeRepository;
     private readonly IAuditLogService _auditLogService;
+    private readonly ITenantAgentDeactivationQueue _agentDeactivationQueue;
 
 
     public TenantService(
@@ -109,7 +110,8 @@ public class TenantService : ITenantService
         IActivationRepository activationRepository,
         IActivationService activationService,
         IKnowledgeRepository knowledgeRepository,
-        IAuditLogService auditLogService)
+        IAuditLogService auditLogService,
+        ITenantAgentDeactivationQueue agentDeactivationQueue)
     {
         _tenantRepository = tenantRepository ?? throw new ArgumentNullException(nameof(tenantRepository));
         _tenantCacheService = tenantCacheService ?? throw new ArgumentNullException(nameof(tenantCacheService));
@@ -122,6 +124,7 @@ public class TenantService : ITenantService
         _activationService = activationService ?? throw new ArgumentNullException(nameof(activationService));
         _knowledgeRepository = knowledgeRepository ?? throw new ArgumentNullException(nameof(knowledgeRepository));
         _auditLogService = auditLogService ?? throw new ArgumentNullException(nameof(auditLogService));
+        _agentDeactivationQueue = agentDeactivationQueue ?? throw new ArgumentNullException(nameof(agentDeactivationQueue));
     }
 
     private string EnsureTenantAccessOrThrow(string tenantId)
@@ -824,14 +827,13 @@ public class TenantService : ITenantService
                     ? $"Tenant '{existingTenant.Name}' ({existingTenant.TenantId}) was updated ({SummarizeTenantProfileChanges(request)})."
                     : null);
 
-            // A disabled tenant must not keep agents running: cancel their workflows and
-            // schedules. Reactivating the tenant does not bring them back. This also runs when the
-            // tenant is already disabled, so re-sending enabled=false retries anything left active.
-            var agentSummary = string.Empty;
+            // A disabled tenant must not keep agents running. Deactivating them makes slow Temporal
+            // calls, so the tenant is queued and its agents are deactivated in the background
+            // (TenantAgentDeactivationService) without holding this request; failures are logged.
+            // Re-sending enabled=false queues it again. Re-enabling does not bring agents back.
             if (result.IsSuccess && requestedEnabled == false)
             {
-                var deactivation = await DeactivateActivationsForTenantAsync(existingTenant.TenantId);
-                agentSummary = deactivation.Describe();
+                _agentDeactivationQueue.Enqueue(existingTenant.TenantId, _tenantContext.LoggedInUser);
             }
 
             if (result.IsSuccess && requestedEnabled.HasValue && enabledChanged)
@@ -855,7 +857,7 @@ public class TenantService : ITenantService
                     enabledEvent,
                     metadata,
                     existingTenant.TenantId,
-                    description: $"Tenant '{existingTenant.Name}' ({existingTenant.TenantId}) was {verb}. It was previously {(enabled ? "disabled" : "enabled")}.{agentSummary}");
+                    description: $"Tenant '{existingTenant.Name}' ({existingTenant.TenantId}) was {verb}. It was previously {(enabled ? "disabled" : "enabled")}.");
             }
 
             return result;
@@ -1089,75 +1091,6 @@ public class TenantService : ITenantService
             _logger.LogError(ex, "Error deleting tenant with ID {Id}", LogSanitizer.Sanitize(id));
             return ServiceResult<bool>.InternalServerError("An error occurred while deleting the tenant.");
         }
-    }
-
-    /// <summary>Outcome of deactivating a tenant's agents when it is disabled.</summary>
-    private readonly record struct TenantAgentDeactivation(int Deactivated, int Failed, bool LookupFailed)
-    {
-        /// <summary>Sentence appended to the tenant.disabled audit/webhook description; empty when nothing was active.</summary>
-        public string Describe() =>
-            LookupFailed
-                ? " Could not list its active agent activations, so none were deactivated; disable it again to retry."
-                : Deactivated + Failed == 0
-                    ? string.Empty
-                    : $" Deactivated {Deactivated} active agent activation(s){(Failed > 0 ? $" ({Failed} failed; disable it again to retry)" : "")}.";
-    }
-
-    /// <summary>
-    /// Deactivates every active activation of a tenant (cancels its workflows, deletes its
-    /// schedules and marks it inactive), one at a time. Best-effort — failures are logged and
-    /// counted, not thrown, so they never block disabling the tenant.
-    /// </summary>
-    private async Task<TenantAgentDeactivation> DeactivateActivationsForTenantAsync(string tenantId)
-    {
-        List<AgentActivation> activations;
-        try
-        {
-            activations = await _activationRepository.GetActiveActivationsAsync(tenantId);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to list active activations for disabled tenant {TenantId}; its agents were not deactivated", LogSanitizer.Sanitize(tenantId));
-            return new TenantAgentDeactivation(0, 0, LookupFailed: true);
-        }
-
-        if (activations == null || activations.Count == 0)
-        {
-            return new TenantAgentDeactivation(0, 0, LookupFailed: false);
-        }
-
-        var deactivated = 0;
-        var failed = 0;
-
-        foreach (var activation in activations)
-        {
-            try
-            {
-                var result = await _activationService.DeactivateAgentAsync(activation.Id, tenantId);
-                if (result.IsSuccess)
-                {
-                    deactivated++;
-                }
-                else
-                {
-                    failed++;
-                    _logger.LogWarning("Failed to deactivate activation {ActivationName} for agent {AgentName} in disabled tenant {TenantId}: {Error}",
-                        LogSanitizer.Sanitize(activation.Name), LogSanitizer.Sanitize(activation.AgentName), LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(result.ErrorMessage));
-                }
-            }
-            catch (Exception ex)
-            {
-                failed++;
-                _logger.LogWarning(ex, "Error deactivating activation {ActivationName} for agent {AgentName} in disabled tenant {TenantId}",
-                    LogSanitizer.Sanitize(activation.Name), LogSanitizer.Sanitize(activation.AgentName), LogSanitizer.Sanitize(tenantId));
-            }
-        }
-
-        _logger.LogInformation(
-            "Deactivated activations for disabled tenant {TenantId}: {Deactivated} deactivated, {Failed} failed",
-            LogSanitizer.Sanitize(tenantId), deactivated, failed);
-
-        return new TenantAgentDeactivation(deactivated, failed, LookupFailed: false);
     }
 
     /// <summary>

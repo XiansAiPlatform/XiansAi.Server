@@ -87,6 +87,11 @@ public static class SharedServices
         // TTL index on the files collection would orphan the chunk documents.
         services.AddHostedService<ExpiredMessageFileCleanupService>();
 
+        // Deactivates the agents of disabled tenants off the request path.
+        services.AddSingleton<TenantAgentDeactivationService>();
+        services.AddSingleton<ITenantAgentDeactivationQueue>(sp => sp.GetRequiredService<TenantAgentDeactivationService>());
+        services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<TenantAgentDeactivationService>());
+
         return services;
     }
 
