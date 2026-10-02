@@ -197,6 +197,18 @@ Tasks tabs.
 | Tenant tab: `"Tenant ID does not match any tenant where the user is an approved member"` | The typed tenant id is misspelled, or the signed-in account has no approved membership in it | Confirm the tenant id, or request approval for that membership |
 | Agents & Activations: Deployments section shows "You don't have access to this" | The signed-in user's role is `TenantParticipant`, which `tenant.agentDeployments.list` excludes by default | Expected for that role; the Activations section still populates. Request `TenantParticipantAdmin`/`TenantUser`/`TenantAdmin` if deployment visibility is required |
 
+## Token storage
+
+`useAuth.ts` uses the `oidc-client-ts` default, which keeps the signed-in user
+(including the ID token sent as `X-User-Token`) in `sessionStorage`. Any script running
+on the page can read it, so serve the app with a strict Content-Security-Policy.
+
+To keep tokens out of web storage, pass an in-memory `userStore` to `UserManager`
+(`new WebStorageStateStore({ store: new InMemoryWebStorage() })`). Leave `stateStore` at
+its default, since the login state must survive the redirect to the identity provider.
+The trade-off is that the session is lost on every page reload, which sends the user back
+through the identity provider, and token renewal becomes your responsibility.
+
 ## Code reference
 
 | File | Demonstrates |
