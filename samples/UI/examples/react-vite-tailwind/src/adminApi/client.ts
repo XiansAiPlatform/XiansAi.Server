@@ -167,8 +167,8 @@ export function createAdminApiClient(server: ServerConfig, identity: Identity) {
       return call<AdminTask>(`/tasks/by-id?taskId=${encodeURIComponent(taskId)}`);
     },
 
-    performAction(taskId: string, action: string, comment?: string): Promise<unknown> {
-      return call(`/tasks/actions?taskId=${encodeURIComponent(taskId)}`, {
+    performAction(taskId: string, action: string, comment?: string): Promise<void> {
+      return call<void>(`/tasks/actions?taskId=${encodeURIComponent(taskId)}`, {
         method: 'POST',
         body: JSON.stringify({ action, comment }),
       });

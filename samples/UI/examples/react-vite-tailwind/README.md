@@ -209,6 +209,16 @@ its default, since the login state must survive the redirect to the identity pro
 The trade-off is that the session is lost on every page reload, which sends the user back
 through the identity provider, and token renewal becomes your responsibility.
 
+## Token expiry
+
+The sample does not enable `automaticSilentRenew`. Once the ID token expires mid-session,
+requests fail with a 401 until the page is reloaded and the user re-authenticates. For
+real applications, set `automaticSilentRenew: true` on the `UserManager` settings in
+`oidcConfig.ts` instead of lengthening token lifetimes at the identity provider. Renewal
+uses a refresh token if the provider issues one (request the `offline_access` scope).
+Otherwise it uses a hidden iframe, which also needs a `silent_redirect_uri` page
+registered as a redirect URI with the provider.
+
 ## Code reference
 
 | File | Demonstrates |
