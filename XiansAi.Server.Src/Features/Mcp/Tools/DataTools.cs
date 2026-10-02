@@ -51,7 +51,7 @@ public sealed class DataTools(
     }
 
     [McpServerTool(Name = "list_data_types", ReadOnly = true)]
-    [Description("Discover saved data types in this activation. These are record categories, not JSON schemas.")]
+    [Description("Discover saved data types in this activation. These are case-sensitive record categories, not JSON schemas; reuse the exact returned value when saving to an existing type.")]
     public async Task<List<string>> ListDataTypes(McpTarget target)
     {
         await AuthorizeAsync(target, false);
@@ -59,9 +59,14 @@ public sealed class DataTools(
     }
 
     [McpServerTool(Name = "list_data_records", ReadOnly = true)]
-    [Description("List saved records of a data type in this activation, newest first. Dates must include a UTC offset; range at most 365 days. Skip is zero-based; limit at most 100.")]
-    public async Task<AdminDataListResponse> ListDataRecords(McpTarget target, string dataType, DateTimeOffset startDate,
-        DateTimeOffset endDate, int skip = 0, int limit = 20)
+    [Description("List saved records of an exact, case-sensitive data type from list_data_types, newest first. The key is the record label shown in Agent Studio; use returned exact IDs for deletion. Dates must include a UTC offset; range at most 365 days. Skip is zero-based; limit at most 100.")]
+    public async Task<AdminDataListResponse> ListDataRecords(
+        McpTarget target,
+        [Description("Exact, case-sensitive value returned by list_data_types.")] string dataType,
+        [Description("Inclusive range start with an explicit UTC offset.")] DateTimeOffset startDate,
+        [Description("Inclusive range end with an explicit UTC offset; range cannot exceed 365 days.")] DateTimeOffset endDate,
+        [Description("Zero-based number of records to skip.")] int skip = 0,
+        [Description("Number of records to return, from 1 to 100.")] int limit = 20)
     {
         await AuthorizeAsync(target, false);
         if (string.IsNullOrWhiteSpace(dataType)) throw new McpException("Data type is required.");
@@ -76,9 +81,13 @@ public sealed class DataTools(
     }
 
     [McpServerTool(Name = "save_data_record")]
-    [Description("Create a new record in this activation's Data Explorer. Content must be a string containing a JSON object, for example {\"title\":\"Report\"}. Does not overwrite existing records. ParticipantId is optional attribution, not an access boundary.")]
-    public async Task<JsonElement> SaveDataRecord(McpTarget target, string dataType, string content, string? key = null,
-        string? participantId = null)
+    [Description("Create a new Data Explorer record. Use a short, meaningful key because Agent Studio displays it as the record label. Data type names are case-sensitive; reuse the exact value from list_data_types when adding to an existing type. Content must be JSON object text. Every call creates a record; repeated type/key values create duplicates rather than overwrite. ParticipantId is optional attribution; omitting it leaves the record unattributed in Studio, and it is not an access boundary.")]
+    public async Task<JsonElement> SaveDataRecord(
+        McpTarget target,
+        [Description("Case-sensitive record category; reuse an exact list_data_types value when adding to an existing type.")] string dataType,
+        [Description("JSON object encoded as text.")] string content,
+        [Description("Short, meaningful record label displayed by Agent Studio; not a unique identifier.")] string? key = null,
+        [Description("Optional participant attribution displayed by Agent Studio; not an access boundary.")] string? participantId = null)
     {
         await AuthorizeAsync(target, true);
         if (string.IsNullOrWhiteSpace(dataType)) throw new McpException("Data type is required.");
@@ -110,7 +119,10 @@ public sealed class DataTools(
 
     [McpServerTool(Name = "delete_data_record", Destructive = true)]
     [Description("Permanently delete one record by exact ID from list_data_records. Set confirmed=true only after the user explicitly approves deletion.")]
-    public async Task<AdminDataDeleteRecordResponse> DeleteDataRecord(McpTarget target, string recordId, bool confirmed = false)
+    public async Task<AdminDataDeleteRecordResponse> DeleteDataRecord(
+        McpTarget target,
+        [Description("Exact record ID returned by list_data_records.")] string recordId,
+        [Description("Set true only after explicit user approval for permanent deletion.")] bool confirmed = false)
     {
         await AuthorizeAsync(target, true);
         RequireConfirmation(confirmed);
@@ -121,9 +133,13 @@ public sealed class DataTools(
     }
 
     [McpServerTool(Name = "delete_data_records", Destructive = true)]
-    [Description("Permanently delete at most 100 records of a data type in this activation within a date range (at most 365 days). Requests matching more than 100 records are rejected; narrow the date range. List records first and obtain explicit user approval before setting confirmed=true.")]
-    public async Task<AdminDataDeleteResponse> DeleteDataRecords(McpTarget target, string dataType, DateTimeOffset startDate,
-        DateTimeOffset endDate, bool confirmed = false)
+    [Description("Permanently delete every matching record, not only a displayed page, up to 100 records of an exact, case-sensitive data type from list_data_types. Dates must include a UTC offset; range at most 365 days. Requests matching more than 100 records are rejected; narrow the range. List records first and obtain explicit user approval before setting confirmed=true.")]
+    public async Task<AdminDataDeleteResponse> DeleteDataRecords(
+        McpTarget target,
+        [Description("Exact, case-sensitive value returned by list_data_types.")] string dataType,
+        [Description("Inclusive deletion range start with an explicit UTC offset.")] DateTimeOffset startDate,
+        [Description("Inclusive deletion range end with an explicit UTC offset; range cannot exceed 365 days.")] DateTimeOffset endDate,
+        [Description("Set true only after listing matches and receiving explicit user approval for permanent deletion.")] bool confirmed = false)
     {
         var completed = false;
         var deletedCount = 0;
