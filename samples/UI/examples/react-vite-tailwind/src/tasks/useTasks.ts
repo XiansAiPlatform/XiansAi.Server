@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AdminApiError, type AdminApiClient, type AdminTask } from '../adminApi/client';
 
 export interface TasksState {
@@ -21,22 +21,38 @@ export function useTasks(client: AdminApiClient | null): TasksState {
   const [error, setError] = useState<string | null>(null);
   const [errorStatus, setErrorStatus] = useState<number | undefined>(undefined);
 
+  const requestId = useRef(0);
+
   const refresh = useCallback(() => {
     if (!client) return;
+    const id = ++requestId.current;
+    const isCurrent = () => id === requestId.current;
     setLoading(true);
     setError(null);
     setErrorStatus(undefined);
     client
       .listTasks({ pageSize: 20 })
-      .then((result) => setTasks(result.tasks))
+      .then((result) => {
+        if (isCurrent()) setTasks(result.tasks);
+      })
       .catch((err) => {
+        if (!isCurrent()) return;
         setError(err instanceof Error ? err.message : String(err));
         setErrorStatus(err instanceof AdminApiError ? err.status : undefined);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        if (isCurrent()) setLoading(false);
+      });
   }, [client]);
 
   useEffect(refresh, [refresh]);
+
+  useEffect(
+    () => () => {
+      requestId.current++;
+    },
+    []
+  );
 
   const performAction = async (taskId: string, action: string, comment?: string) => {
     if (!client) return;

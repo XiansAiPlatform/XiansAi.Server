@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { AdminApiError, type Agent, type AdminApiClient, type AgentActivation } from '../adminApi/client';
 
 export interface AgentsState {
@@ -28,18 +28,24 @@ export function useAgentsAndActivations(client: AdminApiClient | null): AgentsSt
   const [activationsErrorStatus, setActivationsErrorStatus] = useState<number | undefined>(undefined);
   const [loading, setLoading] = useState(true);
 
+  const requestId = useRef(0);
+
   const refresh = useCallback(() => {
     if (!client) return;
+    const id = ++requestId.current;
+    const isCurrent = () => id === requestId.current;
     setLoading(true);
 
     const deployments = client
       .listAgentDeployments({ pageSize: 50 })
       .then((result) => {
+        if (!isCurrent()) return;
         setAgents(result.agents);
         setAgentsError(null);
         setAgentsErrorStatus(undefined);
       })
       .catch((err) => {
+        if (!isCurrent()) return;
         setAgentsError(err instanceof Error ? err.message : String(err));
         setAgentsErrorStatus(err instanceof AdminApiError ? err.status : undefined);
       });
@@ -47,19 +53,30 @@ export function useAgentsAndActivations(client: AdminApiClient | null): AgentsSt
     const activationsCall = client
       .listAgentActivations()
       .then((result) => {
+        if (!isCurrent()) return;
         setActivations(result);
         setActivationsError(null);
         setActivationsErrorStatus(undefined);
       })
       .catch((err) => {
+        if (!isCurrent()) return;
         setActivationsError(err instanceof Error ? err.message : String(err));
         setActivationsErrorStatus(err instanceof AdminApiError ? err.status : undefined);
       });
 
-    Promise.allSettled([deployments, activationsCall]).finally(() => setLoading(false));
+    Promise.allSettled([deployments, activationsCall]).finally(() => {
+      if (isCurrent()) setLoading(false);
+    });
   }, [client]);
 
   useEffect(refresh, [refresh]);
+
+  useEffect(
+    () => () => {
+      requestId.current++;
+    },
+    []
+  );
 
   return {
     agents,

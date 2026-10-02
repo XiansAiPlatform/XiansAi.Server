@@ -67,7 +67,11 @@ export function useAuth(): AuthState {
       participantId: user.profile.email ?? user.profile.sub,
       name: user.profile.name,
       email: user.profile.email,
-      getIdToken: async () => (await userManager.getUser())?.id_token ?? user.id_token ?? '',
+      getIdToken: async () => {
+        const token = (await userManager.getUser())?.id_token ?? user.id_token;
+        if (!token) throw new Error('No valid OIDC ID token available. Sign in again.');
+        return token;
+      },
     });
 
     // RP-initiated logout (see oidcConfig.ts for post_logout_redirect_uri).
