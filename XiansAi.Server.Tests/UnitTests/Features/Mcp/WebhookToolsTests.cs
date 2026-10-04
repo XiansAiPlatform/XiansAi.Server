@@ -41,6 +41,50 @@ public class WebhookToolsTests
     }
 
     [Fact]
+    public async Task ListRejectsDifferentTenant()
+    {
+        await Assert.ThrowsAsync<McpException>(() =>
+            Tools().ListWebhooks(_target with { TenantId = "other" }));
+
+        _permissions.VerifyNoOtherCalls();
+        _integrations.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task ListRequiresReadPermission()
+    {
+        _permissions.Setup(service => service.HasReadPermission("agent"))
+            .ReturnsAsync(ServiceResult<bool>.Success(false));
+
+        await Assert.ThrowsAsync<McpException>(() => Tools().ListWebhooks(_target));
+
+        _integrations.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task CreateRequiresWritePermission()
+    {
+        _permissions.Setup(service => service.HasWritePermission("agent"))
+            .ReturnsAsync(ServiceResult<bool>.Success(false));
+
+        await Assert.ThrowsAsync<McpException>(() =>
+            Tools().CreateWebhook(_target, "agent:workflow", "IssueCreated"));
+
+        _integrations.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task ListRejectsMissingAgent()
+    {
+        _agents.Setup(repository => repository.GetByNameAsync("agent", "tenant", "user", It.IsAny<string[]>()))
+            .ReturnsAsync((Agent?)null);
+
+        await Assert.ThrowsAsync<McpException>(() => Tools().ListWebhooks(_target));
+
+        _integrations.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task ListReturnsScopedConfigurationWithoutWebhookUrl()
     {
         _integrations.Setup(service => service.GetBuiltinWebhooksAsync("tenant", "activation", "agent"))
@@ -73,6 +117,17 @@ public class WebhookToolsTests
                 request.TimeoutInSeconds == 45), "tenant", "user"), Times.Once);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(301)]
+    public async Task CreateRejectsInvalidTimeout(int timeoutInSeconds)
+    {
+        await Assert.ThrowsAsync<McpException>(() =>
+            Tools().CreateWebhook(_target, "agent:workflow", "IssueCreated", timeoutInSeconds: timeoutInSeconds));
+
+        _integrations.VerifyNoOtherCalls();
+    }
+
     [Fact]
     public async Task DeleteRequiresConfirmation()
     {
@@ -87,6 +142,17 @@ public class WebhookToolsTests
         other.ActivationName = "other";
         _integrations.Setup(service => service.GetBuiltinWebhooksAsync("tenant", "activation", "agent"))
             .ReturnsAsync(ServiceResult<List<AppIntegrationResponse>>.Success([other]));
+
+        await Assert.ThrowsAsync<McpException>(() => Tools().DeleteWebhook(_target, "webhook-id", true));
+
+        _integrations.Verify(service => service.DeleteBuiltinWebhookAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteRejectsEmptyWebhookList()
+    {
+        _integrations.Setup(service => service.GetBuiltinWebhooksAsync("tenant", "activation", "agent"))
+            .ReturnsAsync(ServiceResult<List<AppIntegrationResponse>>.Success([]));
 
         await Assert.ThrowsAsync<McpException>(() => Tools().DeleteWebhook(_target, "webhook-id", true));
 

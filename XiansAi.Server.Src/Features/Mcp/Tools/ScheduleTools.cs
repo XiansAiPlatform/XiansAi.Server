@@ -143,7 +143,7 @@ public sealed class ScheduleTools(
     {
         var required = parameters.Count(parameter => !parameter.Optional);
         if (arguments.Length < required || arguments.Length > parameters.Count)
-            throw new McpException($"Workflow requires {required} to {parameters.Count} ordered arguments.");
+            throw new McpException($"Workflow requires between {required} and {parameters.Count} ordered arguments, inclusive.");
     }
 
     [McpServerTool(Name = "update_schedule_timing")]

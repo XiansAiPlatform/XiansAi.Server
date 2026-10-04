@@ -211,6 +211,9 @@ public class AppIntegrationService : IAppIntegrationService
             if (!string.IsNullOrEmpty(agentName) && !string.IsNullOrEmpty(activationName))
             {
                 integrations = await _repository.GetByAgentActivationAsync(tenantId, agentName, activationName);
+                if (!string.IsNullOrEmpty(platformId))
+                    integrations = integrations.Where(integration =>
+                        integration.PlatformId.Equals(platformId, StringComparison.OrdinalIgnoreCase)).ToList();
             }
             else if (!string.IsNullOrEmpty(platformId))
             {
@@ -756,10 +759,7 @@ public class AppIntegrationService : IAppIntegrationService
         {
             var apiKeyId = apiKeyIdVal.ToString();
             var credentialIsShared = !string.IsNullOrEmpty(apiKeyId) &&
-                (await _repository.GetByTenantAndPlatformAsync(tenantId, "builtin_webhook"))
-                .Any(webhook => webhook.Id != integrationId &&
-                    webhook.Configuration.TryGetValue("apiKeyId", out var otherApiKeyId) &&
-                    otherApiKeyId?.ToString() == apiKeyId);
+                await _repository.HasOtherBuiltinWebhookWithApiKeyAsync(tenantId, apiKeyId, integrationId);
             if (!string.IsNullOrEmpty(apiKeyId) && !credentialIsShared)
             {
                 var revokeResult = await _apiKeyService.RevokeApiKeyAsync(apiKeyId, tenantId);

@@ -29,8 +29,9 @@ public sealed class WebhookTools(
             tenantContext.LoggedInUser, tenantContext.UserRoles);
         var activationTask = activations.GetByNameAndAgentAsync(tenantContext.TenantId,
             target.AgentName, target.ActivationName);
-        await Task.WhenAll(agentTask, activationTask);
-        if (await agentTask is null || await activationTask is null)
+        var agent = await agentTask;
+        var activation = await activationTask;
+        if (agent is null || activation is null)
             throw new McpException("Agent or activation not found.");
     }
 
@@ -64,6 +65,7 @@ public sealed class WebhookTools(
         await AuthorizeAsync(target, true);
         if (string.IsNullOrWhiteSpace(workflowType)) throw new McpException("Workflow type is required.");
         if (string.IsNullOrWhiteSpace(webhookName)) throw new McpException("Webhook name is required.");
+        if (timeoutInSeconds is < 1 or > 300) throw new McpException("Timeout must be between 1 and 300 seconds.");
         var created = Result(await integrations.CreateBuiltinWebhookAsync(new CreateBuiltinWebhookRequest
         {
             AgentName = target.AgentName,
@@ -88,8 +90,9 @@ public sealed class WebhookTools(
         if (!confirmed) throw new McpException("Explicit user confirmation is required before permanent deletion.");
         var webhooks = Result(await integrations.GetBuiltinWebhooksAsync(
             tenantContext.TenantId, target.ActivationName, target.AgentName));
-        if (webhooks.All(webhook => webhook.Id != webhookId ||
-            webhook.AgentName != target.AgentName || webhook.ActivationName != target.ActivationName))
+        var matchingWebhook = webhooks.FirstOrDefault(webhook => webhook.Id == webhookId &&
+            webhook.AgentName == target.AgentName && webhook.ActivationName == target.ActivationName);
+        if (matchingWebhook is null)
             throw new McpException("Webhook not found in this activation. Use an exact ID from list_webhooks.");
         return Result(await integrations.DeleteBuiltinWebhookAsync(webhookId, tenantContext.TenantId));
     }

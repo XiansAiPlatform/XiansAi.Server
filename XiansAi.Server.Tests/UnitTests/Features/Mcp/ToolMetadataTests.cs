@@ -16,6 +16,7 @@ public class ToolMetadataTests
         var methods = ToolTypes.SelectMany(type => type.GetMethods(BindingFlags.Public | BindingFlags.Instance))
             .Where(method => method.GetCustomAttribute<McpServerToolAttribute>() is not null).ToArray();
 
+        // Update this count whenever an MCP tool is added or removed.
         Assert.Equal(18, methods.Length);
         foreach (var method in methods)
         {
