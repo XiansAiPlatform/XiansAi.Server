@@ -147,7 +147,10 @@ public class AdminAuthEndpointsTests : AdminApiIntegrationTestBase
         var response = await client.GetAsync("/api/v1/admin/tenants");
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
-        Assert.Contains("system administrators", await response.Content.ReadAsStringAsync());
+        Assert.Contains(
+            "Access denied: your roles do not permit 'tenants.list'",
+            await response.Content.ReadAsStringAsync(),
+            StringComparison.Ordinal);
     }
 
     [Fact]

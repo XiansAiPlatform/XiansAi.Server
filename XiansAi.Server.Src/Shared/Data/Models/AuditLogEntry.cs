@@ -60,7 +60,11 @@ public class AuditLogEntry : ModelValidatorBase<AuditLogEntry>
     public int AccessCount { get; set; }
 
     /// <summary>Hour-bucket key used to collapse concurrent inserts of the same session.</summary>
+    /// <remarks>
+    /// Null is omitted so the unique sparse index does not treat every keyless audit row as the same key.
+    /// </remarks>
     [BsonElement("idempotency_key")]
+    [BsonIgnoreIfNull]
     [JsonIgnore]
     public string? IdempotencyKey { get; set; }
 
