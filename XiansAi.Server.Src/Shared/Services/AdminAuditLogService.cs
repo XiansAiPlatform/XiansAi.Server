@@ -275,7 +275,9 @@ public class AdminAuditLogService : IAdminAuditLogService
         var activationName = string.IsNullOrWhiteSpace(request.ActivationName)
             ? null
             : request.ActivationName.Trim();
-        var now = DateTime.UtcNow;
+        // MongoDB stores datetimes in milliseconds. Floor before returning the row so a later
+        // read of the same document matches the timestamp from the create response.
+        var now = UtcNowMilliseconds();
 
         return new AuditLogEntry
         {
@@ -291,6 +293,12 @@ public class AdminAuditLogService : IAdminAuditLogService
             LastSeenAt = now,
             AccessCount = 1
         };
+    }
+
+    private static DateTime UtcNowMilliseconds()
+    {
+        var now = DateTime.UtcNow;
+        return new DateTime(now.Ticks - (now.Ticks % TimeSpan.TicksPerMillisecond), DateTimeKind.Utc);
     }
 
     private static string? ReadRequiredDetail(Dictionary<string, object?> details, string key)
