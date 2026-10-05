@@ -10,6 +10,8 @@ xUnit does not run classes in the same collection in parallel, so workflow ids s
 dotnet test --filter "FullyQualifiedName~AdminApiTemporal"
 ```
 
+[`run-suite.sh`](../../../XiansAi.Server.Tests/run-suite.sh) runs this collection only after the smoke gate passes, split across `TEMPORAL_SHARDS` processes (default 2). One process is still the command above.
+
 The Echo / Knowledge / Knowledge list / Knowledge SDK / Secret Vault / Secret Vault user scope / Secret Vault SDK / Document DB / Document DB SDK / Document context / Webhooks / Webhook SDK / Webhook context / Files / Workflow files / Custom workflow / Child workflows / Workflow handle / Schedules / Schedule SDK / Schedule create / HITL / HITL SDK / HITL conversation / HITL last task / Cross-agent / Activations SDK / Metrics / Logging / Messaging SDK / Tenant-scoped Xians.Lib cycles are documented separately: [Lib agent workflows](./lib-agent-workflows.md).
 
 ### Temporal CLI
