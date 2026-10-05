@@ -13,27 +13,18 @@ This folder is the canonical description of that suite. The test project [`READM
 
 ## Quick start
 
-From the repository root or `XiansAi.Server.Tests/`:
+From the repository root:
 
 ```bash
-dotnet test
+# Smoke gate, then unit, Mongo integration, and Temporal shards in parallel.
+./XiansAi.Server.Tests/run-suite.sh
 ```
+
+[`run-suite.sh`](../../../XiansAi.Server.Tests/run-suite.sh) runs [`SuiteSmokeTests`](../../../XiansAi.Server.Tests/Smoke/SuiteSmokeTests.cs) first (`Category=Smoke`: host `/health`, missing Admin key, one tenant round-trip, no Temporal). If that fails, the other lanes are not started. Otherwise unit tests, Mongo integration, and Temporal shards run as separate `dotnet test --filter` processes. `TEMPORAL_SHARDS` (default 2) is how many Temporal processes to start. Each process has its own local CLI, because classes in the `AdminApiTemporal` collection do not run in parallel inside one process.
+
+`dotnet test` with no filter still runs everything in one process. Lane filters and the single-test commands are in the [test project README](../../../XiansAi.Server.Tests/README.md).
 
 No environment variables or certificates are required for the default (Mongo-backed) suite.
-
-```bash
-# One test
-dotnet test --filter "FullyQualifiedName~CacheEndpointTests.SetAndGetCacheValue_ReturnsExpectedResult"
-
-# One class
-dotnet test --filter "FullyQualifiedName~KnowledgeEndpointsTests"
-
-# Admin API tests that start the local Temporal CLI
-dotnet test --filter "FullyQualifiedName~AdminApiTemporal"
-
-# HTML report
-dotnet test --logger "html;LogFileName=test-results.html"
-```
 
 The first Temporal run may download the Temporal CLI; later runs reuse the cache. See [Temporal tests](./temporal.md).
 
