@@ -59,7 +59,7 @@ public class AuditLogEntryTests
         Assert.True(sanitized.Details!.Count <= AuditLogEntry.MaxDetailEntries);
         Assert.Equal("scriptalert(x)/script", sanitized.Details["markup"]);
         Assert.Equal(AuditLogEntry.MaxDetailStringLength, ((string)sanitized.Details["long"]!).Length);
-        Assert.False(sanitized.Details.Keys.Any(key => key.Length > AuditLogEntry.MaxDetailKeyLength));
+        Assert.DoesNotContain(sanitized.Details.Keys, key => key.Length > AuditLogEntry.MaxDetailKeyLength);
     }
 
     private static AuditLogEntry CreateEntry(Dictionary<string, object?> details) => new()

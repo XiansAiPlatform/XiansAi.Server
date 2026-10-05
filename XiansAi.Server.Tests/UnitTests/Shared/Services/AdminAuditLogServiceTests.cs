@@ -1,6 +1,12 @@
+using System.Net;
+using System.Reflection;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
+using MongoDB.Bson;
 using MongoDB.Driver;
+using MongoDB.Driver.Core.Clusters;
+using MongoDB.Driver.Core.Connections;
+using MongoDB.Driver.Core.Servers;
 using Moq;
 using Shared.Auth;
 using Shared.Data.Models;
@@ -277,8 +283,15 @@ public class AdminAuditLogServiceTests
 
     private static MongoWriteException CreateDuplicateKeyException()
     {
-        var writeError = new WriteError(ServerErrorCategory.DuplicateKey, 11000, "duplicate key", new MongoDB.Bson.BsonDocument());
-        return new MongoWriteException(null, writeError, null, null);
+        // MongoDB.Driver 3.x exposes WriteError only through an internal constructor.
+        var writeError = (WriteError)Activator.CreateInstance(
+            typeof(WriteError),
+            BindingFlags.Instance | BindingFlags.NonPublic,
+            null,
+            [ServerErrorCategory.DuplicateKey, 11000, "duplicate key", new BsonDocument()],
+            null)!;
+        var connectionId = new ConnectionId(new ServerId(new ClusterId(), new DnsEndPoint("localhost", 27017)));
+        return new MongoWriteException(connectionId, writeError, null, null);
     }
 
     private static AdminAuditLogCreateRequest ViewAsRequest() => new()
