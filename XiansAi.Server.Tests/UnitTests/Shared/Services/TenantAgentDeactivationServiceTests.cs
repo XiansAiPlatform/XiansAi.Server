@@ -63,31 +63,18 @@ public class TenantAgentDeactivationServiceTests
     };
 
     private void SetActivations(params AgentActivation[] activations) =>
-        _activations.Setup(x => x.GetByTenantIdAsync(TenantId)).ReturnsAsync(activations.ToList());
+        _activations.Setup(x => x.GetActiveActivationsAsync(TenantId)).ReturnsAsync(activations.ToList());
 
     [Fact]
-    public async Task DeactivatesOnlyActiveAgents()
+    public async Task DeactivatesEveryActiveAgent()
     {
-        SetActivations(Activation("a1", true), Activation("a2", true), Activation("a3", false));
+        SetActivations(Activation("a1", true), Activation("a2", true));
 
         await _service.ProcessAsync(Request, CancellationToken.None);
 
         _activationService.Verify(x => x.DeactivateAgentAsync("a1", TenantId), Times.Once);
         _activationService.Verify(x => x.DeactivateAgentAsync("a2", TenantId), Times.Once);
-        _activationService.Verify(x => x.DeactivateAgentAsync("a3", It.IsAny<string>()), Times.Never);
-    }
-
-    [Fact]
-    public async Task InfersActiveFromTimestampsWhenFlagMissing()
-    {
-        var legacy = Activation("legacy", true);
-        legacy.Active = null;
-        legacy.ActivatedAt = DateTime.UtcNow;
-        SetActivations(legacy);
-
-        await _service.ProcessAsync(Request, CancellationToken.None);
-
-        _activationService.Verify(x => x.DeactivateAgentAsync("legacy", TenantId), Times.Once);
+        _activations.Verify(x => x.GetByTenantIdAsync(It.IsAny<string>()), Times.Never);
     }
 
     [Fact]
@@ -117,7 +104,7 @@ public class TenantAgentDeactivationServiceTests
     [Fact]
     public async Task NoActiveAgents_DoesNothing()
     {
-        SetActivations(Activation("a1", false));
+        SetActivations();
 
         await _service.ProcessAsync(Request, CancellationToken.None);
 

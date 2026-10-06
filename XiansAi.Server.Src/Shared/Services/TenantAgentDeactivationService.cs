@@ -101,9 +101,8 @@ public class TenantAgentDeactivationService : BackgroundService, ITenantAgentDea
             return;
         }
 
-        var activations = await services.GetRequiredService<IActivationRepository>()
-            .GetByTenantIdAsync(request.TenantId);
-        var active = activations.Where(a => a.IsActive).ToList();
+        var active = await services.GetRequiredService<IActivationRepository>()
+            .GetActiveActivationsAsync(request.TenantId);
         if (active.Count == 0)
         {
             _logger.LogInformation("No active agents to deactivate for tenant {TenantId}",
