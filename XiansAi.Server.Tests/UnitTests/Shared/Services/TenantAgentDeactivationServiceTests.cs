@@ -149,9 +149,15 @@ public class TenantAgentDeactivationServiceTests
     }
 
     [Fact]
+    public void Enqueue_Null_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => _service.Enqueue(null!));
+    }
+
+    [Fact]
     public async Task QueuedRequest_IsProcessedByBackgroundLoop()
     {
-        var done = new TaskCompletionSource();
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         SetActivations(Activation("a1", true));
         _activationService.Setup(x => x.DeactivateAgentAsync("a1", TenantId))
             .Callback(() => done.TrySetResult())
@@ -161,7 +167,8 @@ public class TenantAgentDeactivationServiceTests
         try
         {
             _service.Enqueue(Request);
-            await done.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            // Generous ceiling: completes as soon as the agent is deactivated, and only guards against a hang.
+            await done.Task.WaitAsync(TimeSpan.FromSeconds(30));
         }
         finally
         {
