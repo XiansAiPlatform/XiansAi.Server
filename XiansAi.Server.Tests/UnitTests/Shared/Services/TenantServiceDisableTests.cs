@@ -72,16 +72,13 @@ public class TenantServiceDisableTests
     }
 
     [Fact]
-    public async Task Disable_QueuesDeactivationAsCaller()
+    public async Task Disable_QueuesDeactivation()
     {
         var result = await _service.UpdateTenant(_stored.Id, new UpdateTenantRequest { Enabled = false });
 
         Assert.True(result.IsSuccess);
         _deactivationService.Verify(x => x.Enqueue(It.Is<TenantAgentDeactivationRequest>(r =>
-            r.TenantId == TenantId &&
-            r.RequestedBy == Admin &&
-            r.UserRoles.Contains(SystemRoles.SysAdmin) &&
-            r.UserType == UserType.UserToken)), Times.Once);
+            r.TenantId == TenantId)), Times.Once);
     }
 
     [Fact]

@@ -1,19 +1,13 @@
 using System.Threading.Channels;
-using Shared.Auth;
 using Shared.Repositories;
 using Shared.Utils;
 
 namespace Shared.Services;
 
 /// <summary>
-/// A request to deactivate every active agent of a disabled tenant. The caller's identity is
-/// captured so the deactivations run (and are audited) as the admin who disabled the tenant.
+/// A request to deactivate every active agent of a disabled tenant.
 /// </summary>
-public record TenantAgentDeactivationRequest(
-    string TenantId,
-    string RequestedBy,
-    string[] UserRoles,
-    UserType UserType);
+public record TenantAgentDeactivationRequest(string TenantId);
 
 /// <summary>
 /// Deactivates the agents of disabled tenants in the background.
@@ -91,12 +85,6 @@ public class TenantAgentDeactivationService : BackgroundService, ITenantAgentDea
     {
         using var scope = _scopeFactory.CreateScope();
         var services = scope.ServiceProvider;
-
-        var tenantContext = services.GetRequiredService<ITenantContext>();
-        tenantContext.TenantId = request.TenantId;
-        tenantContext.LoggedInUser = request.RequestedBy;
-        tenantContext.UserRoles = request.UserRoles;
-        tenantContext.UserType = request.UserType;
 
         var tenant = await services.GetRequiredService<ITenantRepository>()
             .GetByTenantIdAsync(request.TenantId, cancellationToken);

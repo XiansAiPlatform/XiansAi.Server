@@ -1,7 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
-using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Services;
@@ -21,15 +20,13 @@ public class TenantAgentDeactivationServiceTests
     private readonly Mock<ITenantRepository> _tenants = new();
     private readonly Mock<IActivationRepository> _activations = new();
     private readonly Mock<IActivationService> _activationService = new();
-    private readonly Mock<ITenantContext> _context = new();
     private readonly TenantAgentDeactivationService _service;
 
     private static readonly TenantAgentDeactivationRequest Request =
-        new(TenantId, Admin, new[] { SystemRoles.SysAdmin }, UserType.UserToken);
+        new(TenantId);
 
     public TenantAgentDeactivationServiceTests()
     {
-        _context.SetupAllProperties();
         _tenants.Setup(x => x.GetByTenantIdAsync(TenantId, It.IsAny<CancellationToken>()))
             .ReturnsAsync(Tenant(enabled: false));
         _activationService.Setup(x => x.DeactivateAgentAsync(It.IsAny<string>(), TenantId))
@@ -39,7 +36,6 @@ public class TenantAgentDeactivationServiceTests
         services.AddSingleton(_tenants.Object);
         services.AddSingleton(_activations.Object);
         services.AddSingleton(_activationService.Object);
-        services.AddSingleton(_context.Object);
 
         _service = new TenantAgentDeactivationService(
             services.BuildServiceProvider().GetRequiredService<IServiceScopeFactory>(),
@@ -92,19 +88,6 @@ public class TenantAgentDeactivationServiceTests
         await _service.ProcessAsync(Request, CancellationToken.None);
 
         _activationService.Verify(x => x.DeactivateAgentAsync("legacy", TenantId), Times.Once);
-    }
-
-    [Fact]
-    public async Task RunsAsTheRequestingAdmin()
-    {
-        SetActivations(Activation("a1", true));
-
-        await _service.ProcessAsync(Request, CancellationToken.None);
-
-        Assert.Equal(TenantId, _context.Object.TenantId);
-        Assert.Equal(Admin, _context.Object.LoggedInUser);
-        Assert.Equal(new[] { SystemRoles.SysAdmin }, _context.Object.UserRoles);
-        Assert.Equal(UserType.UserToken, _context.Object.UserType);
     }
 
     [Fact]

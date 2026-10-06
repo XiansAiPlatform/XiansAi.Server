@@ -854,11 +854,7 @@ public class TenantService : ITenantService
             // any agents a previous run failed to deactivate.
             if (result.IsSuccess && requestedEnabled == false)
             {
-                _agentDeactivationService.Enqueue(new TenantAgentDeactivationRequest(
-                    existingTenant.TenantId,
-                    _tenantContext.LoggedInUser,
-                    _tenantContext.UserRoles,
-                    _tenantContext.UserType));
+                _agentDeactivationService.Enqueue(new TenantAgentDeactivationRequest(existingTenant.TenantId));
             }
 
             return result;
