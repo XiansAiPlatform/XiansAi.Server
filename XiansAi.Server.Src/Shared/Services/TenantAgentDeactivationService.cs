@@ -130,7 +130,8 @@ public class TenantAgentDeactivationService : BackgroundService, ITenantAgentDea
                         LogSanitizer.Sanitize(request.TenantId), LogSanitizer.Sanitize(result.ErrorMessage));
                 }
             }
-            catch (Exception ex)
+            // Deliberately broad: one agent failing must not stop the rest. Cancellation still propagates.
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 _logger.LogWarning(ex, "Error deactivating activation {ActivationName} ({ActivationId}) of tenant {TenantId}",
                     LogSanitizer.Sanitize(activation.Name), LogSanitizer.Sanitize(activation.Id),
