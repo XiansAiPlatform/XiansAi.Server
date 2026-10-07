@@ -88,11 +88,10 @@ public sealed class WebhookTools(
     {
         await AuthorizeAsync(target, true);
         if (!confirmed) throw new McpException("Explicit user confirmation is required before permanent deletion.");
-        var webhooks = Result(await integrations.GetBuiltinWebhooksAsync(
-            tenantContext.TenantId, target.ActivationName, target.AgentName));
-        var matchingWebhook = webhooks.FirstOrDefault(webhook => webhook.Id == webhookId &&
-            webhook.AgentName == target.AgentName && webhook.ActivationName == target.ActivationName);
-        if (matchingWebhook is null)
+        var webhook = await integrations.GetIntegrationEntityByIdAsync(webhookId);
+        if (webhook is null || webhook.TenantId != tenantContext.TenantId ||
+            webhook.AgentName != target.AgentName || webhook.ActivationName != target.ActivationName ||
+            !webhook.PlatformId.Equals("builtin_webhook", StringComparison.OrdinalIgnoreCase))
             throw new McpException("Webhook not found in this activation. Use an exact ID from list_webhooks.");
         return Result(await integrations.DeleteBuiltinWebhookAsync(webhookId, tenantContext.TenantId));
     }

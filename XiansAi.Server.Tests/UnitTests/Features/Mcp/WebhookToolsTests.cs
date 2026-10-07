@@ -127,6 +127,22 @@ public class WebhookToolsTests
                 request.TimeoutInSeconds == 45), "tenant", "user"), Times.Once);
     }
 
+    [Fact]
+    public async Task CreateUsesSystemWhenLoggedInUserIsMissing()
+    {
+        _tenant.SetupGet(context => context.LoggedInUser).Returns((string)null!);
+        _agents.Setup(repository => repository.GetByNameAsync("agent", "tenant", null!, It.IsAny<string[]>()))
+            .ReturnsAsync(new Agent { Id = "agent-id", Name = "agent", Tenant = "tenant", CreatedBy = "user" });
+        _integrations.Setup(service => service.CreateBuiltinWebhookAsync(
+                It.IsAny<CreateBuiltinWebhookRequest>(), "tenant", "system"))
+            .ReturnsAsync(ServiceResult<AppIntegrationResponse>.Success(Webhook()));
+
+        await Tools().CreateWebhook(_target, "agent:workflow", "IssueCreated");
+
+        _integrations.Verify(service => service.CreateBuiltinWebhookAsync(
+            It.IsAny<CreateBuiltinWebhookRequest>(), "tenant", "system"), Times.Once);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(301)]
@@ -194,10 +210,10 @@ public class WebhookToolsTests
     [Fact]
     public async Task DeleteRequiresExactWebhookInTargetActivation()
     {
-        var other = Webhook();
+        var other = WebhookEntity();
         other.ActivationName = "other";
-        _integrations.Setup(service => service.GetBuiltinWebhooksAsync("tenant", "activation", "agent"))
-            .ReturnsAsync(ServiceResult<List<AppIntegrationResponse>>.Success([other]));
+        _integrations.Setup(service => service.GetIntegrationEntityByIdAsync("webhook-id"))
+            .ReturnsAsync(other);
 
         await Assert.ThrowsAsync<McpException>(() => Tools().DeleteWebhook(_target, "webhook-id", true));
 
@@ -205,10 +221,23 @@ public class WebhookToolsTests
     }
 
     [Fact]
-    public async Task DeleteRejectsEmptyWebhookList()
+    public async Task DeleteRequiresExactWebhookInTargetAgent()
     {
-        _integrations.Setup(service => service.GetBuiltinWebhooksAsync("tenant", "activation", "agent"))
-            .ReturnsAsync(ServiceResult<List<AppIntegrationResponse>>.Success([]));
+        var other = WebhookEntity();
+        other.AgentName = "other";
+        _integrations.Setup(service => service.GetIntegrationEntityByIdAsync("webhook-id"))
+            .ReturnsAsync(other);
+
+        await Assert.ThrowsAsync<McpException>(() => Tools().DeleteWebhook(_target, "webhook-id", true));
+
+        _integrations.Verify(service => service.DeleteBuiltinWebhookAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteRejectsMissingWebhook()
+    {
+        _integrations.Setup(service => service.GetIntegrationEntityByIdAsync("webhook-id"))
+            .ReturnsAsync((AppIntegration?)null);
 
         await Assert.ThrowsAsync<McpException>(() => Tools().DeleteWebhook(_target, "webhook-id", true));
 
@@ -218,8 +247,8 @@ public class WebhookToolsTests
     [Fact]
     public async Task DeleteUsesExactAuthorizedWebhookId()
     {
-        _integrations.Setup(service => service.GetBuiltinWebhooksAsync("tenant", "activation", "agent"))
-            .ReturnsAsync(ServiceResult<List<AppIntegrationResponse>>.Success([Webhook()]));
+        _integrations.Setup(service => service.GetIntegrationEntityByIdAsync("webhook-id"))
+            .ReturnsAsync(WebhookEntity());
         _integrations.Setup(service => service.DeleteBuiltinWebhookAsync("webhook-id", "tenant"))
             .ReturnsAsync(ServiceResult<bool>.Success(true));
 
@@ -229,8 +258,8 @@ public class WebhookToolsTests
     [Fact]
     public async Task DeleteReportsServiceFailure()
     {
-        _integrations.Setup(service => service.GetBuiltinWebhooksAsync("tenant", "activation", "agent"))
-            .ReturnsAsync(ServiceResult<List<AppIntegrationResponse>>.Success([Webhook()]));
+        _integrations.Setup(service => service.GetIntegrationEntityByIdAsync("webhook-id"))
+            .ReturnsAsync(WebhookEntity());
         _integrations.Setup(service => service.DeleteBuiltinWebhookAsync("webhook-id", "tenant"))
             .ReturnsAsync(ServiceResult<bool>.Failure("delete failed", StatusCode.BadRequest));
 
@@ -239,6 +268,24 @@ public class WebhookToolsTests
 
         Assert.Equal("delete failed", exception.Message);
     }
+
+    private static AppIntegration WebhookEntity() => new()
+    {
+        Id = "webhook-id",
+        TenantId = "tenant",
+        PlatformId = "builtin_webhook",
+        Name = "Issues",
+        AgentName = "agent",
+        ActivationName = "activation",
+        WorkflowId = "tenant:agent:agent:workflow:activation",
+        Configuration = [],
+        Secrets = new AppIntegrationSecrets(),
+        MappingConfig = new AppIntegrationMappingConfig(),
+        IsEnabled = true,
+        CreatedAt = DateTime.UtcNow,
+        UpdatedAt = DateTime.UtcNow,
+        CreatedBy = "user"
+    };
 
     private static AppIntegrationResponse Webhook() => new()
     {
