@@ -1,5 +1,4 @@
 using Features.Mcp.Tools;
-using Microsoft.AspNetCore.Http;
 using ModelContextProtocol;
 using Moq;
 using Shared.Auth;
@@ -85,6 +84,17 @@ public class WebhookToolsTests
     }
 
     [Fact]
+    public async Task ListRejectsMissingActivation()
+    {
+        _activations.Setup(repository => repository.GetByNameAndAgentAsync("tenant", "agent", "activation"))
+            .ReturnsAsync((AgentActivation?)null);
+
+        await Assert.ThrowsAsync<McpException>(() => Tools().ListWebhooks(_target));
+
+        _integrations.VerifyNoOtherCalls();
+    }
+
+    [Fact]
     public async Task ListReturnsScopedConfigurationWithoutWebhookUrl()
     {
         _integrations.Setup(service => service.GetBuiltinWebhooksAsync("tenant", "activation", "agent"))
@@ -128,6 +138,52 @@ public class WebhookToolsTests
         _integrations.VerifyNoOtherCalls();
     }
 
+    [Theory]
+    [InlineData("")]
+    [InlineData(null)]
+    public async Task CreateRejectsEmptyWorkflowType(string? workflowType)
+    {
+        await Assert.ThrowsAsync<McpException>(() =>
+            Tools().CreateWebhook(_target, workflowType!, "IssueCreated"));
+
+        _integrations.VerifyNoOtherCalls();
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData(null)]
+    public async Task CreateRejectsEmptyWebhookName(string? webhookName)
+    {
+        await Assert.ThrowsAsync<McpException>(() =>
+            Tools().CreateWebhook(_target, "agent:workflow", webhookName!));
+
+        _integrations.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task ListReportsServiceFailure()
+    {
+        _integrations.Setup(service => service.GetBuiltinWebhooksAsync("tenant", "activation", "agent"))
+            .ReturnsAsync(ServiceResult<List<AppIntegrationResponse>>.Failure("list failed", StatusCode.BadRequest));
+
+        var exception = await Assert.ThrowsAsync<McpException>(() => Tools().ListWebhooks(_target));
+
+        Assert.Equal("list failed", exception.Message);
+    }
+
+    [Fact]
+    public async Task CreateReportsServiceFailure()
+    {
+        _integrations.Setup(service => service.CreateBuiltinWebhookAsync(
+                It.IsAny<CreateBuiltinWebhookRequest>(), "tenant", "user"))
+            .ReturnsAsync(ServiceResult<AppIntegrationResponse>.Failure("create failed", StatusCode.BadRequest));
+
+        var exception = await Assert.ThrowsAsync<McpException>(() =>
+            Tools().CreateWebhook(_target, "agent:workflow", "IssueCreated"));
+
+        Assert.Equal("create failed", exception.Message);
+    }
+
     [Fact]
     public async Task DeleteRequiresConfirmation()
     {
@@ -168,6 +224,20 @@ public class WebhookToolsTests
             .ReturnsAsync(ServiceResult<bool>.Success(true));
 
         Assert.True(await Tools().DeleteWebhook(_target, "webhook-id", true));
+    }
+
+    [Fact]
+    public async Task DeleteReportsServiceFailure()
+    {
+        _integrations.Setup(service => service.GetBuiltinWebhooksAsync("tenant", "activation", "agent"))
+            .ReturnsAsync(ServiceResult<List<AppIntegrationResponse>>.Success([Webhook()]));
+        _integrations.Setup(service => service.DeleteBuiltinWebhookAsync("webhook-id", "tenant"))
+            .ReturnsAsync(ServiceResult<bool>.Failure("delete failed", StatusCode.BadRequest));
+
+        var exception = await Assert.ThrowsAsync<McpException>(() =>
+            Tools().DeleteWebhook(_target, "webhook-id", true));
+
+        Assert.Equal("delete failed", exception.Message);
     }
 
     private static AppIntegrationResponse Webhook() => new()

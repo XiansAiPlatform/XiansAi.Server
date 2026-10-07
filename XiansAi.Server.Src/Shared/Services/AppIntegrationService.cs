@@ -210,10 +210,8 @@ public class AppIntegrationService : IAppIntegrationService
 
             if (!string.IsNullOrEmpty(agentName) && !string.IsNullOrEmpty(activationName))
             {
-                integrations = await _repository.GetByAgentActivationAsync(tenantId, agentName, activationName);
-                if (!string.IsNullOrEmpty(platformId))
-                    integrations = integrations.Where(integration =>
-                        integration.PlatformId.Equals(platformId, StringComparison.OrdinalIgnoreCase)).ToList();
+                integrations = await _repository.GetByAgentActivationAsync(
+                    tenantId, agentName, activationName, platformId);
             }
             else if (!string.IsNullOrEmpty(platformId))
             {

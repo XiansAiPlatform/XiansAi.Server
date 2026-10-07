@@ -37,7 +37,11 @@ public interface IAppIntegrationRepository
     /// <summary>
     /// Get integrations for a specific agent activation
     /// </summary>
-    Task<List<AppIntegration>> GetByAgentActivationAsync(string tenantId, string agentName, string activationName);
+    Task<List<AppIntegration>> GetByAgentActivationAsync(
+        string tenantId,
+        string agentName,
+        string activationName,
+        string? platformId = null);
 
     /// <summary>
     /// Get all enabled integrations for a tenant
@@ -223,14 +227,22 @@ public class AppIntegrationRepository : IAppIntegrationRepository
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetAppIntegrationsByActivation");
     }
 
-    public async Task<List<AppIntegration>> GetByAgentActivationAsync(string tenantId, string agentName, string activationName)
+    public async Task<List<AppIntegration>> GetByAgentActivationAsync(
+        string tenantId,
+        string agentName,
+        string activationName,
+        string? platformId = null)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
+            var filter = Builders<AppIntegration>.Filter.And(
+                Builders<AppIntegration>.Filter.Eq(x => x.TenantId, tenantId),
+                Builders<AppIntegration>.Filter.Eq(x => x.AgentName, agentName),
+                Builders<AppIntegration>.Filter.Eq(x => x.ActivationName, activationName));
+            if (!string.IsNullOrEmpty(platformId))
+                filter &= Builders<AppIntegration>.Filter.Eq(x => x.PlatformId, platformId.ToLowerInvariant());
             var integrations = await _integrations
-                .Find(x => x.TenantId == tenantId && 
-                           x.AgentName == agentName && 
-                           x.ActivationName == activationName)
+                .Find(filter)
                 .SortByDescending(x => x.CreatedAt)
                 .ToListAsync();
             DecryptSecretsList(integrations);
