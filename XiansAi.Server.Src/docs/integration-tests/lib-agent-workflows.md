@@ -11,7 +11,7 @@ Local Temporal setup for the collection is in [Temporal tests](./temporal.md). S
 | Knowledge list | [`AdminApiTemporalKnowledgeListAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalKnowledgeListAgentLifecycleTests.cs) | `ListAsync` returns tenant knowledge for this agent only |
 | Knowledge SDK | [`AdminApiTemporalKnowledgeSdkAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalKnowledgeSdkAgentLifecycleTests.cs) | `GetAsync` / `ListAsync` from a Temporal **activity** and from **workflow** code (system `KnowledgeActivities` stub) |
 | Secret Vault | [`AdminApiTemporalSecretVaultAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalSecretVaultAgentLifecycleTests.cs) | Create/fetch/update/delete through a running agent; strict tenant / agent / participant / activation isolation; Admin never sees values |
-| Secret Vault user scope | [`AdminApiTemporalSecretVaultUserScopeAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalSecretVaultUserScopeAgentLifecycleTests.cs) | Admin-created tenant secrets and user secrets (tenant + participant, no agent); running agent fetch isolation; TenantAdmin cannot cross tenants; Admin never sees values |
+| Secret Vault user scope | [`AdminApiTemporalSecretVaultUserScopeAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalSecretVaultUserScopeAgentLifecycleTests.cs) | Admin-created and agent-written tenant secrets and user secrets (tenant + participant, no agent); running agent fetch isolation; explicit other tenant or participant is refused; TenantAdmin cannot cross tenants; Admin never sees values |
 | Secret Vault SDK | [`AdminApiTemporalSecretVaultSdkAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalSecretVaultSdkAgentLifecycleTests.cs) | TenantScope Create/Fetch/GetById/Update/List/Delete from a Temporal **activity**; List/Delete from **workflow** code (system `SecretVaultActivities` stub); Create/Fetch/GetById/Update refused in a workflow so plaintext never enters history |
 | Document DB | [`AdminApiTemporalDocumentDbAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalDocumentDbAgentLifecycleTests.cs) | Agent `SaveAsync` / `GetByKeyAsync`; Admin list/get/update/create; isolation by tenant, agent, activation, and participant |
 | Document DB SDK | [`AdminApiTemporalDocumentDbSdkAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalDocumentDbSdkAgentLifecycleTests.cs) | `QueryAsync`, `GetAsync(id)`, `UpdateAsync`, `ExistsAsync`, `DeleteAsync` / `DeleteManyAsync`; Query auto-scope hides another participant |
@@ -362,7 +362,7 @@ Values are proven only through the agent's `FetchByKeyAsync` + `ReplyAsync`. Par
 
 ## Agent under test: Secret Vault user scope
 
-Same host. Admin creates the two shapes Agent Studio stores: a tenant secret (`tenantId` only) and a user secret (`tenantId` + `userId`, no `agentId`). Chat `fetch tenant|user|agent {key}` calls `TenantScope()`, `TenantScope().ParticipantScope()`, or `TenantScope().AgentScope()`. The same key is also stored in a second tenant for the same participant. Replies are the value, or `missing:{scope}:{key}` so repeated misses stay distinct in history.
+Same host. Admin creates the two shapes Agent Studio stores: a tenant secret (`tenantId` only) and a user secret (`tenantId` + `userId`, no `agentId`). Chat `fetch tenant|user|agent {key}` calls `TenantScope()`, `TenantScope().ParticipantScope()`, or `TenantScope().AgentScope()`. Chat `create tenant|user` writes those same shapes from the agent. Chat `escape tenant|user {foreignId} {key}` names another tenant or participant and must be refused before any value is returned. The same key is also stored in a second tenant for the same participant. Replies are the value, `created:{scope}:{key}:user=…:agent=none`, or `missing:{scope}:{key}` so repeated misses stay distinct in history.
 
 ```text
 1. Owner participant TenantScope fetch → tenant value; ParticipantScope fetch → user value
@@ -374,6 +374,9 @@ Same host. Admin creates the two shapes Agent Studio stores: a tenant secret (`t
    Same key cannot be created again in that tenant for another user (409)
 6. Other tenant's TenantAdmin: create/list/fetch against the owner tenant is 403 or 401; get/update/delete by id is 403
    Owner TenantAdmin still reads metadata for its own secret
+7. Agent `create tenant` stores user=none, agent=none. Another participant and another agent read it; the other tenant does not; ParticipantScope does not
+8. Agent `create user` stores the owner participant and agent=none. That participant reads it from either agent; another participant and the other tenant do not; TenantScope does not
+9. `escape tenant` / `escape user` reply with the scope-mismatch error and never the other secret's value
 ```
 
 ## Agent under test: Secret Vault SDK

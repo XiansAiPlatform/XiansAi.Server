@@ -101,7 +101,7 @@ System Secret Vault agent authored with Xians.Lib. Chat commands create / fetch 
 
 ### `AdminApiTemporalSecretVaultUserScopeAgentLifecycleTests`
 
-System Secret Vault agent authored with Xians.Lib. Admin creates tenant-scoped and user-scoped secrets (the Agent Studio shapes). Chat fetch proves strict tenant and participant isolation, including the same participant in another tenant. TenantAdmin cannot read or change another tenant's secret. Admin responses never include the value. Same host: [Lib agent workflows](./lib-agent-workflows.md).
+System Secret Vault agent authored with Xians.Lib. Admin creates tenant-scoped and user-scoped secrets (the Agent Studio shapes), and the agent writes the same two shapes. Chat fetch proves strict tenant and participant isolation, including the same participant in another tenant. Naming another tenant or participant is refused. TenantAdmin cannot read or change another tenant's secret. Admin responses never include the value. Same host: [Lib agent workflows](./lib-agent-workflows.md).
 
 ### `AdminApiTemporalSecretVaultSdkAgentLifecycleTests`
 
