@@ -27,6 +27,15 @@ public sealed class TemporalFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        _environment = await StartAdditionalServerAsync();
+    }
+
+    /// <summary>
+    /// Starts another local Temporal server with the same namespace and search attributes
+    /// as the collection fixture. Used when a test assigns a tenant its own cluster.
+    /// </summary>
+    public static Task<WorkflowEnvironment> StartAdditionalServerAsync()
+    {
         var options = new WorkflowEnvironmentStartLocalOptions
         {
             Namespace = "default",
@@ -40,7 +49,7 @@ public sealed class TemporalFixture : IAsyncLifetime
             DevServerOptions = CreateDevServerOptions()
         };
 
-        _environment = await WorkflowEnvironment.StartLocalAsync(options);
+        return WorkflowEnvironment.StartLocalAsync(options);
     }
 
     public async Task DisposeAsync()
