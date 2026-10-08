@@ -19,6 +19,11 @@ public static class EmailVerificationEvaluator
 
     public static EmailVerificationResult Evaluate(EmailVerificationRule? rule, JsonWebToken jwt)
     {
+        if (rule == null && ClaimMatches(jwt, "email_verified", "false"))
+        {
+            return new(false, null, "provider marked the email unverified");
+        }
+
         if (rule == null || rule.AllowUnverifiedEmail)
         {
             return new(true, OidcTokenInspector.GetEmail(jwt), "email verification not required");

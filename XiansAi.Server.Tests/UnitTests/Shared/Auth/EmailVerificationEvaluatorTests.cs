@@ -37,6 +37,41 @@ public class EmailVerificationEvaluatorTests
         Assert.Equal("a@b.com", result.Email);
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData("false")]
+    [InlineData("0")]
+    public void NoRule_RefusesWhenProviderMarksTheEmailUnverified(object emailVerified)
+    {
+        var result = EmailVerificationEvaluator.Evaluate(
+            null, TokenWith(("email", "a@b.com"), ("email_verified", emailVerified)));
+
+        Assert.False(result.Admitted);
+        Assert.Null(result.Email);
+        Assert.Equal("provider marked the email unverified", result.Reason);
+    }
+
+    [Fact]
+    public void NoRule_AdmitsWhenEmailVerifiedIsTrue()
+    {
+        var result = EmailVerificationEvaluator.Evaluate(
+            null, TokenWith(("email", "a@b.com"), ("email_verified", true)));
+
+        Assert.True(result.Admitted);
+        Assert.Equal("a@b.com", result.Email);
+    }
+
+    [Fact]
+    public void AllowUnverifiedEmail_AdmitsEvenWhenProviderMarksTheEmailUnverified()
+    {
+        var rule = new EmailVerificationRule { AllowUnverifiedEmail = true };
+
+        var result = EmailVerificationEvaluator.Evaluate(
+            rule, TokenWith(("email", "a@b.com"), ("email_verified", false)));
+
+        Assert.True(result.Admitted);
+    }
+
     [Fact]
     public void AllowUnverifiedEmail_AdmitsWithoutChecks()
     {

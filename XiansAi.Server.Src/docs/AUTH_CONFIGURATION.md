@@ -360,12 +360,13 @@ log line `the email fallback was refused for {UserId}: {Reason}` names the faili
 `UserId` matches directly is never affected.
 
 > **Recommended: set `emailVerification` on every admin-console provider.** The block is optional so
-> that existing configs keep working, but without it the fallback trusts whatever email the token
-> carries. That includes an unverified `email`, and also `preferred_username` or `upn` when no email
-> claim is present. Anyone who can get a token from the provider with an admin's address in one of
+> that existing configs keep working. Without it the fallback refuses only a token that carries
+> `email_verified: false`. Otherwise it trusts whatever email the token carries, including
+> `preferred_username` or `upn` when no email claim is present. Anyone who can get a token from the provider with an admin's address in one of
 > those claims signs in as that admin, SysAdmin included. Typical cases:
 >
-> - A Keycloak realm with self-registration and no email verification.
+> - A provider with self-registration that issues unverified emails without an `email_verified`
+>   claim.
 > - An Entra provider registered for a tenant you do not fully control, such as a partner or
 >   customer tenant, whose admins can set any user's `mail` attribute.
 >
