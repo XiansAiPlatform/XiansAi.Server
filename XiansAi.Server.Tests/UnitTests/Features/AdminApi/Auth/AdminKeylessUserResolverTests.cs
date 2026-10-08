@@ -41,12 +41,13 @@ public class AdminKeylessUserResolverTests
         new(_oidcValidator.Object, _userRepo.Object, _tenantCache.Object,
             NullLogger<AdminKeylessUserResolver>.Instance);
 
-    private void SetupValidToken(string? email = Email, bool emailVerified = true) =>
+    private void SetupValidToken(string? email = Email, EmailVerificationResult? emailVerification = null) =>
         _oidcValidator
             .Setup(x => x.ValidateAsync(AdminKeylessUserResolver.AdminConsolePseudoTenant, "raw-token"))
             .ReturnsAsync(OidcValidationResult.Ok(
                 "provider|" + ProviderUserId, ProviderUserId, "https://login.example.com",
-                email, "Test User", emailVerified: emailVerified));
+                email, "Test User",
+                emailVerification: emailVerification ?? new EmailVerificationResult(true, email, "email verification not required")));
 
     private static User MakeUser(
         string userId, bool isSysAdmin = false, bool isLockedOut = false,
@@ -164,13 +165,9 @@ public class AdminKeylessUserResolverTests
     }
 
     [Fact]
-    public async Task ResolveAsync_DoesNotAttemptEmailFallback_WhenProviderDidNotAssertEmailVerified()
+    public async Task ResolveAsync_DoesNotAttemptEmailFallback_WhenEmailVerificationRefusesTheEmail()
     {
-        // Security: an unverified email is just whatever the caller typed into the provider's
-        // signup form. Using it to authenticate as an existing account would let a misconfigured
-        // or malicious provider registered for admin-console impersonate anyone by asserting a
-        // matching (but unverified) address.
-        SetupValidToken(emailVerified: false);
+        SetupValidToken(emailVerification: new EmailVerificationResult(false, null, "claim check failed: xms_edov"));
         _userRepo.Setup(x => x.GetByUserIdAsync(ProviderUserId)).ReturnsAsync((User?)null);
 
         var result = await BuildResolver().ResolveAsync("raw-token", tenantIdFromRequest: null);
@@ -178,6 +175,50 @@ public class AdminKeylessUserResolverTests
         Assert.False(result.Success);
         Assert.Equal("User is not registered on this platform", result.ErrorMessage);
         _userRepo.Verify(x => x.GetAllByUserEmailAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_DoesNotAttemptEmailFallback_WhenValidatorReportedNoEmailVerification()
+    {
+        _oidcValidator
+            .Setup(x => x.ValidateAsync(AdminKeylessUserResolver.AdminConsolePseudoTenant, "raw-token"))
+            .ReturnsAsync(OidcValidationResult.Ok(
+                "provider|" + ProviderUserId, ProviderUserId, "https://login.example.com", Email, "Test User"));
+        _userRepo.Setup(x => x.GetByUserIdAsync(ProviderUserId)).ReturnsAsync((User?)null);
+
+        var result = await BuildResolver().ResolveAsync("raw-token", tenantIdFromRequest: null);
+
+        Assert.False(result.Success);
+        _userRepo.Verify(x => x.GetAllByUserEmailAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_LooksUpTheVerifiedEmail_NotTheDisplayEmail()
+    {
+        SetupValidToken(email: "upn-value@example.com",
+            emailVerification: new EmailVerificationResult(true, Email, "verified email"));
+        _userRepo.Setup(x => x.GetByUserIdAsync(ProviderUserId)).ReturnsAsync((User?)null);
+        var matched = MakeUser("admin-created-id", tenantRoles: (TenantA, true, new[] { "TenantUser" }));
+        _userRepo.Setup(x => x.GetAllByUserEmailAsync(Email)).ReturnsAsync(new List<User> { matched });
+
+        var result = await BuildResolver().ResolveAsync("raw-token", tenantIdFromRequest: null);
+
+        Assert.True(result.Success);
+        Assert.Equal("admin-created-id", result.CanonicalUserId);
+        _userRepo.Verify(x => x.GetAllByUserEmailAsync("upn-value@example.com"), Times.Never);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_IgnoresEmailVerification_WhenSubjectMatchesDirectly()
+    {
+        SetupValidToken(emailVerification: new EmailVerificationResult(false, null, "claim check failed: xms_edov"));
+        _userRepo.Setup(x => x.GetByUserIdAsync(ProviderUserId))
+            .ReturnsAsync(MakeUser(ProviderUserId, tenantRoles: (TenantA, true, new[] { "TenantUser" })));
+
+        var result = await BuildResolver().ResolveAsync("raw-token", tenantIdFromRequest: null);
+
+        Assert.True(result.Success);
+        Assert.Equal(ProviderUserId, result.CanonicalUserId);
     }
 
     [Fact]

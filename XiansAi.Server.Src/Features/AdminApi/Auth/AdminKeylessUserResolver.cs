@@ -119,9 +119,10 @@ public sealed class AdminKeylessUserResolver : IAdminKeylessUserResolver
         var providerUserId = validation.ProviderUserId;
 
         var user = await _userRepository.GetByUserIdAsync(providerUserId);
-        if (user == null && !string.IsNullOrEmpty(validation.Email) && validation.EmailVerified)
+        var emailVerification = validation.EmailVerification;
+        if (user == null && emailVerification is { Admitted: true } && !string.IsNullOrEmpty(emailVerification.Email))
         {
-            var matches = await _userRepository.GetAllByUserEmailAsync(validation.Email);
+            var matches = await _userRepository.GetAllByUserEmailAsync(emailVerification.Email);
             if (matches.Count > 1)
             {
                 _logger.LogWarning(
@@ -140,11 +141,11 @@ public sealed class AdminKeylessUserResolver : IAdminKeylessUserResolver
 
         if (user == null)
         {
-            if (!string.IsNullOrEmpty(validation.Email) && !validation.EmailVerified)
+            if (emailVerification is { Admitted: false })
             {
                 _logger.LogWarning(
-                    "X-User-Token validated but the provider did not assert email_verified, so the email fallback was not attempted for {UserId}",
-                    LogSanitizer.RedactUserId(providerUserId));
+                    "X-User-Token validated but the email fallback was refused for {UserId}: {Reason}",
+                    LogSanitizer.RedactUserId(providerUserId), LogSanitizer.Sanitize(emailVerification.Reason));
             }
 
             _logger.LogWarning("X-User-Token validated but no platform user exists for {UserId}",
