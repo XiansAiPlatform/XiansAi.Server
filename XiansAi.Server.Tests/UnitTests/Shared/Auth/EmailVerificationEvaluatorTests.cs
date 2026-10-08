@@ -189,6 +189,19 @@ public class EmailVerificationEvaluatorTests
         Assert.Equal("first@b.com", result.Email);
     }
 
+    [Theory]
+    [InlineData("emailAddress")]
+    [InlineData("signInNames.emailAddress")]
+    public void VerifyClaims_ReadOtherEmailClaimNames(string emailClaim)
+    {
+        var result = EmailVerificationEvaluator.Evaluate(
+            Require(("email_verified", true)),
+            TokenWith((emailClaim, " First@B.com "), ("email_verified", true)));
+
+        Assert.True(result.Admitted);
+        Assert.Equal("first@b.com", result.Email);
+    }
+
     [Fact]
     public void TrustedClaim_AdmitsCaseInsensitively_WithTheTokenEmail()
     {
@@ -198,6 +211,18 @@ public class EmailVerificationEvaluatorTests
 
         Assert.True(result.Admitted);
         Assert.Equal("a@b.com", result.Email);
+    }
+
+    [Fact]
+    public void TrustedClaim_NormalizesTheEmail()
+    {
+        var rule = new EmailVerificationRule { TrustedClaim = "tid", TrustedValues = [TenantGuid] };
+
+        var result = EmailVerificationEvaluator.Evaluate(
+            rule, TokenWith(("email", "  User@Example.COM  "), ("tid", TenantGuid)));
+
+        Assert.True(result.Admitted);
+        Assert.Equal("user@example.com", result.Email);
     }
 
     [Fact]

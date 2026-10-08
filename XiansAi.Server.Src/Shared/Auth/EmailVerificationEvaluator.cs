@@ -26,7 +26,7 @@ public static class EmailVerificationEvaluator
 
         if (rule == null || rule.AllowUnverifiedEmail)
         {
-            return new(true, OidcTokenInspector.GetEmail(jwt), "email verification not required");
+            return new(true, Normalize(OidcTokenInspector.GetEmail(jwt)), "email verification not required");
         }
 
         var verifyClaims = rule.VerifyClaims ?? [];
@@ -68,7 +68,7 @@ public static class EmailVerificationEvaluator
 
         if (ClaimValues(jwt, trustedClaim!).Any(value => trustedValues.Contains(value, StringComparer.OrdinalIgnoreCase)))
         {
-            return new(true, OidcTokenInspector.GetEmail(jwt), "trusted " + trustedClaim);
+            return new(true, Normalize(OidcTokenInspector.GetEmail(jwt)), "trusted " + trustedClaim);
         }
 
         var emailNote = verifyClaims.Count > 0 ? "email not verified and " : "";
@@ -95,15 +95,18 @@ public static class EmailVerificationEvaluator
     {
         foreach (var claimType in VerifiedEmailClaims)
         {
-            var value = ClaimValues(jwt, claimType).FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+            var value = Normalize(ClaimValues(jwt, claimType).FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)));
             if (value != null)
             {
-                return value.Trim().ToLowerInvariant();
+                return value;
             }
         }
 
         return null;
     }
+
+    private static string? Normalize(string? email) =>
+        string.IsNullOrWhiteSpace(email) ? null : email.Trim().ToLowerInvariant();
 
     // A JSON array claim surfaces as one claim per element.
     private static IEnumerable<string> ClaimValues(JsonWebToken jwt, string claimType) =>
