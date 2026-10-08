@@ -335,16 +335,89 @@ string, including a domain they don't own. Registering each supported tenant's r
 that risk entirely: the exact-match issuer check already guarantees the token came from a tenant an
 admin explicitly chose to trust.
 
-`upn` is not included in a v2.0 ID token by default — request it as an optional claim in the Azure
-app registration (Token configuration → Add optional claim → ID → `upn`). Matching on `email`
-instead avoids that extra step, as long as `xms_edov` is still required.
+If the resolved claim doesn't match any `User.UserId`, `AdminKeylessUserResolver` falls back to an
+exact match on the token's email. It refuses rather than guesses if more than one account shares
+that email. The fallback is what lets users added by email (whose `UserId` is a generated id) sign
+in, since no claim in their token can match that id.
 
-If the resolved claim still doesn't match any `User.UserId`, `AdminKeylessUserResolver` falls back
-to an exact match on the token's own verified email (the same pattern `AdminRoleTenantResolver`
-uses for legacy API keys) — refusing outright, rather than guessing, if more than one account
-shares that email. This covers the common case without needing `UserIdClaim` at all: no single
-claim value is guaranteed to already match a stored `User.UserId`, since that depends entirely on
-how the account was originally provisioned.
+#### Require verified email (nOAuth mitigation)
+
+Some providers issue an email the user does not own. For example, in Entra ID, the `email` claim comes from the
+user's `mail` attribute, which any tenant admin can set to any address. If the admin console accepts
+users from tenants you do not control, an attacker can set `mail = victim@yourcompany.com` in their
+own tenant and the email fallback would sign them in as the victim.
+
+Each provider can restrict the fallback with an `emailVerification` block. With the block, the email
+is used only if **either**:
+
+1. **Verified email.** The token has an `email` (or B2C `emails`, `signInNames.emailAddress`,
+   `emailAddress`) claim and every `verifyClaims` entry matches. The lookup uses exactly that address.
+2. **Trusted value.** The token's `trustedClaim` is one of `trustedValues`, for example `tid` set to
+   your own Entra tenant id. The lookup uses the token's email.
+
+Otherwise the fallback is skipped, the caller gets "User is not registered on this platform", and the
+log line `the email fallback was refused for {UserId}: {Reason}` names the failing check. A user whose
+`UserId` matches directly is never affected.
+
+> **Recommended: set `emailVerification` on every admin-console provider.** The block is optional so
+> that existing configs keep working, but without it the fallback trusts whatever email the token
+> carries. That includes an unverified `email`, and also `preferred_username` or `upn` when no email
+> claim is present. Anyone who can get a token from the provider with an admin's address in one of
+> those claims signs in as that admin, SysAdmin included. Typical cases:
+>
+> - A Keycloak realm with self-registration and no email verification.
+> - An Entra provider registered for a tenant you do not fully control, such as a partner or
+>   customer tenant, whose admins can set any user's `mail` attribute.
+>
+> Leave the block out only when the provider alone guarantees that every email it issues belongs to
+> the user, for example a single-tenant Entra authority for your own tenant or a Keycloak realm with
+> registration disabled. Setting `allowUnverifiedEmail: true` has the same effect as leaving the block
+> out, so use it only in those cases too.
+
+```json
+"providers": {
+  "microsoft": {
+    "authority": "https://login.microsoftonline.com/organizations/v2.0",
+    "expectedAudience": ["your-client-app-microsoft-client-id"],
+    "emailVerification": {
+      "verifyClaims": [{ "claim": "xms_edov", "value": true }],
+      "trustedClaim": "tid",
+      "trustedValues": ["<your-tenant-guid>"]
+    }
+  }
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `allowUnverifiedEmail` | `true` turns the check off while keeping the block. Defaults to `false`. |
+| `verifyClaims` | `claim`/`value` pairs that must all match. |
+| `trustedClaim` | Optional. The claim to compare against `trustedValues`. |
+| `trustedValues` | Optional. Accepted values for `trustedClaim`, compared case-insensitively. |
+
+Matching rules: claim names are case-sensitive and a missing claim never matches. A `true`/`false`
+value also matches `"true"`, `"1"`, `"false"` and `"0"`. If the token claim is an array, any element
+may match. A block with neither `verifyClaims` nor both trusted fields, or a `verifyClaims` entry
+without a claim or value, is invalid and refuses every email fallback for that provider.
+
+| Provider | Recommended `verifyClaims` | Provider-side setup |
+| --- | --- | --- |
+| Entra ID | `xms_edov` = `true` | App registration → Token configuration → Add optional claim → ID token: add `email` and `xms_edov`. If `xms_edov` is not offered, add it to the manifest under `optionalClaims.idToken`. |
+| Google | `email_verified` = `true` | Request the `email` scope. For Google Workspace, `trustedClaim: "hd"` with your domains also works. |
+| Keycloak | `email_verified` = `true` | Include the `email` scope. |
+| Azure AD B2C | Depends on the policy | B2C issues no standard verification claim. Use `trustedClaim` (for example `idp` or `tid`) or a claim your policy emits. |
+
+`xms_edov` ("email domain owner verified") is `true` when the email's domain is verified by the
+user's own tenant, or the account is a Microsoft personal, Google or one-time-passcode account. See
+Microsoft's [optional claims reference](https://learn.microsoft.com/en-us/entra/identity-platform/optional-claims-reference).
+
+**Choose claims the user cannot change.** The server does not check which claims you name. Only use
+claims the identity provider sets. Never use `email`, `emails`, `upn`, `preferred_username`,
+`unique_name`, `name`, `given_name`, `family_name`, or any attribute users or their tenant admins can
+edit. A check on one of these proves nothing and lets an attacker straight through.
+
+`emailVerification` is read only by the admin-console pseudo-tenant. A real tenant's OIDC config
+accepts the block but the User API ignores it.
 
 **A caller authenticated this way may hold any tenant role** — `SysAdmin`, `TenantAdmin`,
 `TenantUser`, `TenantParticipant`, or `TenantParticipantAdmin` — as long as they are an *approved*

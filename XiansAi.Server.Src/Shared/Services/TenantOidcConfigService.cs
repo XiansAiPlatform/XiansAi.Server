@@ -30,6 +30,31 @@ public class OidcProviderRule
     public bool? RequireHttpsMetadata { get; set; }
     public List<CustomClaimCheck>? AdditionalClaims { get; set; }
     public Dictionary<string, object>? ProviderSpecificSettings { get; set; }
+
+    /// <summary>
+    /// When the token's email may be used to find a user whose record is not keyed on this
+    /// provider's subject. Unset allows any email. See <see cref="Shared.Auth.EmailVerificationEvaluator"/>.
+    /// </summary>
+    public EmailVerificationRule? EmailVerification { get; set; }
+}
+
+/// <summary>
+/// Present means verification is required unless <see cref="AllowUnverifiedEmail"/> is true.
+/// The email is accepted when every <see cref="VerifyClaims"/> entry matches, or when
+/// <see cref="TrustedClaim"/> holds one of <see cref="TrustedValues"/>.
+/// </summary>
+public class EmailVerificationRule
+{
+    public bool AllowUnverifiedEmail { get; set; }
+    public List<EmailVerificationClaim>? VerifyClaims { get; set; }
+    public string? TrustedClaim { get; set; }
+    public List<string>? TrustedValues { get; set; }
+}
+
+public class EmailVerificationClaim
+{
+    public string Claim { get; set; } = string.Empty;
+    public object? Value { get; set; }
 }
 
 public class CustomClaimCheck
