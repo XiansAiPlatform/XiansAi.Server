@@ -12,7 +12,7 @@ dotnet test --filter "FullyQualifiedName~AdminApiTemporal"
 
 [`run-suite.sh`](../../../XiansAi.Server.Tests/run-suite.sh) runs this collection only after the smoke gate passes, split across `TEMPORAL_SHARDS` processes (default 2). One process is still the command above.
 
-The Echo / Knowledge / Knowledge list / Knowledge SDK / Secret Vault / Secret Vault user scope / Secret Vault SDK / Document DB / Document DB SDK / Document context / Webhooks / Webhook SDK / Webhook context / Files / Workflow files / Custom workflow / Child workflows / Workflow handle / Schedules / Schedule SDK / Schedule create / HITL / HITL SDK / HITL conversation / HITL last task / Cross-agent / Activations SDK / Metrics / Logging / Messaging SDK / Tenant-scoped Xians.Lib cycles are documented separately: [Lib agent workflows](./lib-agent-workflows.md).
+The Echo / Knowledge / Knowledge list / Knowledge SDK / Secret Vault / Secret Vault user scope / Secret Vault SDK / Document DB / Document DB SDK / Document context / Webhooks / Webhook SDK / Webhook context / Files / Workflow files / Custom workflow / Child workflows / Workflow handle / Schedules / Schedule SDK / Schedule create / HITL / HITL SDK / HITL conversation / HITL last task / Cross-agent / Activations SDK / Metrics / Logging / Messaging SDK / Tenant-scoped / Tenant Temporal Xians.Lib cycles are documented separately: [Lib agent workflows](./lib-agent-workflows.md).
 
 ### Temporal CLI
 
@@ -36,7 +36,7 @@ When the factory receives a `TemporalFixture` it:
 - Leaves `ITemporalGatewayService` and `IActivationCleanupService` as the real implementations
 - Makes `ITenantContext.GetTemporalConfigAsync()` return the fixture host and namespace
 
-That last mock matters: tenant Temporal config in Mongo is not used for these tests; traffic always hits the local CLI.
+That mock keeps certificate settings and any caller of `GetTemporalConfigAsync` on the collection server. `TemporalGatewayService` reads the tenant Temporal repository itself, so a saved override still routes that origin tenant's workflows to the configured server. The tenant Temporal cluster cycle starts a second local server for that case.
 
 ## Stub worker vs Xians.Lib
 
@@ -45,7 +45,7 @@ Two ways a workflow actually runs:
 | Mechanism | When to use | Types |
 | --- | --- | --- |
 | In-process stub | Admin HTTP against a known workflow type without the SDK | [`StubAgentWorkflow`](../../../XiansAi.Server.Tests/TestUtils/StubAgentWorkflow.cs), [`StubReplyActivities`](../../../XiansAi.Server.Tests/TestUtils/StubReplyActivities.cs), [`TemporalTestWorker`](../../../XiansAi.Server.Tests/TestUtils/TemporalTestWorker.cs) |
-| Xians.Lib (Echo, Knowledge, Knowledge list, Knowledge SDK, Secret Vault, Secret Vault SDK, Document DB, Document DB SDK, Document context, Webhooks, Webhook SDK, Webhook context, Files, Workflow files, Custom workflows, Child workflows, Workflow handle, Schedules, Schedule SDK, Schedule create, HITL, HITL SDK, HITL conversation, HITL last task, Cross-agent, Activations SDK, Metrics, Logging, Messaging SDK, Tenant-scoped) | Full system-template (or tenant-scoped) lifecycle the way production agents are authored | [Lib agent workflows](./lib-agent-workflows.md) |
+| Xians.Lib (Echo, Knowledge, Knowledge list, Knowledge SDK, Secret Vault, Secret Vault SDK, Document DB, Document DB SDK, Document context, Webhooks, Webhook SDK, Webhook context, Files, Workflow files, Custom workflows, Child workflows, Workflow handle, Schedules, Schedule SDK, Schedule create, HITL, HITL SDK, HITL conversation, HITL last task, Cross-agent, Activations SDK, Metrics, Logging, Messaging SDK, Tenant-scoped, Tenant Temporal) | Full system-template (or tenant-scoped) lifecycle the way production agents are authored | [Lib agent workflows](./lib-agent-workflows.md) |
 
 The stub worker listens on a tenant queue `{tenantId}:{workflowType}`. Start it with `StartWorkerAsync(ChatTaskQueue(tenantId, flow.WorkflowType))` from the Temporal base class.
 
@@ -202,6 +202,10 @@ System file-from-workflow agent authored with Xians.Lib. Chat starts a custom wo
 ### `AdminApiTemporalTenantScopedAgentLifecycleTests`
 
 Tenant-scoped Lib agent (`IsTemplate = false`). No template deploy: the worker listens on `{tenantId}:{workflowType}` and Admin chat uses that queue. Template/system-queue chat stays on Echo. Same host: [Lib agent workflows](./lib-agent-workflows.md).
+
+### `AdminApiTemporalTenantTemporalClusterAgentLifecycleTests`
+
+Partner tenant assigned a second local Temporal server through `PUT .../temporal-config`. The partner's own activation and a customer's deployment of that template both execute on the partner cluster and are absent from the platform cluster. A customer-owned agent with no override stays on the platform cluster. Same host: [Lib agent workflows](./lib-agent-workflows.md).
 
 ## Seeding Temporal tests
 
