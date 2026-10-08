@@ -24,7 +24,7 @@ Local Temporal setup for the collection is in [Temporal tests](./temporal.md). S
 | Custom workflows | [`AdminApiTemporalCustomWorkflowAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalCustomWorkflowAgentLifecycleTests.cs) | `DefineCustom` + `XiansContext.Workflows` `ExecuteAsync` / `StartAsync` / `SignalAsync`; `Activable=true` Onboarding starts on Admin activate; Admin list/get/types/cancel; uniqueKey IDs; UseExisting on a running Approval; tenant GET isolation |
 | Child workflows | [`AdminApiTemporalChildWorkflowAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalChildWorkflowAgentLifecycleTests.cs) | Parent `[WorkflowRun]` `ExecuteAsync` / `StartAsync` / `SignalAsync` (Temporal **child** path); Custom workflows cycle covers the same APIs from a chat **activity** (client path) |
 | Workflow handle | [`AdminApiTemporalWorkflowHandleAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalWorkflowHandleAgentLifecycleTests.cs) | Client-only `SignalWithStartAsync`; typed `GetWorkflowHandleAsync` + `QueryAsync` + `SignalAsync`; second SignalWithStart hits the running execution |
-| Schedules | [`AdminApiTemporalScheduleAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalScheduleAgentLifecycleTests.cs) | Activable Setup `CreateIfNotExistsAsync` on Tick; interval fires; Admin list/get/history/pause/resume/delete; tenant list isolation |
+| Schedules | [`AdminApiTemporalScheduleAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalScheduleAgentLifecycleTests.cs) | Activable Setup `CreateIfNotExistsAsync` on Tick; interval fires; Admin list/get/history/pause/resume/delete; tenant list isolation; deactivate deletes that activation's schedule and leaves another activation's schedule |
 | Schedule SDK | [`AdminApiTemporalScheduleSdkAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalScheduleSdkAgentLifecycleTests.cs) | `ScheduleCollection` CreateIfNotExists/Exists/List/Get/Pause/Unpause/Trigger/Delete from a Temporal **activity** and from **workflow** code (system `ScheduleActivities` stub); Admin history confirms Trigger; GET 404 after Delete |
 | Schedule create | [`AdminApiTemporalScheduleCreateAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalScheduleCreateAgentLifecycleTests.cs) | Strict `CreateAsync` throws if it exists; activity-only `DescribeAsync` (paused); Admin GET 404 after Delete |
 | HITL tasks | [`AdminApiTemporalHitlTaskAgentLifecycleTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalHitlTaskAgentLifecycleTests.cs) | `EnableTasks` Review `StartTaskAsync` / `GetResultAsync`; Admin list/get/draft/metadata/action; timeout completes without an action; tenant GET isolation |
@@ -57,6 +57,7 @@ dotnet test --filter "FullyQualifiedName~CustomWorkflowAgent_DefineCustom_StartE
 dotnet test --filter "FullyQualifiedName~ChildWorkflowAgent_ParentRun_ExecuteStartAndSignal"
 dotnet test --filter "FullyQualifiedName~WorkflowHandleAgent_SignalWithStart_QueryAndComplete"
 dotnet test --filter "FullyQualifiedName~SchedulerAgent_ActivableSetup_CreatesScheduleAndAdminOps"
+dotnet test --filter "FullyQualifiedName~SchedulerAgent_Deactivate_DeletesOnlyThatActivationSchedule"
 dotnet test --filter "FullyQualifiedName~ScheduleSdkAgent_CollectionOps"
 dotnet test --filter "FullyQualifiedName~ScheduleCreateAgent_StrictCreate_DescribeFromActivity"
 dotnet test --filter "FullyQualifiedName~HitlTaskAgent_StartTaskWait_AdminProgressAndTimeout"
@@ -563,6 +564,7 @@ Same host as the other Lib cycles. Setup is `Activable = true` and Tick is not �
 5. POST resume → status Running
 6. Other tenant list does not include the owner's schedule id
 7. DELETE by-id → GET by-id 404
+8. Two activations each get `{tenant}:{agent}:{activation}:tick`. Deactivate front-desk → that schedule GET 404; back-office schedule remains
 ```
 
 Admin HTTP used beyond the shared deploy/activate helpers:
@@ -574,6 +576,7 @@ Admin HTTP used beyond the shared deploy/activate helpers:
 - `POST .../schedules/pause?scheduleId=…`
 - `POST .../schedules/resume?scheduleId=…`
 - `DELETE .../schedules/by-id?scheduleId=…`
+- `POST /api/v1/admin/tenants/{tenant}/agentActivations/{id}/deactivate` (deletes schedules whose search attributes match that activation)
 
 Stub schedule create/pause/resume/delete (no Lib agent) remains [`AdminApiTemporalScheduleAndTaskTests`](../../../XiansAi.Server.Tests/IntegrationTests/AdminApi/AdminApiTemporalScheduleAndTaskTests.cs).
 

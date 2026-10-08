@@ -149,7 +149,7 @@ System workflow-handle agent authored with Xians.Lib. Chat (activity) `SignalWit
 
 ### `AdminApiTemporalScheduleAgentLifecycleTests`
 
-System scheduling agent authored with Xians.Lib. Activable Setup creates an interval schedule that starts Tick. Admin list/get/history/pause/resume/delete that schedule; another tenant's list does not include it. Same host: [Lib agent workflows](./lib-agent-workflows.md). Stub schedule HTTP without Lib is still `AdminApiTemporalScheduleAndTaskTests`.
+System scheduling agent authored with Xians.Lib. Activable Setup creates an interval schedule that starts Tick. Admin list/get/history/pause/resume/delete that schedule; another tenant's list does not include it. Deactivating one activation deletes its schedule and leaves a second activation's schedule. Same host: [Lib agent workflows](./lib-agent-workflows.md). Stub schedule HTTP without Lib is still `AdminApiTemporalScheduleAndTaskTests`.
 
 ### `AdminApiTemporalScheduleSdkAgentLifecycleTests`
 
