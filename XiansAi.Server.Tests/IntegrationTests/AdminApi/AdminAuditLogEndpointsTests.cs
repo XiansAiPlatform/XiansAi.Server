@@ -36,6 +36,27 @@ public class AdminAuditLogEndpointsTests : AdminApiIntegrationTestBase
         var activationNames = await GetAsync($"/api/v1/admin/tenants/{tenantId}/audit-logs/activation-names");
         Assert.Equal(HttpStatusCode.OK, activationNames.StatusCode);
         Assert.Contains("front-desk", await activationNames.Content.ReadAsStringAsync());
+
+        var actions = await GetAsync($"/api/v1/admin/tenants/{tenantId}/audit-logs/actions");
+        Assert.Equal(HttpStatusCode.OK, actions.StatusCode);
+        Assert.Contains("agent.access.changed", await actions.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task ListTenantAuditLogs_FilteredByAction_ReturnsOnlyMatchingEntries()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+        await SeedAuditLogAsync(tenantId, "agent.access.changed", _adminUserId!);
+        await SeedAuditLogAsync(tenantId, "secret.deleted", _adminUserId!);
+
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/audit-logs?action=secret.deleted");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("secret.deleted", body);
+        Assert.DoesNotContain("agent.access.changed", body);
     }
 
     [Fact]
