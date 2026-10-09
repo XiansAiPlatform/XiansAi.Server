@@ -26,6 +26,7 @@ public interface IAuditLogRepository
     Task<(IEnumerable<AuditLogEntry> entries, long totalCount)> GetFilteredAsync(
         string tenantId,
         string? performedBy = null,
+        string? action = null,
         string? activationName = null,
         bool onlyWithoutActivation = false,
         DateTime? startTime = null,
@@ -38,6 +39,9 @@ public interface IAuditLogRepository
 
     /// <summary>Distinct, non-empty activation names recorded for the tenant, sorted alphabetically.</summary>
     Task<IEnumerable<string>> GetDistinctActivationNamesAsync(string tenantId);
+
+    /// <summary>Distinct, non-empty actions recorded for the tenant, sorted alphabetically.</summary>
+    Task<IEnumerable<string>> GetDistinctActionsAsync(string tenantId);
 }
 
 public class AuditLogRepository : IAuditLogRepository
@@ -45,6 +49,7 @@ public class AuditLogRepository : IAuditLogRepository
     private const string CollectionName = "audit_logs";
     private const string PerformedByCacheKeyPrefix = "auditlog:performed-by:";
     private const string ActivationNamesCacheKeyPrefix = "auditlog:activation-names:";
+    private const string ActionsCacheKeyPrefix = "auditlog:actions:";
     private const int MaxDistinctOptions = 200;
     private static readonly TimeSpan DistinctOptionsCacheDuration = TimeSpan.FromMinutes(2);
 
@@ -96,6 +101,7 @@ public class AuditLogRepository : IAuditLogRepository
     public async Task<(IEnumerable<AuditLogEntry> entries, long totalCount)> GetFilteredAsync(
         string tenantId,
         string? performedBy = null,
+        string? action = null,
         string? activationName = null,
         bool onlyWithoutActivation = false,
         DateTime? startTime = null,
@@ -108,6 +114,11 @@ public class AuditLogRepository : IAuditLogRepository
         if (!string.IsNullOrWhiteSpace(performedBy))
         {
             filter &= Builders<AuditLogEntry>.Filter.Eq(x => x.ParticipantId, performedBy);
+        }
+
+        if (!string.IsNullOrWhiteSpace(action))
+        {
+            filter &= Builders<AuditLogEntry>.Filter.Eq(x => x.Action, action);
         }
 
         if (onlyWithoutActivation)
@@ -147,6 +158,9 @@ public class AuditLogRepository : IAuditLogRepository
 
     public Task<IEnumerable<string>> GetDistinctActivationNamesAsync(string tenantId) =>
         GetCachedDistinctAsync(ActivationNamesCacheKeyPrefix, tenantId, "activation_name");
+
+    public Task<IEnumerable<string>> GetDistinctActionsAsync(string tenantId) =>
+        GetCachedDistinctAsync(ActionsCacheKeyPrefix, tenantId, "action");
 
     private async Task<IEnumerable<string>> GetCachedDistinctAsync(
         string cacheKeyPrefix, string tenantId, string fieldName)
@@ -206,5 +220,6 @@ public class AuditLogRepository : IAuditLogRepository
 
         _cache.Remove(PerformedByCacheKeyPrefix + tenantId);
         _cache.Remove(ActivationNamesCacheKeyPrefix + tenantId);
+        _cache.Remove(ActionsCacheKeyPrefix + tenantId);
     }
 }

@@ -4,6 +4,7 @@ using Features.WebApi.Services;
 using ModelContextProtocol;
 using ModelContextProtocol.Server;
 using Shared.Auth;
+using Shared.Data.Models;
 using Shared.Models.Schedule;
 using Shared.Repositories;
 using Shared.Services;
@@ -75,8 +76,10 @@ public sealed class ScheduleTools(
     }
 
     [McpServerTool(Name = "list_schedules", ReadOnly = true)]
-    [Description("List schedules in this activation. Use returned exact IDs for modifications. Page is zero-based.")]
-    public async Task<List<ScheduleModel>> ListSchedules(McpTarget target, int page = 0)
+    [Description("List schedules in this activation with status, timing, workflow type, and stored workflow inputs. Use returned exact IDs for modifications. Pages are zero-based with up to 100 results; continue until a page is empty.")]
+    public async Task<List<ScheduleModel>> ListSchedules(
+        McpTarget target,
+        [Description("Zero-based page number; each page contains up to 100 schedules.")] int page = 0)
     {
         await AuthorizeAsync(target, false);
         if (page < 0) throw new McpException("Page must be non-negative.");
@@ -98,16 +101,24 @@ public sealed class ScheduleTools(
     }
 
     [McpServerTool(Name = "create_schedule")]
-    [Description("Schedule a registered workflow. Arguments are its ordered JSON input values. Output delivery is determined by the workflow, not MCP. Duplicate names fail; list first.")]
-    public async Task<string> CreateSchedule(McpTarget target, string scheduleName, string workflowType, JsonElement[] arguments,
-        string cron, string timezone = "UTC", string? description = null)
+    [Description("Schedule a registered workflow. First use list_workflows for its exact type and ordered JSON inputs, and list_schedules to avoid duplicate names. Schedule names cannot contain colons. Use an explicit user timezone instead of assuming UTC when unknown. Output delivery is determined by the workflow. Success creates the schedule but does not guarantee an agent worker is running or that execution will succeed. Use the returned exact ID for later operations.")]
+    public async Task<string> CreateSchedule(
+        McpTarget target,
+        [Description("Unique friendly name within the activation; cannot contain a colon.")] string scheduleName,
+        [Description("Exact registered workflow type returned by list_workflows.")] string workflowType,
+        [Description("Ordered JSON values matching the workflow parameters returned by list_workflows.")] JsonElement[] arguments,
+        [Description("Temporal cron expression describing when the workflow starts.")] string cron,
+        [Description("IANA or system timezone ID; use the user's explicit timezone rather than assuming UTC.")] string timezone = "UTC",
+        [Description("Optional human-readable purpose shown with the schedule.")] string? description = null)
     {
         var agent = await AuthorizeAsync(target, true);
         if (string.IsNullOrWhiteSpace(scheduleName) || scheduleName.Contains(':'))
             throw new McpException("Schedule name is required and cannot contain a colon.");
         var workflows = await definitions.GetByNameAsync(agent.Name, tenantContext.TenantId);
-        if (workflows?.Any(flow => flow.WorkflowType == workflowType) != true)
+        var workflow = workflows?.FirstOrDefault(flow => flow.WorkflowType == workflowType);
+        if (workflow is null)
             throw new McpException("Workflow must be registered on this agent.");
+        ValidateArguments(workflow.ParameterDefinitions, arguments);
         var options = new NewWorkflowOptions(agent.Name, agent.SystemScoped, workflowType,
             target.ActivationName, tenantContext);
         options.Memo = new Dictionary<string, object>(options.Memo!) { ["description"] = description ?? scheduleName };
@@ -128,9 +139,20 @@ public sealed class ScheduleTools(
         return new ScheduleSpec { CronExpressions = [cron], TimeZoneName = timezone };
     }
 
+    private static void ValidateArguments(IReadOnlyCollection<ParameterDefinition> parameters, JsonElement[] arguments)
+    {
+        var required = parameters.Count(parameter => !parameter.Optional);
+        if (arguments.Length < required || arguments.Length > parameters.Count)
+            throw new McpException($"Workflow requires between {required} and {parameters.Count} ordered arguments, inclusive.");
+    }
+
     [McpServerTool(Name = "update_schedule_timing")]
-    [Description("Change cron timing of an existing schedule using its exact ID. Preserves workflow arguments and pause state.")]
-    public async Task<bool> UpdateScheduleTiming(McpTarget target, string scheduleId, string cron, string timezone = "UTC")
+    [Description("Change future timing of an existing schedule using its exact ID from list_schedules. Preserves workflow arguments and pause state and does not execute immediately. Use an explicit user timezone instead of assuming UTC when unknown.")]
+    public async Task<bool> UpdateScheduleTiming(
+        McpTarget target,
+        [Description("Exact schedule ID returned by list_schedules.")] string scheduleId,
+        [Description("Replacement Temporal cron expression for future starts.")] string cron,
+        [Description("IANA or system timezone ID; use the user's explicit timezone rather than assuming UTC.")] string timezone = "UTC")
     {
         await AuthorizeScheduleAsync(target, scheduleId);
         var spec = Timing(cron, timezone);
@@ -142,7 +164,10 @@ public sealed class ScheduleTools(
 
     [McpServerTool(Name = "delete_schedule", Destructive = true)]
     [Description("Delete a schedule using its exact ID from list_schedules. Set confirmed=true only after the user explicitly approves deletion.")]
-    public async Task<bool> DeleteSchedule(McpTarget target, string scheduleId, bool confirmed = false)
+    public async Task<bool> DeleteSchedule(
+        McpTarget target,
+        [Description("Exact schedule ID returned by list_schedules.")] string scheduleId,
+        [Description("Set true only after explicit user approval for permanent deletion.")] bool confirmed = false)
     {
         await AuthorizeScheduleAsync(target, scheduleId);
         if (!confirmed) throw new McpException("Explicit user confirmation is required before permanent deletion.");
@@ -150,16 +175,20 @@ public sealed class ScheduleTools(
     }
 
     [McpServerTool(Name = "pause_schedule")]
-    [Description("Pause a schedule using its exact ID.")]
-    public async Task<bool> PauseSchedule(McpTarget target, string scheduleId)
+    [Description("Pause future starts of a schedule using its exact ID. The schedule and stored workflow inputs are preserved.")]
+    public async Task<bool> PauseSchedule(
+        McpTarget target,
+        [Description("Exact schedule ID returned by list_schedules.")] string scheduleId)
     {
         await AuthorizeScheduleAsync(target, scheduleId);
         return Result(await schedules.PauseScheduleAsync(scheduleId));
     }
 
     [McpServerTool(Name = "resume_schedule")]
-    [Description("Resume a paused schedule using its exact ID.")]
-    public async Task<bool> ResumeSchedule(McpTarget target, string scheduleId)
+    [Description("Resume future starts of a paused schedule using its exact ID. This does not execute it immediately.")]
+    public async Task<bool> ResumeSchedule(
+        McpTarget target,
+        [Description("Exact schedule ID returned by list_schedules.")] string scheduleId)
     {
         await AuthorizeScheduleAsync(target, scheduleId);
         return Result(await schedules.ResumeScheduleAsync(scheduleId));
