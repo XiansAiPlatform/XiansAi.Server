@@ -551,7 +551,7 @@ public static class CapabilityActions
             "Delete a secret from the tenant's secret vault."),
 
         new(TenantAuditLogAccess, [SystemRoles.TenantAdmin],
-            "Read the tenant's admin-action audit trail (list entries, performed-by and activation-name filter options)."),
+            "Read the tenant's admin-action audit trail (list entries, performed-by, action and activation-name filter options)."),
 
         new(TenantAgentAccessAccess, [SystemRoles.TenantAdmin],
             "Manage per-agent and per-tenant agent access lists.",
