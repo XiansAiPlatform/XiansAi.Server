@@ -82,6 +82,11 @@ public static class SharedServices
             services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<BackgroundTaskService>());
         }
 
+        // Deactivates a disabled tenant's agents in the background
+        services.AddSingleton<TenantAgentDeactivationService>();
+        services.AddSingleton<ITenantAgentDeactivationService>(sp => sp.GetRequiredService<TenantAgentDeactivationService>());
+        services.AddHostedService(sp => sp.GetRequiredService<TenantAgentDeactivationService>());
+
         // Periodically remove expired message file attachments from GridFS. Their message documents
         // expire via a MongoDB TTL index, but the GridFS blobs need an explicit sweep because a native
         // TTL index on the files collection would orphan the chunk documents.
