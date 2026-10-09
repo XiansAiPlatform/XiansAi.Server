@@ -40,19 +40,31 @@ jobs:
 
     - name: Check if tag is releasable as latest
       id: latest_check
+      env:
+        REF_TYPE: ${{ github.ref_type }}
+        REF_NAME: ${{ github.ref_name }}
+        SHA: ${{ github.sha }}
       run: |
-        # Tags cut from old/maintenance branches (e.g. a hotfix v1.2.1 released
-        # after v2.0.0 is already out) must never overwrite the ":latest" image.
-        # Only treat a tag as eligible for ":latest" if its commit is an
-        # ancestor of (i.e. already part of) the main branch history.
-        git fetch origin main --quiet
-        if git merge-base --is-ancestor "${{ github.sha }}" origin/main; then
-          echo "Tag ${{ github.ref_name }} is on main branch history - eligible for :latest"
-          echo "is_latest=true" >> "$GITHUB_OUTPUT"
+        # ":latest" must only ever point at the newest stable release cut from
+        # main. Manual runs, pre-releases (v1.2.0-rc1), tags from old or
+        # maintenance branches, and re-pushes of older versions never move it.
+        is_latest=false
+        git fetch origin main --tags --quiet
+        highest=$(git tag -l 'v*' --sort=-v:refname | grep -v -e '-' | head -n1)
+        if [ "$REF_TYPE" != "tag" ]; then
+          reason="not a tag push"
+        elif [[ "$REF_NAME" == *-* ]]; then
+          reason="pre-release tag"
+        elif ! git merge-base --is-ancestor "$SHA" origin/main; then
+          reason="tagged commit is not on main branch history"
+        elif [ "$REF_NAME" != "$highest" ]; then
+          reason="not the highest release (highest is $highest)"
         else
-          echo "Tag ${{ github.ref_name }} is NOT on main branch history - skipping :latest"
-          echo "is_latest=false" >> "$GITHUB_OUTPUT"
+          is_latest=true
+          reason="newest stable release on main"
         fi
+        echo "$REF_NAME: is_latest=$is_latest ($reason)"
+        echo "is_latest=$is_latest" >> "$GITHUB_OUTPUT"
         
     - name: Extract metadata
       id: meta
@@ -66,9 +78,12 @@ jobs:
           type=semver,pattern={{version}}
           type=semver,pattern={{major}}.{{minor}}
           type=semver,pattern={{major}}
-          # Latest tag only for stable releases (no pre-release suffixes like -beta, -alpha, -rc)
-          # AND only when the tagged commit is reachable from main (not an old/maintenance branch)
-          type=raw,value=latest,enable=${{ !contains(github.ref_name, '-') && steps.latest_check.outputs.is_latest == 'true' }}
+          # Only when the check above says this is the newest stable release on main
+          type=raw,value=latest,enable=${{ steps.latest_check.outputs.is_latest == 'true' }}
+        # The default latest=auto adds :latest to every semver tag push regardless of
+        # the rule above, so it must be turned off.
+        flavor: |
+          latest=false
         labels: |
           org.opencontainers.image.title=${{ env.IMAGE_NAME }}
           org.opencontainers.image.description=XiansAi Server - AI workflow platform
