@@ -13,6 +13,7 @@ public static class McpConfiguration
             .WithHttpTransport(options => options.Stateless = true)
             .WithTools<ScheduleTools>()
             .WithTools<DataTools>()
+            .WithTools<WebhookTools>()
             .WithTools<DiscoveryTools>();
     }
 
