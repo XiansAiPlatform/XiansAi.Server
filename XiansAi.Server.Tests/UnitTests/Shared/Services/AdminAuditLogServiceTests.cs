@@ -35,6 +35,31 @@ public class AdminAuditLogServiceTests
     }
 
     [Fact]
+    public async Task GetEntriesAsync_SplitsCommaSeparatedActions()
+    {
+        IReadOnlyCollection<string>? captured = null;
+        _repository.Setup(r => r.GetFilteredAsync(
+                "acme", null, It.IsAny<IReadOnlyCollection<string>?>(), null, false, null, null, 1, 20))
+            .Callback<string, string?, IReadOnlyCollection<string>?, string?, bool, DateTime?, DateTime?, int, int>(
+                (_, _, actions, _, _, _, _, _, _) => captured = actions)
+            .ReturnsAsync((Enumerable.Empty<AuditLogEntry>(), 0L));
+
+        var result = await _service.GetEntriesAsync("acme", null, " apikey.created, apikey.revoked,,apikey.created,", null, false, null, null, 1, 20);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(new[] { "apikey.created", "apikey.revoked" }, captured);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" , ,")]
+    public void ParseActions_ReturnsNull_WhenNoActionsGiven(string? action)
+    {
+        Assert.Null(AdminAuditLogService.ParseActions(action));
+    }
+
+    [Fact]
     public async Task CreateEntryAsync_PersistsViewAs_WithActorAndTargetSeparated()
     {
         AuditLogEntry? captured = null;

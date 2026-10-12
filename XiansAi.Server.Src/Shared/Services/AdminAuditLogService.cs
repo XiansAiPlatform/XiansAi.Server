@@ -69,6 +69,7 @@ public class AdminAuditLogService : IAdminAuditLogService
 {
     internal static readonly TimeSpan ViewAsIdempotencyWindow = TimeSpan.FromHours(1);
     private const string TargetParticipantIdKey = "targetParticipantId";
+    private const int MaxActionFilters = 50;
 
     private readonly IAuditLogRepository _auditLogRepository;
     private readonly ITenantContext _tenantContext;
@@ -164,7 +165,7 @@ public class AdminAuditLogService : IAdminAuditLogService
             }
 
             var (entries, totalCount) = await _auditLogRepository.GetFilteredAsync(
-                tenantId, performedBy, action, activationName, onlyWithoutActivation, startDate, endDate, page, pageSize);
+                tenantId, performedBy, ParseActions(action), activationName, onlyWithoutActivation, startDate, endDate, page, pageSize);
 
             var response = new AdminAuditLogListResponse
             {
@@ -239,6 +240,23 @@ public class AdminAuditLogService : IAdminAuditLogService
             _logger.LogError(ex, "Error retrieving action options for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
             return ServiceResult<IEnumerable<string>>.InternalServerError("An error occurred while retrieving action options");
         }
+    }
+
+    /// <summary>
+    /// Splits a comma-separated action filter ("a,b,") into distinct, trimmed, non-empty values.
+    /// </summary>
+    internal static IReadOnlyCollection<string>? ParseActions(string? action)
+    {
+        if (string.IsNullOrWhiteSpace(action))
+            return null;
+
+        var actions = action
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.Ordinal)
+            .Take(MaxActionFilters)
+            .ToList();
+
+        return actions.Count == 0 ? null : actions;
     }
 
     private async Task<ServiceResult<AuditLogEntry>> PersistOrReplayAsync(
