@@ -4,6 +4,7 @@ using Features.Shared.Configuration;
 using Features.WebApi.Configuration;
 using Features.WebApi.Auth;
 using Shared.Data;
+using Shared.Repositories;
 using Features.WebApi.Scripts;
 using Features.UserApi.Configuration;
 using Features.AdminApi.Configuration;
@@ -272,6 +273,11 @@ public class Program
         using var scope = app.Services.CreateScope();
         var indexSynchronizer = scope.ServiceProvider.GetRequiredService<IMongoIndexSynchronizer>();
         await indexSynchronizer.EnsureIndexesAsync();
+
+        // Existing Incoming (and other non-chat/file) rows were stored as Unread or with no status.
+        // Rewrite those to Read so history matches the unread rule. Outgoing Chat and File are left as-is.
+        var conversationRepository = scope.ServiceProvider.GetRequiredService<IConversationRepository>();
+        await conversationRepository.BackfillMessagesThatCannotBeUnreadAsync();
 
         // Seed default data 
         await SeedData.SeedDefaultDataAsync(app.Services, _logger);

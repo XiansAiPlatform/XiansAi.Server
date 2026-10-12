@@ -125,12 +125,14 @@ public interface IMessageService
     /// Marks all messages in the thread up to and including the given cutoff as read.
     /// The cutoff is either an explicit timestamp, or resolved from a messageId's CreatedAt.
     /// Exactly one of <paramref name="timestamp"/> or <paramref name="messageId"/> must be provided.
+    /// MarkedCount and UnreadCount include only Outgoing Chat and File messages.
     /// </summary>
     Task<ServiceResult<MarkThreadReadResult>> MarkThreadAsReadAsync(string threadId, DateTime? timestamp, string? messageId);
 }
 
 /// <summary>
-/// Result of marking a thread's messages as read: how many were just marked, and how many remain unread.
+/// Result of marking a thread's messages as read.
+/// Both counts include only Outgoing Chat and File messages.
 /// </summary>
 public class MarkThreadReadResult
 {
@@ -635,7 +637,7 @@ public class MessageService : IMessageService
             CreatedBy = _tenantContext.LoggedInUser,
             Direction = direction,
             Text = request.Text,
-            Status = MessageStatus.Unread,
+            Status = ConversationMessageReadRules.InitialStatus(direction, messageType),
             Data = request.Data, // Assign original metadata
             WorkflowId = request.WorkflowId ?? $"{_tenantContext.TenantId}:{request.WorkflowType}",
             WorkflowType = request.WorkflowType ?? throw new Exception("WorkflowType is required"),

@@ -28,6 +28,24 @@ public enum MessageStatus
     Read,
 }
 
+/// <summary>
+/// Unread means an agent Chat or File the participant has not read.
+/// Incoming messages are the participant's own sends and are never unread.
+/// </summary>
+public static class ConversationMessageReadRules
+{
+    public static bool CanBeUnread(MessageDirection direction, MessageType? messageType)
+    {
+        return direction == MessageDirection.Outgoing
+            && messageType is MessageType.Chat or MessageType.File;
+    }
+
+    public static MessageStatus InitialStatus(MessageDirection direction, MessageType messageType)
+    {
+        return CanBeUnread(direction, messageType) ? MessageStatus.Unread : MessageStatus.Read;
+    }
+}
+
 public enum MessageType
 {
     Chat,
@@ -247,14 +265,24 @@ public interface IConversationRepository
 
     /// <summary>
     /// Marks every message in the thread with CreatedAt &lt;= <paramref name="cutoff"/> as read.
-    /// Messages already marked read are left untouched. Returns the number of messages updated.
+    /// Messages already marked read are left untouched.
+    /// Returns how many Outgoing Chat or File messages were included; other messages in the window
+    /// are still updated, but they are not part of the count.
     /// </summary>
     Task<long> MarkThreadMessagesAsReadAsync(string tenantId, string threadId, DateTime cutoff);
 
     /// <summary>
-    /// Counts messages in the thread that are not yet marked as read (missing/null status counts as unread).
+    /// Counts Outgoing Chat and File messages in the thread that are not yet marked as read.
+    /// Missing or null status counts as unread. Incoming, Tool, and Reasoning messages are excluded.
     /// </summary>
     Task<long> GetUnreadMessageCountAsync(string tenantId, string threadId);
+
+    /// <summary>
+    /// Sets status to Read on existing messages that cannot be unread (Incoming, and Outgoing
+    /// messages that are not Chat or File), including rows whose status is missing.
+    /// Outgoing Chat and File rows are left unchanged.
+    /// </summary>
+    Task<long> BackfillMessagesThatCannotBeUnreadAsync();
 
     /// <summary>
     /// Collects GridFS file ids referenced by File-type messages matching the given
@@ -915,20 +943,25 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            var filter = Builders<ConversationMessage>.Filter.And(
-                Builders<ConversationMessage>.Filter.Eq(x => x.TenantId, tenantId),
-                Builders<ConversationMessage>.Filter.Eq(x => x.ThreadId, threadId),
-                Builders<ConversationMessage>.Filter.Lte(x => x.CreatedAt, cutoff),
-                Builders<ConversationMessage>.Filter.Ne(x => x.Status, MessageStatus.Read));
+            var filter = Builders<ConversationMessage>.Filter;
+            var inWindow = filter.And(
+                filter.Eq(x => x.TenantId, tenantId),
+                filter.Eq(x => x.ThreadId, threadId),
+                filter.Lte(x => x.CreatedAt, cutoff),
+                NotReadFilter());
+
+            // Count before the update. A retry after a failed write still sees the same unread rows.
+            var markedCount = await _messagesCollection.CountDocumentsAsync(
+                filter.And(inWindow, OutgoingChatOrFileFilter()));
 
             var update = Builders<ConversationMessage>.Update.Set(x => x.Status, MessageStatus.Read);
+            var result = await _messagesCollection.UpdateManyAsync(inWindow, update);
 
-            var result = await _messagesCollection.UpdateManyAsync(filter, update);
+            _logger.LogInformation(
+                "Marked messages as read in thread {ThreadId} up to {Cutoff}: {EligibleCount} outgoing chat/file, {UpdatedCount} documents updated",
+                LogSanitizer.Sanitize(threadId), cutoff, markedCount, result.ModifiedCount);
 
-            _logger.LogInformation("Marked {Count} messages as read in thread {ThreadId} up to {Cutoff}",
-                result.ModifiedCount, LogSanitizer.Sanitize(threadId), cutoff);
-
-            return result.ModifiedCount;
+            return markedCount;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "MarkThreadMessagesAsRead");
     }
 
@@ -936,13 +969,62 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            var filter = Builders<ConversationMessage>.Filter.And(
-                Builders<ConversationMessage>.Filter.Eq(x => x.TenantId, tenantId),
-                Builders<ConversationMessage>.Filter.Eq(x => x.ThreadId, threadId),
-                Builders<ConversationMessage>.Filter.Ne(x => x.Status, MessageStatus.Read));
+            var filter = Builders<ConversationMessage>.Filter;
+            var unread = filter.And(
+                filter.Eq(x => x.TenantId, tenantId),
+                filter.Eq(x => x.ThreadId, threadId),
+                OutgoingChatOrFileFilter(),
+                NotReadFilter());
 
-            return await _messagesCollection.CountDocumentsAsync(filter);
+            return await _messagesCollection.CountDocumentsAsync(unread);
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetUnreadMessageCount");
+    }
+
+    public async Task<long> BackfillMessagesThatCannotBeUnreadAsync()
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var filter = Builders<ConversationMessage>.Filter;
+            // Anything that is not an Outgoing Chat or File, and is not already Read
+            // (including a missing status), is stored as Read.
+            var cannotBeUnread = filter.And(
+                NotReadFilter(),
+                filter.Not(OutgoingChatOrFileFilter()));
+
+            var update = Builders<ConversationMessage>.Update.Set(x => x.Status, MessageStatus.Read);
+            var result = await _messagesCollection.UpdateManyAsync(cannotBeUnread, update);
+
+            if (result.ModifiedCount > 0)
+            {
+                _logger.LogInformation(
+                    "Backfilled {Count} conversation messages to Read because they cannot be unread",
+                    result.ModifiedCount);
+            }
+            else
+            {
+                _logger.LogDebug("No conversation messages needed a read-status backfill");
+            }
+
+            return result.ModifiedCount;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "BackfillMessagesThatCannotBeUnread");
+    }
+
+    private static FilterDefinition<ConversationMessage> OutgoingChatOrFileFilter()
+    {
+        var filter = Builders<ConversationMessage>.Filter;
+        return filter.And(
+            filter.Eq(x => x.Direction, MessageDirection.Outgoing),
+            filter.Or(
+                filter.Eq(x => x.MessageType, MessageType.Chat),
+                filter.Eq(x => x.MessageType, MessageType.File)));
+    }
+
+    /// <summary>
+    /// Missing status is not Read, so legacy rows with a null status are included.
+    /// </summary>
+    private static FilterDefinition<ConversationMessage> NotReadFilter()
+    {
+        return Builders<ConversationMessage>.Filter.Ne(x => x.Status, MessageStatus.Read);
     }
 
     public async Task<List<string>> GetFileIdsByWorkflowParticipantAndScopeAsync(string tenantId, string workflowId, string participantId, string? scope)

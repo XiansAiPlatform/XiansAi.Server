@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Features.UserApi.Services;
 using Features.UserApi.Utils;
 using Shared.Repositories;
@@ -80,6 +81,27 @@ public class MessageEventFilterTests
             TenantId);
 
         Assert.False(shouldSend);
+    }
+
+    [Fact]
+    public void CreateMessageEventData_ReturnsStoredStatusWithoutRemappingUserMessages()
+    {
+        var userMessage = BuildEvent(WorkflowId, ParticipantId, TenantId).Message;
+        userMessage.Direction = MessageDirection.Incoming;
+        userMessage.MessageType = MessageType.Chat;
+        userMessage.Status = MessageStatus.Read;
+
+        var agentMessage = BuildEvent(WorkflowId, ParticipantId, TenantId).Message;
+        agentMessage.Direction = MessageDirection.Outgoing;
+        agentMessage.MessageType = MessageType.Chat;
+        agentMessage.Status = MessageStatus.Unread;
+
+        using var userJson = JsonDocument.Parse(JsonSerializer.Serialize(MessageEventFilter.CreateMessageEventData(userMessage)));
+        using var agentJson = JsonDocument.Parse(JsonSerializer.Serialize(MessageEventFilter.CreateMessageEventData(agentMessage)));
+
+        Assert.Equal("Read", userJson.RootElement.GetProperty("status").GetString());
+        Assert.Equal("Incoming", userJson.RootElement.GetProperty("direction").GetString());
+        Assert.Equal("Unread", agentJson.RootElement.GetProperty("status").GetString());
     }
 
     [Fact]
