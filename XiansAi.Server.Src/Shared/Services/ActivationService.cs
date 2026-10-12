@@ -3,6 +3,7 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 using Shared.Data.Models;
 using Shared.Repositories;
+using Shared.Services.HealthChecks;
 using Shared.Utils.Services;
 using Shared.Utils.Temporal;
 using Features.WebApi.Services;
@@ -68,6 +69,7 @@ public class ActivationService : IActivationService
     private readonly IAdminMetricsService _metricsService;
     private readonly IFeedbackService _feedbackService;
     private readonly IAuditLogService _auditLogService;
+    private readonly IHealthCheckActivationHooks _healthCheckHooks;
     private readonly ILogger<ActivationService> _logger;
 
     public ActivationService(
@@ -86,6 +88,7 @@ public class ActivationService : IActivationService
         IAdminMetricsService metricsService,
         IFeedbackService feedbackService,
         IAuditLogService auditLogService,
+        IHealthCheckActivationHooks healthCheckHooks,
         ILogger<ActivationService> logger)
     {
         _activationRepository = activationRepository ?? throw new ArgumentNullException(nameof(activationRepository));
@@ -103,6 +106,7 @@ public class ActivationService : IActivationService
         _metricsService = metricsService ?? throw new ArgumentNullException(nameof(metricsService));
         _feedbackService = feedbackService ?? throw new ArgumentNullException(nameof(feedbackService));
         _auditLogService = auditLogService ?? throw new ArgumentNullException(nameof(auditLogService));
+        _healthCheckHooks = healthCheckHooks ?? throw new ArgumentNullException(nameof(healthCheckHooks));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -600,8 +604,11 @@ public class ActivationService : IActivationService
 
                 _activationValidationService.InvalidateActivationCache(activation.TenantId, activation.AgentName, activation.Name);
 
-                _logger.LogInformation("Successfully activated {StartedCount}/{TotalCount} workflows for activation {ActivationId}", 
+                _logger.LogInformation("Successfully activated {StartedCount}/{TotalCount} workflows for activation {ActivationId}",
                     startedCount, flowDefinitions.Count, LogSanitizer.Sanitize(activationId));
+
+                // Resume the activation's enabled health checks (best effort; never fails activation).
+                await _healthCheckHooks.OnActivationStateChangedAsync(activation);
 
                 var metadata = new { tenantId, activationId = activation.Id, name = activation.Name, agentName = activation.AgentName, workflowIds = activation.WorkflowIds };
 
@@ -715,6 +722,9 @@ public class ActivationService : IActivationService
             await _activationRepository.UpdateAsync(activationId, activation);
 
             _activationValidationService.InvalidateActivationCache(activation.TenantId, activation.AgentName, activation.Name);
+
+            // Pause the activation's health checks so they don't run against a stopped agent (R8).
+            await _healthCheckHooks.OnActivationStateChangedAsync(activation);
 
             _logger.LogInformation(
                 "Successfully deactivated activation {ActivationId}. " +
@@ -897,5 +907,9 @@ public class ActivationService : IActivationService
         {
             _logger.LogWarning(ex, "Failed to delete feedback for activation {ActivationId}", LogSanitizer.Sanitize(activation.Id));
         }
+
+        // Health checks, their run history and their schedules. Handles its own failures; the
+        // reconciler removes anything left behind.
+        await _healthCheckHooks.OnActivationDeletedAsync(activation);
     }
 }

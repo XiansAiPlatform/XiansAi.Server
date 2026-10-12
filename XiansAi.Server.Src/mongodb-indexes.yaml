@@ -559,6 +559,44 @@ webhook_deliveries:
     expire_after: 15d
     background: true
 
+agent_health_checks:
+  # List the checks attached to one activation.
+  - name: health_check_activation
+    keys:
+      tenant_id: asc
+      activation_id: asc
+    background: true
+  # Check names are unique within an activation.
+  - name: health_check_activation_name
+    keys:
+      tenant_id: asc
+      activation_id: asc
+      name: asc
+    unique: true
+    background: true
+  # Tenant-wide "what is failing right now" view.
+  - name: health_check_tenant_status
+    keys:
+      tenant_id: asc
+      last_status: asc
+    background: true
+
+agent_health_check_runs:
+  # Run history for one check, newest first.
+  - name: health_check_run_history
+    keys:
+      tenant_id: asc
+      check_id: asc
+      started_at: desc
+    background: true
+  # TTL cleanup: run history retention (override with
+  # MongoIndexes__agent_health_check_runs__health_check_run_ttl__ExpireAfter).
+  - name: health_check_run_ttl
+    keys:
+      started_at: asc
+    expire_after: 30d
+    background: true
+
 admin_capability_matrix:
   - name: action_1
     keys:

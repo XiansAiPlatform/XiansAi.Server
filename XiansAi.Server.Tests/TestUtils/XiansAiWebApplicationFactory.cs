@@ -6,6 +6,7 @@ using Microsoft.Extensions.Configuration;
 using Moq;
 using Shared.Data;
 using Shared.Services;
+using Shared.Services.HealthChecks;
 using Microsoft.Extensions.Logging;
 using System.IO;
 using Shared.Utils.Services;
@@ -126,6 +127,19 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
                     .ReturnsAsync(ServiceResult<ActivationCleanupResult>.Success(new ActivationCleanupResult()));
                 RemoveService<IActivationCleanupService>(services);
                 services.AddSingleton(mockActivationCleanupService.Object);
+
+                // Health checks: record schedule intent in memory and don't start the worker,
+                // which would otherwise keep retrying a Temporal connection for the whole run.
+                RemoveService<IHealthCheckScheduler>(services);
+                services.AddSingleton<FakeHealthCheckScheduler>();
+                services.AddSingleton<IHealthCheckScheduler>(sp => sp.GetRequiredService<FakeHealthCheckScheduler>());
+                var healthCheckWorker = services.FirstOrDefault(d =>
+                    d.ServiceType == typeof(Microsoft.Extensions.Hosting.IHostedService)
+                    && d.ImplementationType == typeof(HealthCheckWorkerService));
+                if (healthCheckWorker != null)
+                {
+                    services.Remove(healthCheckWorker);
+                }
             }
 
             // Mock IUserTenantService to always return the test tenant for the test user

@@ -94,6 +94,10 @@ public static class CapabilityActions
     public const string TenantSchedulesDeleteAll = "tenant.schedules.deleteAll";
     public const string TenantSchedulesDeleteByActivation = "tenant.schedules.deleteByActivation";
 
+    // AdminHealthCheckEndpoints: /tenants/{tenantId}/agentActivations/{activationId}/health-checks,
+    // /tenants/{tenantId}/health-checks. One shared action gates configure and view alike.
+    public const string TenantHealthChecksManage = "tenant.healthChecks.manage";
+
     // AdminStatsEndpoints: /tenants/{tenantId}/stats
     public const string TenantStatsGet = "tenant.stats.get";
 
@@ -374,6 +378,9 @@ public static class CapabilityActions
             "Delete every schedule belonging to an agent."),
         new(TenantSchedulesDeleteByActivation, [SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
             "Delete all schedules for one agent activation."),
+
+        new(TenantHealthChecksManage, [SystemRoles.TenantAdmin],
+            "Create, edit, delete, and view automated agent health checks and their run history."),
 
         new(TenantStatsGet, [SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
             "Read aggregated tenant statistics."),
