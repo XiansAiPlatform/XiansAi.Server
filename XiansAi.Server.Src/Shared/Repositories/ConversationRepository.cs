@@ -1122,7 +1122,7 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 idFilter,
                 Builders<BsonDocument>.Filter.Ne("completed", true)));
         }
-        catch (Exception ex)
+        catch (MongoException ex)
         {
             _logger.LogError(ex, "Failed to release the conversation message read-status backfill claim");
         }
