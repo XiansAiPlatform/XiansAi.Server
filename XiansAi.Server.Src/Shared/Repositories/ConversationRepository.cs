@@ -285,6 +285,12 @@ public interface IConversationRepository
     Task<long> BackfillMessagesThatCannotBeUnreadAsync();
 
     /// <summary>
+    /// Runs <see cref="BackfillMessagesThatCannotBeUnreadAsync"/> at most once per database.
+    /// Later calls return 0 without scanning conversation messages.
+    /// </summary>
+    Task<long> BackfillMessagesThatCannotBeUnreadOnceAsync();
+
+    /// <summary>
     /// Collects GridFS file ids referenced by File-type messages matching the given
     /// workflow/participant/scope, so the stored blobs can be cleaned up on delete.
     /// </summary>
@@ -329,6 +335,8 @@ public class ConversationThreadInfo
 
 public class ConversationRepository : IConversationRepository
 {
+    public const string ReadStatusBackfillMigrationId = "conversation-message-non-unread-backfill";
+    private const string DataMigrationsCollection = "data_migrations";
     private const string ThreadIdCacheKeyPrefix = "conversation:thread-id:";
     private static readonly TimeSpan ThreadIdCacheDuration = TimeSpan.FromMinutes(10);
 
@@ -941,28 +949,31 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
 
     public async Task<long> MarkThreadMessagesAsReadAsync(string tenantId, string threadId, DateTime cutoff)
     {
-        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
-        {
-            var filter = Builders<ConversationMessage>.Filter;
-            var inWindow = filter.And(
-                filter.Eq(x => x.TenantId, tenantId),
-                filter.Eq(x => x.ThreadId, threadId),
-                filter.Lte(x => x.CreatedAt, cutoff),
-                NotReadFilter());
+        var filter = Builders<ConversationMessage>.Filter;
+        var inWindow = filter.And(
+            filter.Eq(x => x.TenantId, tenantId),
+            filter.Eq(x => x.ThreadId, threadId),
+            filter.Lte(x => x.CreatedAt, cutoff),
+            NotReadFilter());
+        var update = Builders<ConversationMessage>.Update.Set(x => x.Status, MessageStatus.Read);
 
-            // Count before the update. A retry after a failed write still sees the same unread rows.
-            var markedCount = await _messagesCollection.CountDocumentsAsync(
-                filter.And(inWindow, OutgoingChatOrFileFilter()));
+        // Legacy rows first. The counted update then reports its own ModifiedCount, so a message
+        // that arrives between the two writes is included only when that write actually changes it.
+        await UpdateMessagesAsReadAsync(
+            filter.And(inWindow, filter.Not(OutgoingChatOrFileFilter())),
+            update,
+            "MarkThreadMessagesAsReadLegacy");
 
-            var update = Builders<ConversationMessage>.Update.Set(x => x.Status, MessageStatus.Read);
-            var result = await _messagesCollection.UpdateManyAsync(inWindow, update);
+        var markedCount = await UpdateMessagesAsReadAsync(
+            filter.And(inWindow, OutgoingChatOrFileFilter()),
+            update,
+            "MarkThreadMessagesAsRead");
 
-            _logger.LogInformation(
-                "Marked messages as read in thread {ThreadId} up to {Cutoff}: {EligibleCount} outgoing chat/file, {UpdatedCount} documents updated",
-                LogSanitizer.Sanitize(threadId), cutoff, markedCount, result.ModifiedCount);
+        _logger.LogInformation(
+            "Marked {MarkedCount} outgoing chat/file messages as read in thread {ThreadId} up to {Cutoff}",
+            markedCount, LogSanitizer.Sanitize(threadId), cutoff);
 
-            return markedCount;
-        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "MarkThreadMessagesAsRead");
+        return markedCount;
     }
 
     public async Task<long> GetUnreadMessageCountAsync(string tenantId, string threadId)
@@ -1007,6 +1018,49 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
 
             return result.ModifiedCount;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "BackfillMessagesThatCannotBeUnread");
+    }
+
+    public async Task<long> BackfillMessagesThatCannotBeUnreadOnceAsync()
+    {
+        var migrations = _database.GetCollection<BsonDocument>(DataMigrationsCollection);
+        var idFilter = Builders<BsonDocument>.Filter.Eq("_id", ReadStatusBackfillMigrationId);
+        var existing = await migrations.Find(idFilter).FirstOrDefaultAsync();
+        if (IsMigrationCompleted(existing))
+        {
+            _logger.LogDebug("Conversation message read-status backfill already completed; skipping");
+            return 0;
+        }
+
+        _logger.LogInformation("Running one-time conversation message read-status backfill");
+        var updated = await BackfillMessagesThatCannotBeUnreadAsync();
+
+        var completion = Builders<BsonDocument>.Update
+            .Set("completed", true)
+            .Set("completed_at", DateTime.UtcNow)
+            .Set("updated_count", updated);
+        await migrations.UpdateOneAsync(idFilter, completion, new UpdateOptions { IsUpsert = true });
+
+        return updated;
+    }
+
+    private async Task<long> UpdateMessagesAsReadAsync(
+        FilterDefinition<ConversationMessage> filter,
+        UpdateDefinition<ConversationMessage> update,
+        string operationName)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var result = await _messagesCollection.UpdateManyAsync(filter, update);
+            return result.ModifiedCount;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: operationName);
+    }
+
+    private static bool IsMigrationCompleted(BsonDocument? existing)
+    {
+        return existing != null
+            && existing.TryGetValue("completed", out var completed)
+            && completed.IsBoolean
+            && completed.AsBoolean;
     }
 
     private static FilterDefinition<ConversationMessage> OutgoingChatOrFileFilter()

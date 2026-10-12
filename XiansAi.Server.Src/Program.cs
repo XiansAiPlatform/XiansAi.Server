@@ -274,10 +274,10 @@ public class Program
         var indexSynchronizer = scope.ServiceProvider.GetRequiredService<IMongoIndexSynchronizer>();
         await indexSynchronizer.EnsureIndexesAsync();
 
-        // Existing Incoming (and other non-chat/file) rows were stored as Unread or with no status.
-        // Rewrite those to Read so history matches the unread rule. Outgoing Chat and File are left as-is.
+        // One-time rewrite of Incoming and other non-chat/file rows that were stored as Unread
+        // or with no status. Later startups skip the collection scan.
         var conversationRepository = scope.ServiceProvider.GetRequiredService<IConversationRepository>();
-        await conversationRepository.BackfillMessagesThatCannotBeUnreadAsync();
+        await conversationRepository.BackfillMessagesThatCannotBeUnreadOnceAsync();
 
         // Seed default data 
         await SeedData.SeedDefaultDataAsync(app.Services, _logger);

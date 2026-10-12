@@ -143,6 +143,38 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
     }
 
     [Fact]
+    public async Task BackfillOnce_SecondRunLeavesALaterLegacyUserMessageUnread()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+
+        using var scope = _factory.Services.CreateScope();
+        var database = await scope.ServiceProvider.GetRequiredService<IDatabaseService>().GetDatabaseAsync();
+        var migrations = database.GetCollection<BsonDocument>("data_migrations");
+        await migrations.DeleteOneAsync(
+            Builders<BsonDocument>.Filter.Eq("_id", ConversationRepository.ReadStatusBackfillMigrationId));
+
+        var repository = scope.ServiceProvider.GetRequiredService<IConversationRepository>();
+        var threadId = ObjectId.GenerateNewId().ToString();
+        var first = await CreateTestMessageAsync(
+            tenantId, threadId, DateTime.UtcNow, MessageDirection.Incoming, MessageType.Chat, MessageStatus.Unread);
+
+        var updated = await repository.BackfillMessagesThatCannotBeUnreadOnceAsync();
+        Assert.True(updated >= 1);
+        Assert.Equal(MessageStatus.Read, (await GetMessageByIdAsync(first.Id))!.Status);
+
+        var later = await CreateTestMessageAsync(
+            tenantId, threadId, DateTime.UtcNow, MessageDirection.Incoming, MessageType.Chat, MessageStatus.Unread);
+        var skipped = await repository.BackfillMessagesThatCannotBeUnreadOnceAsync();
+        Assert.Equal(0, skipped);
+        Assert.Equal(MessageStatus.Unread, (await GetMessageByIdAsync(later.Id))!.Status);
+
+        var repaired = await repository.BackfillMessagesThatCannotBeUnreadAsync();
+        Assert.True(repaired >= 1);
+        Assert.Equal(MessageStatus.Read, (await GetMessageByIdAsync(later.Id))!.Status);
+    }
+
+    [Fact]
     public async Task MarkThreadAsRead_WithMessageId_ResolvesCutoffFromMessageCreatedAt()
     {
         // Arrange
