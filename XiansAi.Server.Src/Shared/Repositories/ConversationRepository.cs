@@ -286,7 +286,8 @@ public interface IConversationRepository
 
     /// <summary>
     /// Runs <see cref="BackfillMessagesThatCannotBeUnreadAsync"/> at most once per database.
-    /// Later calls return 0 without scanning conversation messages.
+    /// Concurrent callers race to insert one claim; only the winner scans. Later calls, and
+    /// callers that lose the claim, return 0 without scanning conversation messages.
     /// </summary>
     Task<long> BackfillMessagesThatCannotBeUnreadOnceAsync();
 
@@ -337,6 +338,7 @@ public class ConversationRepository : IConversationRepository
 {
     public const string ReadStatusBackfillMigrationId = "conversation-message-non-unread-backfill";
     private const string DataMigrationsCollection = "data_migrations";
+    private static readonly TimeSpan ReadStatusBackfillClaimStaleAfter = TimeSpan.FromMinutes(15);
     private const string ThreadIdCacheKeyPrefix = "conversation:thread-id:";
     private static readonly TimeSpan ThreadIdCacheDuration = TimeSpan.FromMinutes(10);
 
@@ -1024,23 +1026,111 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
     {
         var migrations = _database.GetCollection<BsonDocument>(DataMigrationsCollection);
         var idFilter = Builders<BsonDocument>.Filter.Eq("_id", ReadStatusBackfillMigrationId);
-        var existing = await migrations.Find(idFilter).FirstOrDefaultAsync();
-        if (IsMigrationCompleted(existing))
+        if (!await TryClaimReadStatusBackfillAsync(migrations, idFilter))
         {
-            _logger.LogDebug("Conversation message read-status backfill already completed; skipping");
             return 0;
         }
 
-        _logger.LogInformation("Running one-time conversation message read-status backfill");
-        var updated = await BackfillMessagesThatCannotBeUnreadAsync();
+        try
+        {
+            _logger.LogInformation("Running one-time conversation message read-status backfill");
+            var updated = await BackfillMessagesThatCannotBeUnreadAsync();
+            var completion = Builders<BsonDocument>.Update
+                .Set("completed", true)
+                .Set("completed_at", DateTime.UtcNow)
+                .Set("updated_count", updated);
+            await migrations.UpdateOneAsync(idFilter, completion);
+            return updated;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Conversation message read-status backfill failed; releasing the claim");
+            await ReleaseReadStatusBackfillClaimAsync(migrations, idFilter);
+            throw;
+        }
+    }
 
-        var completion = Builders<BsonDocument>.Update
-            .Set("completed", true)
-            .Set("completed_at", DateTime.UtcNow)
-            .Set("updated_count", updated);
-        await migrations.UpdateOneAsync(idFilter, completion, new UpdateOptions { IsUpsert = true });
+    private async Task<bool> TryClaimReadStatusBackfillAsync(
+        IMongoCollection<BsonDocument> migrations,
+        FilterDefinition<BsonDocument> idFilter)
+    {
+        if (await InsertReadStatusBackfillClaimAsync(migrations, idFilter))
+        {
+            return true;
+        }
 
-        return updated;
+        return await TryTakeOverStaleReadStatusBackfillClaimAsync(migrations, idFilter);
+    }
+
+    private static async Task<bool> InsertReadStatusBackfillClaimAsync(
+        IMongoCollection<BsonDocument> migrations,
+        FilterDefinition<BsonDocument> idFilter)
+    {
+        try
+        {
+            var claim = Builders<BsonDocument>.Update
+                .SetOnInsert("claimed_at", DateTime.UtcNow)
+                .SetOnInsert("completed", false);
+            var inserted = await migrations.UpdateOneAsync(idFilter, claim, new UpdateOptions { IsUpsert = true });
+            return inserted.UpsertedId != null;
+        }
+        catch (MongoWriteException ex) when (IsDuplicateKey(ex))
+        {
+            return false;
+        }
+    }
+
+    private async Task<bool> TryTakeOverStaleReadStatusBackfillClaimAsync(
+        IMongoCollection<BsonDocument> migrations,
+        FilterDefinition<BsonDocument> idFilter)
+    {
+        var existing = await migrations.Find(idFilter).FirstOrDefaultAsync();
+        if (IsMigrationCompleted(existing) || !IsStaleReadStatusBackfillClaim(existing))
+        {
+            _logger.LogDebug("Conversation message read-status backfill is already claimed or completed; skipping");
+            return false;
+        }
+
+        var claimedAt = existing!["claimed_at"];
+        var takeover = await migrations.UpdateOneAsync(
+            Builders<BsonDocument>.Filter.And(
+                idFilter,
+                Builders<BsonDocument>.Filter.Ne("completed", true),
+                Builders<BsonDocument>.Filter.Eq("claimed_at", claimedAt)),
+            Builders<BsonDocument>.Update.Set("claimed_at", DateTime.UtcNow));
+
+        return takeover.ModifiedCount == 1;
+    }
+
+    private static bool IsStaleReadStatusBackfillClaim(BsonDocument? existing)
+    {
+        if (existing == null || !existing.TryGetValue("claimed_at", out var claimedAt) || !claimedAt.IsValidDateTime)
+        {
+            return false;
+        }
+
+        return DateTime.UtcNow - claimedAt.ToUniversalTime() >= ReadStatusBackfillClaimStaleAfter;
+    }
+
+    private async Task ReleaseReadStatusBackfillClaimAsync(
+        IMongoCollection<BsonDocument> migrations,
+        FilterDefinition<BsonDocument> idFilter)
+    {
+        try
+        {
+            await migrations.DeleteOneAsync(Builders<BsonDocument>.Filter.And(
+                idFilter,
+                Builders<BsonDocument>.Filter.Ne("completed", true)));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to release the conversation message read-status backfill claim");
+        }
+    }
+
+    private static bool IsDuplicateKey(MongoWriteException ex)
+    {
+        return ex.WriteError?.Category == ServerErrorCategory.DuplicateKey || ex.WriteError?.Code == 11000;
     }
 
     private async Task<long> UpdateMessagesAsReadAsync(

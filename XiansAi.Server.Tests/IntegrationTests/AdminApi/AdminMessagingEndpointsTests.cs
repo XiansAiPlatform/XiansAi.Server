@@ -175,6 +175,46 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
     }
 
     [Fact]
+    public async Task BackfillOnce_FreshClaimSkipsTheScan()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+
+        using var scope = _factory.Services.CreateScope();
+        var database = await scope.ServiceProvider.GetRequiredService<IDatabaseService>().GetDatabaseAsync();
+        await ReplaceReadStatusBackfillClaimAsync(database, DateTime.UtcNow);
+
+        var repository = scope.ServiceProvider.GetRequiredService<IConversationRepository>();
+        var message = await CreateTestMessageAsync(
+            tenantId, ObjectId.GenerateNewId().ToString(), DateTime.UtcNow,
+            MessageDirection.Incoming, MessageType.Chat, MessageStatus.Unread);
+
+        var skipped = await repository.BackfillMessagesThatCannotBeUnreadOnceAsync();
+        Assert.Equal(0, skipped);
+        Assert.Equal(MessageStatus.Unread, (await GetMessageByIdAsync(message.Id))!.Status);
+    }
+
+    [Fact]
+    public async Task BackfillOnce_StaleClaimIsTakenOverAndBackfills()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+
+        using var scope = _factory.Services.CreateScope();
+        var database = await scope.ServiceProvider.GetRequiredService<IDatabaseService>().GetDatabaseAsync();
+        await ReplaceReadStatusBackfillClaimAsync(database, DateTime.UtcNow.AddHours(-1));
+
+        var repository = scope.ServiceProvider.GetRequiredService<IConversationRepository>();
+        var message = await CreateTestMessageAsync(
+            tenantId, ObjectId.GenerateNewId().ToString(), DateTime.UtcNow,
+            MessageDirection.Incoming, MessageType.Chat, MessageStatus.Unread);
+
+        var updated = await repository.BackfillMessagesThatCannotBeUnreadOnceAsync();
+        Assert.True(updated >= 1);
+        Assert.Equal(MessageStatus.Read, (await GetMessageByIdAsync(message.Id))!.Status);
+    }
+
+    [Fact]
     public async Task MarkThreadAsRead_WithMessageId_ResolvesCutoffFromMessageCreatedAt()
     {
         // Arrange
@@ -507,6 +547,20 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
         using var scope = _factory.Services.CreateScope();
         var conversationRepository = scope.ServiceProvider.GetRequiredService<IConversationRepository>();
         return await conversationRepository.GetMessageByIdAsync(messageId, _adminTenantId!);
+    }
+
+    private static async Task ReplaceReadStatusBackfillClaimAsync(IMongoDatabase database, DateTime claimedAt)
+    {
+        var migrations = database.GetCollection<BsonDocument>("data_migrations");
+        await migrations.ReplaceOneAsync(
+            Builders<BsonDocument>.Filter.Eq("_id", ConversationRepository.ReadStatusBackfillMigrationId),
+            new BsonDocument
+            {
+                { "_id", ConversationRepository.ReadStatusBackfillMigrationId },
+                { "completed", false },
+                { "claimed_at", claimedAt }
+            },
+            new ReplaceOptions { IsUpsert = true });
     }
 }
 
