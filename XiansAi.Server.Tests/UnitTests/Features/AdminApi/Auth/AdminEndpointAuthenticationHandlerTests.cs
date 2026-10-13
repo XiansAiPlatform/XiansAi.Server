@@ -6,7 +6,6 @@ using Microsoft.Extensions.Options;
 using Moq;
 using Shared.Auth;
 using Shared.Data.Models;
-using Shared.Exceptions;
 using Shared.Services;
 using System.Text.Encodings.Web;
 
@@ -30,7 +29,7 @@ public class AdminEndpointAuthenticationHandlerTests
     private readonly Mock<IAdminKeylessUserResolver> _keylessUserResolver = new();
 
     private async Task<(AuthenticateResult Result, DefaultHttpContext HttpContext)> RunAsync(
-        string path = "/api/v1/admin/tenants", string? userToken = "raw-user-token")
+        string path = "/api/v1/admin/tenants", string? userToken = "raw-user-token", string? apiKey = null)
     {
         _tenantContext.SetupAllProperties();
 
@@ -48,6 +47,10 @@ public class AdminEndpointAuthenticationHandlerTests
         if (userToken != null)
         {
             httpContext.Request.Headers[AdminEndpointAuthenticationHandler.UserTokenHeaderName] = userToken;
+        }
+        if (apiKey != null)
+        {
+            httpContext.Request.Headers.Authorization = $"Bearer {apiKey}";
         }
 
         var scheme = new AuthenticationScheme("AdminEndpointApiKeyScheme", null, typeof(AdminEndpointAuthenticationHandler));
@@ -115,13 +118,58 @@ public class AdminEndpointAuthenticationHandlerTests
     }
 
     [Fact]
-    public async Task NonExistentTenant_ForASysAdmin_PropagatesTenantNotFoundException_Not401()
+    public async Task InvalidUserToken_DoesNotRecordAFailureKind_SoTheCallerGetsA401()
     {
         _keylessUserResolver
             .Setup(x => x.ResolveAsync("raw-user-token", It.IsAny<string?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new TenantNotFoundException("ghost-tenant"));
+            .ReturnsAsync(new AdminKeylessResolutionResult(false, null, null, null, "Invalid user token"));
 
-        await Assert.ThrowsAsync<TenantNotFoundException>(() => RunAsync());
+        var (_, httpContext) = await RunAsync();
+
+        Assert.False(httpContext.Items.ContainsKey(AdminEndpointAuthenticationHandler.FailureKindItemKey));
+    }
+
+    [Theory]
+    [InlineData(AdminAuthFailure.TenantNotFound, "Tenant 'ghost-tenant' was not found")]
+    [InlineData(AdminAuthFailure.InvalidTenantId, "Invalid tenant ID format")]
+    public async Task UserTokenPath_SysAdminNamingAnUnusableTenant_FailsWithTheFailureKind_InsteadOfThrowing(
+        AdminAuthFailure failure, string message)
+    {
+        _keylessUserResolver
+            .Setup(x => x.ResolveAsync("raw-user-token", It.IsAny<string?>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AdminKeylessResolutionResult(false, null, null, null, message, failure));
+
+        var (result, httpContext) = await RunAsync();
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(message, httpContext.Items[AdminEndpointAuthenticationHandler.FailureReasonItemKey]);
+        Assert.Equal(failure, httpContext.Items[AdminEndpointAuthenticationHandler.FailureKindItemKey]);
+        _tenantContext.VerifySet(x => x.LoggedInUser = It.IsAny<string>(), Times.Never);
+    }
+
+    [Theory]
+    [InlineData(AdminAuthFailure.TenantNotFound, "Tenant 'ghost-tenant' was not found")]
+    [InlineData(AdminAuthFailure.InvalidTenantId, "Invalid tenant ID format")]
+    public async Task ApiKeyPath_SysAdminNamingAnUnusableTenant_FailsWithTheFailureKind_InsteadOfThrowing(
+        AdminAuthFailure failure, string message)
+    {
+        const string rawKey = "sk-Xnai-sysadmin-key";
+        var apiKey = new ApiKey
+        {
+            TenantId = "system", Name = "test", HashedKey = "hash",
+            CreatedAt = DateTime.UtcNow, CreatedBy = UserId
+        };
+        _apiKeyService.Setup(x => x.GetApiKeyByRawKeyAsync(rawKey)).ReturnsAsync(apiKey);
+        _adminRoleTenantResolver
+            .Setup(x => x.ResolveAsync(UserId, apiKey, It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new AdminRoleTenantResolutionResult(false, null, null, message, UserId, failure));
+
+        var (result, httpContext) = await RunAsync(userToken: null, apiKey: rawKey);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(message, httpContext.Items[AdminEndpointAuthenticationHandler.FailureReasonItemKey]);
+        Assert.Equal(failure, httpContext.Items[AdminEndpointAuthenticationHandler.FailureKindItemKey]);
+        _tenantContext.VerifySet(x => x.LoggedInUser = It.IsAny<string>(), Times.Never);
     }
 
     [Fact]
