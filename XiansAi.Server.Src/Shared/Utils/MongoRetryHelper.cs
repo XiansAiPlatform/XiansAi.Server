@@ -82,6 +82,13 @@ public static class MongoRetryHelper
                 await Task.Delay(delay, cancellationToken);
                 continue;
             }
+            catch (MongoWriteException ex) when (ex.WriteError?.Category == ServerErrorCategory.DuplicateKey)
+            {
+                // Not an operational failure: callers (e.g. idempotent creates) handle duplicate keys themselves.
+                logger.LogDebug(ex, "Duplicate key in {OperationName} on attempt {Attempt}; caller is expected to handle it",
+                    operationName, attempt + 1);
+                throw;
+            }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Error in {OperationName} on attempt {Attempt}", operationName, attempt + 1);

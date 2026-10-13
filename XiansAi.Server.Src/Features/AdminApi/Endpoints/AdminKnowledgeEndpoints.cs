@@ -640,7 +640,7 @@ Same as the original knowledge item. User must have permission to modify the age
                 string? actualTenantId = systemScoped ? null : tenantId;
 
                 // Use service to create knowledge
-                var knowledge = await knowledgeService.CreateForTenantAsync(
+                var (knowledge, created) = await knowledgeService.CreateOrGetForTenantAsync(
                     request.Name,
                     request.Content,
                     request.Type,
@@ -654,9 +654,21 @@ Same as the original knowledge item. User must have permission to modify the age
                     request.Visible
                 );
 
+                // Identical content already exists in this scope: idempotent no-op.
+                if (!created)
+                {
+                    return Results.Ok(knowledge);
+                }
+
                 return Results.Created(
                     AdminApiConstants.BuildVersionedPath($"tenants/{tenantId}/knowledge/{knowledge.Id}"),
                     knowledge);
+            }
+            catch (KnowledgeConflictException ex)
+            {
+                return Results.Json(
+                    new { error = "Conflict", message = ex.Message },
+                    statusCode: 409);
             }
             catch (Exception ex)
             {
@@ -667,6 +679,8 @@ Same as the original knowledge item. User must have permission to modify the age
         })
         .WithName("Create Knowledge")
         .Produces<Knowledge>(StatusCodes.Status201Created)
+        .Produces<Knowledge>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status409Conflict)
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status403Forbidden)
         .Produces(StatusCodes.Status404NotFound)
