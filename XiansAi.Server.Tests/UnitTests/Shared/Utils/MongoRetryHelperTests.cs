@@ -1,4 +1,13 @@
+using System.Net;
+using System.Reflection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using MongoDB.Bson;
+using MongoDB.Driver;
+using MongoDB.Driver.Core.Clusters;
+using MongoDB.Driver.Core.Connections;
+using MongoDB.Driver.Core.Servers;
+using Moq;
 using Shared.Utils;
 using Xunit;
 
@@ -75,5 +84,51 @@ public class MongoRetryHelperTests
                 cancellationToken: cts.Token));
 
         Assert.False(called);
+    }
+
+    private static MongoWriteException DuplicateKey()
+    {
+        var writeError = (WriteError)Activator.CreateInstance(
+            typeof(WriteError),
+            BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public,
+            binder: null,
+            args: new object?[] { ServerErrorCategory.DuplicateKey, 11000, "E11000 duplicate key", new BsonDocument() },
+            culture: null)!;
+        var connectionId = new ConnectionId(new ServerId(new ClusterId(1), new DnsEndPoint("localhost", 27017)));
+        return new MongoWriteException(connectionId, writeError, null, null);
+    }
+
+    private static void VerifyLogged(Mock<ILogger> logger, LogLevel level, Times times) =>
+        logger.Verify(l => l.Log(
+            level,
+            It.IsAny<EventId>(),
+            It.IsAny<It.IsAnyType>(),
+            It.IsAny<Exception?>(),
+            It.IsAny<Func<It.IsAnyType, Exception?, string>>()), times);
+
+    [Fact]
+    public async Task ExecuteWithRetryAsync_DuplicateKey_IsRethrownWithoutErrorLog()
+    {
+        var logger = new Mock<ILogger>();
+        logger.Setup(l => l.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
+
+        await Assert.ThrowsAsync<MongoWriteException>(() =>
+            MongoRetryHelper.ExecuteWithRetryAsync<int>(
+                () => throw DuplicateKey(), logger.Object, operationName: "CreateKnowledge"));
+
+        VerifyLogged(logger, LogLevel.Error, Times.Never());
+    }
+
+    [Fact]
+    public async Task ExecuteWithRetryAsync_UnexpectedException_StillLogsError()
+    {
+        var logger = new Mock<ILogger>();
+        logger.Setup(l => l.IsEnabled(It.IsAny<LogLevel>())).Returns(true);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            MongoRetryHelper.ExecuteWithRetryAsync<int>(
+                () => throw new InvalidOperationException("boom"), logger.Object, operationName: "CreateKnowledge"));
+
+        VerifyLogged(logger, LogLevel.Error, Times.Once());
     }
 }
