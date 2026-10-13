@@ -165,12 +165,16 @@ public class HealthCheckExecutorsTests
         return receiver;
     }
 
+    private static WebhookHealthCheckExecutor UpdateExecutor(Mock<IWebhookReceiverService> receiver) =>
+        new(receiver.Object, Mock.Of<IActivationValidationService>(), Mock.Of<IMessageService>(),
+            Mock.Of<IPendingRequestService>(), NullLoggerFactory.Instance);
+
     [Fact]
     public async Task Webhook_InvokesInboundPathWithActivationWorkflowIdAndTimeout()
     {
         var receiver = WebhookReceiver(ServiceResult<WebhookResponse>.Success(new WebhookResponse { StatusCode = HttpStatusCode.OK, Content = "ok" }));
 
-        var result = await new WebhookHealthCheckExecutor(receiver.Object).ExecuteAsync(WebhookCheck(200), CancellationToken.None);
+        var result = await UpdateExecutor(receiver).ExecuteAsync(WebhookCheck(200), CancellationToken.None);
 
         Assert.Equal(HealthCheckStatus.Pass, result.Status);
         receiver.Verify(r => r.ProcessWebhook(
@@ -188,7 +192,7 @@ public class HealthCheckExecutorsTests
     {
         var receiver = WebhookReceiver(ServiceResult<WebhookResponse>.Success(new WebhookResponse { StatusCode = HttpStatusCode.InternalServerError, Content = "boom" }));
 
-        var result = await new WebhookHealthCheckExecutor(receiver.Object).ExecuteAsync(WebhookCheck(200), CancellationToken.None);
+        var result = await UpdateExecutor(receiver).ExecuteAsync(WebhookCheck(200), CancellationToken.None);
 
         Assert.Equal(HealthCheckStatus.Fail, result.Status);
         Assert.Contains("Expected status code 200 but got 500", result.Detail);
@@ -199,7 +203,7 @@ public class HealthCheckExecutorsTests
     {
         var receiver = WebhookReceiver(ServiceResult<WebhookResponse>.Success(new WebhookResponse { StatusCode = HttpStatusCode.OK, Content = "{\"status\":\"error\"}" }));
 
-        var result = await new WebhookHealthCheckExecutor(receiver.Object)
+        var result = await UpdateExecutor(receiver)
             .ExecuteAsync(WebhookCheck(null, new HealthCheckAssertion { Op = HealthCheckAssertionOp.NotContains, Value = "error" }), CancellationToken.None);
 
         Assert.Equal(HealthCheckStatus.Fail, result.Status);
@@ -210,10 +214,155 @@ public class HealthCheckExecutorsTests
     {
         var receiver = WebhookReceiver(ServiceResult<WebhookResponse>.RequestTimeout("no workers"));
 
-        var result = await new WebhookHealthCheckExecutor(receiver.Object).ExecuteAsync(WebhookCheck(), CancellationToken.None);
+        var result = await UpdateExecutor(receiver).ExecuteAsync(WebhookCheck(), CancellationToken.None);
 
         Assert.Equal(HealthCheckStatus.Error, result.Status);
         Assert.Contains("408", result.Detail);
+    }
+
+    [Fact]
+    public async Task Webhook_JsonAndHeaderAssertions_AreCheckedAgainstTheResponse()
+    {
+        var receiver = WebhookReceiver(ServiceResult<WebhookResponse>.Success(new WebhookResponse
+        {
+            StatusCode = HttpStatusCode.OK,
+            Content = "{\"data\":{\"status\":\"ok\",\"count\":3}}",
+            Headers = new() { ["X-Trace-Id"] = ["abc"] }
+        }));
+        var check = WebhookCheck(200,
+            new HealthCheckAssertion { Op = HealthCheckAssertionOp.JsonEquals, Path = "$.data.status", Value = "ok" },
+            new HealthCheckAssertion { Op = HealthCheckAssertionOp.JsonEquals, Path = "$.data.count", Value = "3.0" },
+            new HealthCheckAssertion { Op = HealthCheckAssertionOp.HeaderExists, Path = "x-trace-id" });
+
+        var result = await UpdateExecutor(receiver).ExecuteAsync(check, CancellationToken.None);
+
+        Assert.Equal(HealthCheckStatus.Pass, result.Status);
+        Assert.All(result.AssertionResults!, r => Assert.True(r.Passed));
+    }
+
+    [Fact]
+    public async Task Webhook_SlowerThanMaxResponseMs_Fails()
+    {
+        var receiver = new Mock<IWebhookReceiverService>();
+        receiver
+            .Setup(r => r.ProcessWebhook(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(),
+                It.IsAny<IDictionary<string, string>>(), It.IsAny<string>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
+            .Returns(async () =>
+            {
+                await Task.Delay(80);
+                return ServiceResult<WebhookResponse>.Success(new WebhookResponse { StatusCode = HttpStatusCode.OK, Content = "ok" });
+            });
+        var check = WebhookCheck(200);
+        check.Webhook!.MaxResponseMs = 10;
+
+        var result = await UpdateExecutor(receiver).ExecuteAsync(check, CancellationToken.None);
+
+        Assert.Equal(HealthCheckStatus.Fail, result.Status);
+        Assert.Contains("over the 10 ms limit", result.Detail);
+    }
+
+    // ----- Webhook, builtin mode (OnWebhook through messaging) -----
+
+    private static AgentHealthCheck BuiltinWebhookCheck(int? expectedStatus = null, params HealthCheckAssertion[] assertions) =>
+        Check(HealthCheckType.Webhook, c => c.Webhook = new WebhookHealthCheckConfig
+        {
+            Mode = WebhookHealthCheckMode.Builtin,
+            WorkflowType = "Integrator Workflow",
+            WebhookName = "ticket-created",
+            Body = "{\"id\":7}",
+            ExpectedStatusCode = expectedStatus,
+            Assertions = assertions.ToList()
+        });
+
+    private static (WebhookHealthCheckExecutor Executor, Mock<IMessageService> Messages, Mock<IWebhookReceiverService> Receiver) BuiltinExecutor(
+        object? replyData, ServiceResult? validation = null)
+    {
+        var validationService = new Mock<IActivationValidationService>();
+        validationService
+            .Setup(v => v.ValidateActivationAsync(TenantId, AgentName, ActivationName, "Integrator Workflow"))
+            .ReturnsAsync(validation ?? ServiceResult.Success());
+
+        var messages = new Mock<IMessageService>();
+        messages
+            .Setup(m => m.ProcessIncomingMessage(It.IsAny<ChatOrDataRequest>(), MessageType.Webhook))
+            .ReturnsAsync(ServiceResult<string>.Success("thread-1"));
+
+        var pending = new Mock<IPendingRequestService>();
+        pending
+            .Setup(p => p.WaitForResponseAsync<ConversationMessage>(It.IsAny<string>(), It.IsAny<TimeSpan>(), MessageType.Webhook, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(replyData == null ? null : new ConversationMessage
+            {
+                ThreadId = "thread-1",
+                TenantId = TenantId,
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = "agent",
+                Direction = MessageDirection.Outgoing,
+                ParticipantId = ChatHealthCheckExecutor.ParticipantId,
+                WorkflowId = "w",
+                WorkflowType = $"{AgentName}:Integrator Workflow",
+                Data = replyData
+            });
+
+        var receiver = new Mock<IWebhookReceiverService>();
+        var executor = new WebhookHealthCheckExecutor(receiver.Object, validationService.Object, messages.Object, pending.Object, NullLoggerFactory.Instance);
+        return (executor, messages, receiver);
+    }
+
+    private static System.Text.Json.JsonElement Json(string json) => System.Text.Json.JsonDocument.Parse(json).RootElement;
+
+    [Fact]
+    public async Task Builtin_SendsWebhookMessageToTheActivationAndGradesTheReply()
+    {
+        var reply = Json("{\"statusCode\":201,\"content\":\"{\\\"status\\\":\\\"ok\\\"}\",\"contentType\":\"application/json\",\"headers\":{\"X-Handled-By\":[\"agent\"]}}");
+        var (executor, messages, receiver) = BuiltinExecutor(reply);
+        var check = BuiltinWebhookCheck(201,
+            new HealthCheckAssertion { Op = HealthCheckAssertionOp.JsonEquals, Path = "$.status", Value = "ok" },
+            new HealthCheckAssertion { Op = HealthCheckAssertionOp.HeaderEquals, Path = "X-Handled-By", Value = "AGENT" });
+
+        var result = await executor.ExecuteAsync(check, CancellationToken.None);
+
+        Assert.Equal(HealthCheckStatus.Pass, result.Status);
+        messages.Verify(m => m.ProcessIncomingMessage(
+            It.Is<ChatOrDataRequest>(r =>
+                r.Text == "ticket-created"
+                && (string?)r.Data == "{\"id\":7}"
+                && r.ParticipantId == ChatHealthCheckExecutor.ParticipantId
+                && r.WorkflowId == $"{TenantId}:{AgentName}:Integrator Workflow:{ActivationName}"),
+            MessageType.Webhook), Times.Once);
+        receiver.VerifyNoOtherCalls(); // never the Update path
+    }
+
+    [Fact]
+    public async Task Builtin_WrongStatusFromAgent_Fails()
+    {
+        var (executor, _, _) = BuiltinExecutor(Json("{\"statusCode\":500,\"content\":\"boom\"}"));
+
+        var result = await executor.ExecuteAsync(BuiltinWebhookCheck(200), CancellationToken.None);
+
+        Assert.Equal(HealthCheckStatus.Fail, result.Status);
+        Assert.Contains("Expected status code 200 but got 500", result.Detail);
+    }
+
+    [Fact]
+    public async Task Builtin_NoReply_IsError()
+    {
+        var (executor, _, _) = BuiltinExecutor(replyData: null);
+
+        var result = await executor.ExecuteAsync(BuiltinWebhookCheck(200), CancellationToken.None);
+
+        Assert.Equal(HealthCheckStatus.Error, result.Status);
+        Assert.Contains("408", result.Detail);
+    }
+
+    [Fact]
+    public async Task Builtin_ActivationNotRoutable_IsErrorAndSendsNothing()
+    {
+        var (executor, messages, _) = BuiltinExecutor(Json("{}"), ServiceResult.Failure("deactivated", StatusCode.Conflict));
+
+        var result = await executor.ExecuteAsync(BuiltinWebhookCheck(), CancellationToken.None);
+
+        Assert.Equal(HealthCheckStatus.Error, result.Status);
+        messages.Verify(m => m.ProcessIncomingMessage(It.IsAny<ChatOrDataRequest>(), It.IsAny<MessageType>()), Times.Never);
     }
 
     // ----- Schedule -----

@@ -24,11 +24,31 @@ public enum HealthCheckStatus
     [JsonStringEnumMemberName("error")] Error
 }
 
+/// <summary>
+/// What an assertion checks. Text ops compare against the whole response body; JSON ops read one
+/// value at <see cref="HealthCheckAssertion.Path"/> (e.g. <c>$.data.status</c>); header ops read the
+/// response header named by <see cref="HealthCheckAssertion.Path"/>. Chat checks support text ops only.
+/// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<HealthCheckAssertionOp>))]
 public enum HealthCheckAssertionOp
 {
     [JsonStringEnumMemberName("contains")] Contains,
-    [JsonStringEnumMemberName("notContains")] NotContains
+    [JsonStringEnumMemberName("notContains")] NotContains,
+    [JsonStringEnumMemberName("jsonEquals")] JsonEquals,
+    [JsonStringEnumMemberName("jsonExists")] JsonExists,
+    [JsonStringEnumMemberName("headerEquals")] HeaderEquals,
+    [JsonStringEnumMemberName("headerExists")] HeaderExists
+}
+
+/// <summary>How a webhook check calls the agent.</summary>
+[JsonConverter(typeof(JsonStringEnumConverter<WebhookHealthCheckMode>))]
+public enum WebhookHealthCheckMode
+{
+    /// <summary>A Temporal Update method on the workflow: <c>/api/user/webhooks/{workflow}/{method}</c>.</summary>
+    [JsonStringEnumMemberName("update")] Update,
+
+    /// <summary>The agent's <c>OnWebhook</c> handler via messaging: <c>/api/user/webhooks/builtin</c>.</summary>
+    [JsonStringEnumMemberName("builtin")] Builtin
 }
 
 /// <summary>Whether the check's Temporal schedule is known to match its stored definition.</summary>
@@ -41,15 +61,23 @@ public enum HealthCheckScheduleState
     [JsonStringEnumMemberName("paused")] Paused
 }
 
-/// <summary>Case-insensitive substring assertion (R5).</summary>
+/// <summary>
+/// One check on a response: a case-insensitive substring (R5), or a JSON value / header (webhooks).
+/// </summary>
 public class HealthCheckAssertion
 {
     [BsonElement("op")]
     [BsonRepresentation(BsonType.String)]
     public HealthCheckAssertionOp Op { get; set; }
 
+    /// <summary>JSON path for JSON ops, header name for header ops; unused by text ops.</summary>
+    [BsonElement("path")]
+    [BsonIgnoreIfNull]
+    public string? Path { get; set; }
+
+    /// <summary>Expected text or value; unused by the <c>*Exists</c> ops.</summary>
     [BsonElement("value")]
-    public required string Value { get; set; }
+    public string Value { get; set; } = string.Empty;
 }
 
 public class ChatHealthCheckConfig
@@ -65,14 +93,33 @@ public class ChatHealthCheckConfig
     public List<HealthCheckAssertion> Assertions { get; set; } = new();
 }
 
-/// <summary>Invokes the inbound webhook trigger path (Temporal update-with-start), per Q2.</summary>
+/// <summary>
+/// Calls an inbound webhook of the agent: a Temporal Update method (<see cref="WebhookHealthCheckMode.Update"/>,
+/// the original Q2 path) or the agent's builtin <c>OnWebhook</c> handler (<see cref="WebhookHealthCheckMode.Builtin"/>).
+/// Documents stored before modes existed have no mode and read as Update.
+/// </summary>
 public class WebhookHealthCheckConfig
 {
+    [BsonElement("mode")]
+    [BsonRepresentation(BsonType.String)]
+    public WebhookHealthCheckMode Mode { get; set; } = WebhookHealthCheckMode.Update;
+
     [BsonElement("workflow_type")]
     public required string WorkflowType { get; set; }
 
+    /// <summary>Update mode: the Temporal Update method name.</summary>
     [BsonElement("method_name")]
-    public required string MethodName { get; set; }
+    public string MethodName { get; set; } = string.Empty;
+
+    /// <summary>Builtin mode: the webhook name the agent's <c>OnWebhook</c> handler receives.</summary>
+    [BsonElement("webhook_name")]
+    [BsonIgnoreIfNull]
+    public string? WebhookName { get; set; }
+
+    /// <summary>When set, a response slower than this fails the check.</summary>
+    [BsonElement("max_response_ms")]
+    [BsonIgnoreIfNull]
+    public int? MaxResponseMs { get; set; }
 
     [BsonElement("query_params")]
     public Dictionary<string, string> QueryParams { get; set; } = new();

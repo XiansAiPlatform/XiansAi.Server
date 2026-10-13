@@ -23,6 +23,10 @@ public class HealthCheckRequest
 public class HealthCheckAssertionRequest
 {
     public HealthCheckAssertionOp? Op { get; set; }
+
+    /// <summary>JSON path (<c>$.data.status</c>) for JSON ops, header name for header ops.</summary>
+    public string? Path { get; set; }
+
     public string? Value { get; set; }
 }
 
@@ -36,11 +40,20 @@ public class ChatHealthCheckRequest
 
 public class WebhookHealthCheckRequest
 {
+    /// <summary><c>update</c> (default) or <c>builtin</c>.</summary>
+    public WebhookHealthCheckMode? Mode { get; set; }
+
     /// <summary>Flow name without the agent prefix.</summary>
     public string? WorkflowType { get; set; }
 
-    /// <summary>The workflow's Temporal update method, as in <c>POST /api/user/webhooks/{workflow}/{methodName}</c>.</summary>
+    /// <summary>Update mode: the workflow's Temporal update method, as in <c>POST /api/user/webhooks/{workflow}/{methodName}</c>.</summary>
     public string? MethodName { get; set; }
+
+    /// <summary>Builtin mode: the webhook name, as in <c>POST /api/user/webhooks/builtin?webhookName=…</c>.</summary>
+    public string? WebhookName { get; set; }
+
+    /// <summary>Optional: fail when the agent takes longer than this to respond.</summary>
+    public int? MaxResponseMs { get; set; }
 
     public Dictionary<string, string>? QueryParams { get; set; }
     public string? Body { get; set; }
@@ -62,6 +75,8 @@ public static class HealthCheckLimits
     public const int DefaultTimeoutSeconds = 60;
     public const int MaxAssertions = 10;
     public const int MaxAssertionValueLength = 500;
+    public const int MaxAssertionPathLength = 200;
+    public const int MaxWebhookNameLength = 200;
     public const int MaxMessageLength = 4000;
     public const int MaxWorkflowTypeLength = 200;
     public const int MaxMethodNameLength = 200;

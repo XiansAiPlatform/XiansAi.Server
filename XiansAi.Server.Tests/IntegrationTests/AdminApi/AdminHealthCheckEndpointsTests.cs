@@ -135,6 +135,62 @@ public class AdminHealthCheckEndpointsTests : AdminApiIntegrationTestBase
     }
 
     [Fact]
+    public async Task CreateBuiltinWebhookCheck_WithStructuredAssertions_RoundTrips()
+    {
+        var (tenantId, activation) = await SeedAsync();
+
+        var check = await CreateCheckAsync(tenantId, activation.Id, new
+        {
+            name = "integrator webhook",
+            type = "webhook",
+            intervalMinutes = 15,
+            timeoutSeconds = 20,
+            webhook = new
+            {
+                mode = "builtin",
+                workflowType = "Integrator Workflow",
+                webhookName = "ticket-created",
+                body = "{\"id\":1}",
+                expectedStatusCode = 200,
+                maxResponseMs = 5000,
+                assertions = new object[]
+                {
+                    new { op = "jsonEquals", path = "$.status", value = "ok" },
+                    new { op = "headerExists", path = "X-Request-Id" }
+                }
+            }
+        });
+
+        Assert.Equal(WebhookHealthCheckMode.Builtin, check.Webhook!.Mode);
+        Assert.Equal("ticket-created", check.Webhook.WebhookName);
+        Assert.Equal(5000, check.Webhook.MaxResponseMs);
+        Assert.Equal(
+            [(HealthCheckAssertionOp.JsonEquals, "$.status"), (HealthCheckAssertionOp.HeaderExists, "X-Request-Id")],
+            check.Webhook.Assertions.Select(a => (a.Op, a.Path!)).ToArray());
+
+        var reloaded = (await ReadAsJsonAsync<AgentHealthCheck>(await GetAsync($"{ChecksRoute(tenantId, activation.Id)}/{check.Id}")))!;
+        Assert.Equal(WebhookHealthCheckMode.Builtin, reloaded.Webhook!.Mode);
+        Assert.Equal("$.status", reloaded.Webhook.Assertions[0].Path);
+    }
+
+    [Fact]
+    public async Task CreateChatCheck_WithJsonAssertion_ReturnsBadRequest()
+    {
+        var (tenantId, activation) = await SeedAsync();
+
+        var response = await PostAsJsonAsync(ChecksRoute(tenantId, activation.Id), new
+        {
+            name = "chat json",
+            type = "chat",
+            intervalMinutes = 15,
+            chat = new { message = "Hi", assertions = new[] { new { op = "jsonEquals", path = "$.a", value = "b" } } }
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Contains("only supported on webhook checks", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
     public async Task CreateScheduleCheck_ForUnknownSchedule_ReturnsBadRequest()
     {
         var (tenantId, activation) = await SeedAsync();

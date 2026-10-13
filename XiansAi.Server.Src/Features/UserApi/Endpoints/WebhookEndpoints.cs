@@ -142,77 +142,8 @@ public static class WebhookEndpoints
                     return httpResult;
                 }
 
-                // Parse WebhookResponse from the result
-                // The result is an anonymous object with properties: ThreadId, Text, Data, etc.
-                WebhookResponse? webhookResponse = null;
-
-                // JSON serializer options with case-insensitive property matching
-                var jsonOptions = new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                };
-
-                // Try to extract WebhookResponse from Data field
-                var resultType = result.GetType();
-                var dataProperty = resultType.GetProperty("Data");
-                var textProperty = resultType.GetProperty("Text");
-
-                if (dataProperty != null)
-                {
-                    var dataValue = dataProperty.GetValue(result);
-
-                    // If Data is already a WebhookResponse
-                    if (dataValue is WebhookResponse wr)
-                    {
-                        webhookResponse = wr;
-                    }
-                    // If Data is a JsonElement, try to deserialize it
-                    else if (dataValue is JsonElement jsonElement)
-                    {
-                        try
-                        {
-                            webhookResponse = JsonSerializer.Deserialize<WebhookResponse>(jsonElement.GetRawText(), jsonOptions);
-                            logger.LogDebug("Successfully deserialized WebhookResponse from JsonElement");
-                        }
-                        catch (Exception ex)
-                        {
-                            logger.LogWarning(ex, "Failed to deserialize WebhookResponse from JsonElement. Data: {Data}", jsonElement.GetRawText());
-                        }
-                    }
-                    // If Data is a dictionary or any other object, serialize and deserialize
-                    else if (dataValue != null)
-                    {
-                        try
-                        {
-                            var json = JsonSerializer.Serialize(dataValue);
-                            webhookResponse = JsonSerializer.Deserialize<WebhookResponse>(json, jsonOptions);
-                            logger.LogDebug("Successfully deserialized WebhookResponse from object. StatusCode: {StatusCode}", webhookResponse?.StatusCode);
-                        }
-                        catch (Exception ex)
-                        {
-                            logger.LogWarning(ex, "Failed to deserialize WebhookResponse from object. Type: {Type}", dataValue.GetType().Name);
-                        }
-                    }
-                }
-
-                // Fallback: try to parse from Text field if Data didn't work
-                if (webhookResponse == null && textProperty != null)
-                {
-                    var textValue = textProperty.GetValue(result) as string;
-                    if (!string.IsNullOrEmpty(textValue))
-                    {
-                        try
-                        {
-                            webhookResponse = JsonSerializer.Deserialize<WebhookResponse>(textValue, jsonOptions);
-                            logger.LogDebug("Successfully deserialized WebhookResponse from Text field");
-                        }
-                        catch (Exception ex)
-                        {
-                            logger.LogWarning(ex, "Failed to deserialize WebhookResponse from Text field. Text: {Text}", textValue);
-                        }
-                    }
-                }
-
+                // Parse the WebhookResponse the workflow returned (Data, falling back to Text).
+                var webhookResponse = WebhookResponseParser.FromSyncResult(result, logger);
 
                 // Apply the WebhookResponse to the HTTP context
                 if (webhookResponse != null)

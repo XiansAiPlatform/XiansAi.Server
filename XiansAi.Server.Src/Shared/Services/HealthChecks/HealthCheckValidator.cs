@@ -67,7 +67,7 @@ public static class HealthCheckValidator
                 break;
             case HealthCheckType.Webhook:
                 if (request.Webhook == null) return Invalid("webhook is required for a webhook check");
-                (webhook, error) = ValidateWebhook(request.Webhook);
+                (webhook, error) = ValidateWebhook(request.Webhook, timeout);
                 break;
             case HealthCheckType.Schedule:
                 if (request.Schedule == null) return Invalid("schedule is required for a schedule check");
@@ -92,24 +92,43 @@ public static class HealthCheckValidator
         if (workflowType != null && ValidateFlowName(workflowType, "chat.workflowType") is { } workflowError)
             return (null, workflowError);
 
-        var (assertions, assertionError) = ValidateAssertions(chat.Assertions, "chat.assertions");
+        var (assertions, assertionError) = ValidateAssertions(chat.Assertions, "chat.assertions", allowStructured: false);
         if (assertionError != null)
             return (null, assertionError);
 
         return (new ChatHealthCheckConfig { WorkflowType = workflowType, Message = chat.Message, Assertions = assertions! }, null);
     }
 
-    private static (WebhookHealthCheckConfig?, string?) ValidateWebhook(WebhookHealthCheckRequest webhook)
+    private static (WebhookHealthCheckConfig?, string?) ValidateWebhook(WebhookHealthCheckRequest webhook, int timeoutSeconds)
     {
+        var mode = webhook.Mode ?? WebhookHealthCheckMode.Update;
+
         var workflowType = webhook.WorkflowType?.Trim();
         if (string.IsNullOrEmpty(workflowType))
             return (null, "webhook.workflowType is required");
         if (ValidateFlowName(workflowType, "webhook.workflowType") is { } workflowError)
             return (null, workflowError);
 
-        var methodName = webhook.MethodName?.Trim();
-        if (string.IsNullOrEmpty(methodName) || methodName.Length > HealthCheckLimits.MaxMethodNameLength)
-            return (null, $"webhook.methodName is required and must be at most {HealthCheckLimits.MaxMethodNameLength} characters");
+        string methodName = string.Empty;
+        string? webhookName = null;
+        if (mode == WebhookHealthCheckMode.Update)
+        {
+            methodName = webhook.MethodName?.Trim() ?? string.Empty;
+            if (methodName.Length == 0 || methodName.Length > HealthCheckLimits.MaxMethodNameLength)
+                return (null, $"webhook.methodName is required and must be at most {HealthCheckLimits.MaxMethodNameLength} characters");
+        }
+        else
+        {
+            webhookName = webhook.WebhookName?.Trim();
+            if (string.IsNullOrEmpty(webhookName) || webhookName.Length > HealthCheckLimits.MaxWebhookNameLength)
+                return (null, $"webhook.webhookName is required for builtin webhooks and must be at most {HealthCheckLimits.MaxWebhookNameLength} characters");
+            // The builtin endpoint passes the body (and webhook name) to OnWebhook, not query parameters.
+            if (webhook.QueryParams is { Count: > 0 })
+                return (null, "webhook.queryParams are not sent to builtin webhooks; put the data in webhook.body");
+        }
+
+        if (webhook.MaxResponseMs is { } maxResponseMs && (maxResponseMs < 1 || maxResponseMs > timeoutSeconds * 1000))
+            return (null, $"webhook.maxResponseMs must be between 1 and the timeout ({timeoutSeconds * 1000} ms)");
 
         var queryParams = webhook.QueryParams ?? new Dictionary<string, string>();
         if (queryParams.Count > HealthCheckLimits.MaxQueryParams)
@@ -133,17 +152,20 @@ public static class HealthCheckValidator
         if (webhook.ExpectedStatusCode is < 100 or > 599)
             return (null, "webhook.expectedStatusCode must be a valid HTTP status code (100-599)");
 
-        var (assertions, assertionError) = ValidateAssertions(webhook.Assertions, "webhook.assertions");
+        var (assertions, assertionError) = ValidateAssertions(webhook.Assertions, "webhook.assertions", allowStructured: true);
         if (assertionError != null)
             return (null, assertionError);
 
         return (new WebhookHealthCheckConfig
         {
+            Mode = mode,
             WorkflowType = workflowType,
             MethodName = methodName,
+            WebhookName = webhookName,
             QueryParams = queryParams.ToDictionary(p => p.Key, p => p.Value ?? string.Empty),
             Body = body,
             ExpectedStatusCode = webhook.ExpectedStatusCode,
+            MaxResponseMs = webhook.MaxResponseMs,
             Assertions = assertions!
         }, null);
     }
@@ -157,7 +179,12 @@ public static class HealthCheckValidator
         return (new ScheduleHealthCheckConfig { ScheduleId = scheduleId, RequireLastRunSuccess = schedule.RequireLastRunSuccess }, null);
     }
 
-    private static (List<HealthCheckAssertion>?, string?) ValidateAssertions(List<HealthCheckAssertionRequest>? assertions, string field)
+    /// <summary>
+    /// Text ops (contains / notContains) everywhere; JSON and header ops only where
+    /// <paramref name="allowStructured"/> (webhook responses carry JSON and headers, chat replies don't).
+    /// </summary>
+    private static (List<HealthCheckAssertion>?, string?) ValidateAssertions(
+        List<HealthCheckAssertionRequest>? assertions, string field, bool allowStructured)
     {
         assertions ??= new();
         if (assertions.Count > HealthCheckLimits.MaxAssertions)
@@ -167,11 +194,36 @@ public static class HealthCheckValidator
         foreach (var assertion in assertions)
         {
             if (assertion?.Op == null)
-                return (null, $"{field}[].op is required (contains or notContains)");
-            if (string.IsNullOrEmpty(assertion.Value) || assertion.Value.Length > HealthCheckLimits.MaxAssertionValueLength)
-                return (null, $"{field}[].value is required and must be at most {HealthCheckLimits.MaxAssertionValueLength} characters");
+                return (null, allowStructured
+                    ? $"{field}[].op is required (contains, notContains, jsonEquals, jsonExists, headerEquals or headerExists)"
+                    : $"{field}[].op is required (contains or notContains)");
 
-            result.Add(new HealthCheckAssertion { Op = assertion.Op.Value, Value = assertion.Value });
+            var op = assertion.Op.Value;
+            var isText = op is HealthCheckAssertionOp.Contains or HealthCheckAssertionOp.NotContains;
+            var isJson = op is HealthCheckAssertionOp.JsonEquals or HealthCheckAssertionOp.JsonExists;
+            var needsValue = op is HealthCheckAssertionOp.Contains or HealthCheckAssertionOp.NotContains
+                or HealthCheckAssertionOp.JsonEquals or HealthCheckAssertionOp.HeaderEquals;
+
+            if (!isText && !allowStructured)
+                return (null, $"{field}[].op '{op}' is only supported on webhook checks; chat checks use contains or notContains");
+
+            string? path = null;
+            if (!isText)
+            {
+                path = assertion.Path?.Trim();
+                if (string.IsNullOrEmpty(path) || path.Length > HealthCheckLimits.MaxAssertionPathLength)
+                    return (null, $"{field}[].path is required for {op} and must be at most {HealthCheckLimits.MaxAssertionPathLength} characters");
+                if (isJson && !JsonPath.TryParse(path, out _))
+                    return (null, $"{field}[].path '{path}' is not a supported JSON path; use $.field, $.a.b or $.items[0].name");
+                if (!isJson && !path.All(c => char.IsAsciiLetterOrDigit(c) || c == '-' || c == '_'))
+                    return (null, $"{field}[].path '{path}' is not a valid header name");
+            }
+
+            var value = assertion.Value ?? string.Empty;
+            if (needsValue && (value.Length == 0 || value.Length > HealthCheckLimits.MaxAssertionValueLength))
+                return (null, $"{field}[].value is required for {op} and must be at most {HealthCheckLimits.MaxAssertionValueLength} characters");
+
+            result.Add(new HealthCheckAssertion { Op = op, Path = path, Value = needsValue ? value : string.Empty });
         }
 
         return (result, null);

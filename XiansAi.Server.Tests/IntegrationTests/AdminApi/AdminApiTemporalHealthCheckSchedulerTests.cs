@@ -144,6 +144,16 @@ public class AdminApiTemporalHealthCheckSchedulerTests : AdminApiTemporalIntegra
         var (tenantId, agent, chatFlow, activation) = await SeedActiveActivationAsync();
         await CreateBuiltInFlowDefinitionAsync(agent.Name, tenantId, flowName: "Git Events");
 
+        // A builtin webhook registered for this activation, created the way Connections -> Webhooks does.
+        var webhook = await PostAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/webhooks", new
+        {
+            activationName = activation.Name,
+            agentName = agent.Name,
+            workflowName = "Git Events",
+            webhookName = "github-push"
+        });
+        Assert.True(webhook.IsSuccessStatusCode, await webhook.Content.ReadAsStringAsync());
+
         var workflowType = $"{agent.Name}:Git Events";
         var taskQueue = $"{tenantId}:{workflowType}";
         using var cts = new CancellationTokenSource();
@@ -173,6 +183,8 @@ public class AdminApiTemporalHealthCheckSchedulerTests : AdminApiTemporalIntegra
             Assert.Equal(
                 ["github-push", "health-ping"],
                 gitEvents.GetProperty("methods").EnumerateArray().Select(m => m.GetProperty("name").GetString()).ToArray());
+            Assert.True(gitEvents.GetProperty("isBuiltIn").GetBoolean());
+            Assert.Equal(["github-push"], gitEvents.GetProperty("webhooks").EnumerateArray().Select(w => w.GetString()).ToArray());
 
             var chat = targets[ShortFlow(chatFlow.WorkflowType)];
             Assert.Equal("notRunning", chat.GetProperty("status").GetString());

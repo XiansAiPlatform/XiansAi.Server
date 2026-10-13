@@ -31,7 +31,7 @@ recording a pass/fail history that can be queried through the AdminApi.
 | Q3 | Schedule test is a metadata check | Reads `IScheduleService`; never triggers a run |
 | Q4 | Tests attach to an `AgentActivation` | Definitions are keyed by `activationId` and inherit tenant/agent/activation name from it |
 | Q5 | Server only | AdminApi endpoints only; documented through the Swashbuckle-generated OpenAPI at `/api-docs` |
-| R5 | `contains` / `notContains`, case-insensitive | Single assertion evaluator shared by chat and webhook tests |
+| R5 | `contains` / `notContains`, case-insensitive | Single assertion evaluator shared by chat and webhook tests. Webhook checks later also got JSON-path and header assertions (§4.1); chat stays text-only |
 | R6 | One capability | `tenant.healthChecks.manage` gates both configure and view |
 | R7 | Per-test interval, minimum 5 min | Validated on create/update; Temporal schedule interval = test interval |
 | R8 | Deactivate/delete disables tests | Pause on deactivate, resume on activate, delete on delete. A run-time guard covers races. |
@@ -156,12 +156,16 @@ gets `scheduleState = "pending"`, and the reconciler fixes it. We don't need a d
   "chat":     { "workflow_type": null,               // null = activation's conversational workflow
                 "message": "Hello",                  // <= 4000 chars
                 "assertions": [ { "op": "contains", "value": "hello" } ] },
-  "webhook":  { "workflow_type": "Support Agent:Inbound",
-                "method_name": "ticket-created",
-                "query_params": { "source": "health-check" },
-                "body": "{\"id\":\"test\"}",         // <= 32 KB
-                "expected_status_code": 200,         // optional
-                "assertions": [ { "op": "notContains", "value": "error" } ] },
+  "webhook":  { "mode": "builtin" | "update",          // absent on older documents = update
+                "workflow_type": "Integrator Workflow", // flow name, no agent prefix
+                "webhook_name": "ticket-created",      // builtin mode: the name OnWebhook receives
+                "method_name": "",                     // update mode: the Temporal Update method
+                "query_params": {},                    // update mode only
+                "body": "{\"id\":\"test\"}",           // <= 32 KB
+                "expected_status_code": 200,           // optional
+                "max_response_ms": 2000,               // optional, <= timeout
+                "assertions": [ { "op": "jsonEquals", "path": "$.status", "value": "ok" },
+                                { "op": "headerExists", "path": "X-Request-Id" } ] },
   "schedule": { "schedule_id": "acme:Support Agent:…",
                 "require_last_run_success": true },
 
@@ -182,8 +186,18 @@ belong to the activation's agent. Names use the same character rules as activati
 In the API, enum values are camelCase strings (`chat`, `pass`, `notContains`, `active`). In Mongo they are stored as the
 enum member name (`Chat`, `Pass`, ...).
 
-Assertions (R5): 1–10 per check, `op` ∈ {`contains`, `notContains`}, `value` 1–500 chars, compared with
-`StringComparison.OrdinalIgnoreCase`. A run passes only when **all** assertions pass.
+Assertions: 1–10 per check. A run passes only when **all** assertions pass.
+
+| `op` | Checks | Uses | Comparison | Allowed on |
+|---|---|---|---|---|
+| `contains` / `notContains` (R5) | The whole response body | `value` | Case-insensitive substring | chat, webhook |
+| `jsonEquals` | The JSON value at `path` | `path`, `value` | Strings exact; numbers by value (`3` = `3.0`); booleans/null as written | webhook |
+| `jsonExists` | That `path` resolves | `path` | — | webhook |
+| `headerEquals` | The response header named by `path` | `path`, `value` | Name and value case-insensitive | webhook |
+| `headerExists` | That the header is present | `path` | Name case-insensitive | webhook |
+
+JSON paths are a deliberate subset: `$`, then `.name` and `[index]` segments (`$.data.items[0].status`); no
+wildcards, filters or recursive descent. Failed JSON and header assertions record the `actual` value in the run.
 
 ### 4.2 `agent_health_check_runs`
 
@@ -233,19 +247,26 @@ Reuses the heartbeat's sync-message path (`AdminHeartbeatEndpoints` → `SyncMes
 4. `ProcessSyncMessageAsync(request, MessageType.Chat, timeout)`. An `IResult` or a timeout becomes `error`. Otherwise
    evaluate the assertions against `response.Text`.
 
-### 5.2 Webhook (Q2: inbound path)
-1. Build the workflow identifier from `webhook.workflow_type` + `activation_name`, in the same format the inbound
-   endpoint expects.
-2. Call `IWebhookReceiverService.ProcessWebhook(tenantId, workflowId, methodName, queryParams, body)`. This is exactly
-   the code behind `POST /api/user/webhooks/{workflow}/{methodName}` (update-with-start), minus HTTP and API-key auth.
-3. `RequestTimeout` / `InternalServerError` results become `error`. On success, check `expected_status_code` (if set)
-   against `WebhookResponse.StatusCode`, then the assertions against `WebhookResponse.Content`.
-4. **Pass the check's timeout through.** `ProcessWebhook` currently hard-codes the 30s default in
-   `UpdateService.SendWebhookUpdate`. Add an optional `TimeSpan? timeout` parameter (non-breaking).
+### 5.2 Webhook (two modes)
 
-> The builtin webhook endpoint (`/api/user/webhooks/builtin`, which goes through message passing) is **not** covered,
-> per Q2's wording (`WebhookReceiverService`). If builtin webhooks are the more common integration, consider a
-> `webhook.mode = "update" | "builtin"` follow-up.
+Xians agents receive webhooks two ways, and a webhook check calls whichever the agent implements:
+
+| Mode | Agent code | Mirrors | Server path |
+|---|---|---|---|
+| `builtin` (default in AgentStudio) | `workflow.OnWebhook(...)`, the standard Xians.Lib way | `POST /api/user/webhooks/builtin` | `ValidateActivationAsync`, then a `MessageType.Webhook` message (text = webhook name, data = body, participant `xians-health-check`) through `SyncMessageHandler`; the reply is parsed by `WebhookResponseParser`, shared with the builtin endpoint |
+| `update` (the original Q2 path) | A `[WorkflowUpdate]` handler | `POST /api/user/webhooks/{workflow}/{method}` | `IWebhookReceiverService.ProcessWebhook` (update-with-start), with the check's timeout passed through |
+
+Then, for both modes:
+1. No reply, timeout or invocation failure → `error`.
+2. `expected_status_code` (if set) against `WebhookResponse.StatusCode` → `fail` on mismatch.
+3. Assertions against the response body and headers (§4.1) → `fail` with the failed assertions and actual values.
+4. `max_response_ms` (if set) against the measured call time → `fail` when slower.
+
+Builtin mode doesn't forward query parameters (the builtin endpoint doesn't either), so they are rejected there.
+Calls skip the HTTP layer (URL, API key, rate limits); an end-to-end HTTP mode is a possible follow-up.
+
+The webhook-target endpoint (§6) also reports, per workflow, whether it is built-in and which builtin webhook names
+are registered for the activation (Connections → Webhooks), so the form can offer them as a dropdown.
 
 ### 5.3 Schedule (Q3: metadata only)
 1. `IScheduleService.GetScheduleByIdAsync(scheduleId)`. Not found → `fail` ("schedule does not exist").
@@ -368,6 +389,6 @@ Tests (`XiansAi.Server.Tests`):
 |---|---|---|
 | D1 | Host all tenants' health-check schedules in the platform Temporal namespace, worker in the server process (§3.1) | **Yes** |
 | D2 | Optional `expected_status_code` assertion on webhook checks (§5.2) | **Yes** |
-| D3 | Builtin webhooks (`/webhooks/builtin`) out of scope for v1 (§5.2) | **Yes, out of scope** |
+| D3 | Builtin webhooks (`/webhooks/builtin`) out of scope for v1 (§5.2) | **Yes, out of scope** at first; **reversed** once it was clear standard agents use `OnWebhook`: builtin mode added, plus JSON/header assertions and a response-time limit |
 | D4 | Default role for `tenant.healthChecks.manage` | **`TenantAdmin` only** |
 | D5 | Run retention | **30 days by default, configurable** through the TTL index override (§4.3) |

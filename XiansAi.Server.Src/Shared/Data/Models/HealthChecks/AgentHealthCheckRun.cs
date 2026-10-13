@@ -9,11 +9,20 @@ public class HealthCheckAssertionResult
     [BsonRepresentation(BsonType.String)]
     public HealthCheckAssertionOp Op { get; set; }
 
+    [BsonElement("path")]
+    [BsonIgnoreIfNull]
+    public string? Path { get; set; }
+
     [BsonElement("value")]
-    public required string Value { get; set; }
+    public string Value { get; set; } = string.Empty;
 
     [BsonElement("passed")]
     public bool Passed { get; set; }
+
+    /// <summary>What the response actually held, for JSON and header ops (truncated).</summary>
+    [BsonElement("actual")]
+    [BsonIgnoreIfNull]
+    public string? Actual { get; set; }
 }
 
 /// <summary>

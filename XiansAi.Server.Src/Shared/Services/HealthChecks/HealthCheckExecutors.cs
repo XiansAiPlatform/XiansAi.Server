@@ -1,8 +1,11 @@
+using System.Diagnostics;
+using System.Net;
 using System.Text.Json;
 using Features.UserApi.Services;
 using Features.WebApi.Services;
 using Microsoft.AspNetCore.Mvc;
 using Shared.Data.Models.HealthChecks;
+using Shared.Models;
 using Shared.Models.Schedule;
 using Shared.Repositories;
 using Shared.Utils;
@@ -100,16 +103,35 @@ public class ChatHealthCheckExecutor : IHealthCheckExecutor
 }
 
 /// <summary>
-/// Invokes the inbound webhook trigger path (Temporal update-with-start via
-/// <see cref="IWebhookReceiverService"/>, per Q2) and checks the returned WebhookResponse.
+/// Calls one of the agent's inbound webhooks and checks the WebhookResponse it returns:
+/// <list type="bullet">
+/// <item><see cref="WebhookHealthCheckMode.Update"/>: a Temporal Update method via
+/// <see cref="IWebhookReceiverService"/> (the <c>/webhooks/{workflow}/{method}</c> path, per Q2);</item>
+/// <item><see cref="WebhookHealthCheckMode.Builtin"/>: the agent's <c>OnWebhook</c> handler through the
+/// same sync message path as <c>/webhooks/builtin</c>.</item>
+/// </list>
+/// Then the status code, the assertions (text, JSON path, headers) and the response time.
 /// </summary>
 public class WebhookHealthCheckExecutor : IHealthCheckExecutor
 {
     private readonly IWebhookReceiverService _webhookReceiverService;
+    private readonly IActivationValidationService _activationValidationService;
+    private readonly IMessageService _messageService;
+    private readonly IPendingRequestService _pendingRequestService;
+    private readonly ILoggerFactory _loggerFactory;
 
-    public WebhookHealthCheckExecutor(IWebhookReceiverService webhookReceiverService)
+    public WebhookHealthCheckExecutor(
+        IWebhookReceiverService webhookReceiverService,
+        IActivationValidationService activationValidationService,
+        IMessageService messageService,
+        IPendingRequestService pendingRequestService,
+        ILoggerFactory loggerFactory)
     {
         _webhookReceiverService = webhookReceiverService;
+        _activationValidationService = activationValidationService;
+        _messageService = messageService;
+        _pendingRequestService = pendingRequestService;
+        _loggerFactory = loggerFactory;
     }
 
     public HealthCheckType Type => HealthCheckType.Webhook;
@@ -118,6 +140,47 @@ public class WebhookHealthCheckExecutor : IHealthCheckExecutor
     {
         var config = check.Webhook ?? throw new InvalidOperationException("Webhook health check has no webhook configuration");
 
+        var stopwatch = Stopwatch.StartNew();
+        var (response, error) = config.Mode == WebhookHealthCheckMode.Builtin
+            ? await CallBuiltinAsync(check, config, cancellationToken)
+            : await CallUpdateAsync(check, config, cancellationToken);
+        stopwatch.Stop();
+
+        if (response == null)
+        {
+            return HealthCheckExecutionResult.Error(error!);
+        }
+
+        var actualStatus = (int)response.StatusCode;
+        var (assertionsPassed, assertionResults) = HealthCheckAssertionEvaluator.Evaluate(
+            new HealthCheckResponse(response.Content, response.Headers), config.Assertions);
+
+        if (config.ExpectedStatusCode.HasValue && actualStatus != config.ExpectedStatusCode.Value)
+        {
+            return HealthCheckExecutionResult.Fail(
+                $"Expected status code {config.ExpectedStatusCode.Value} but got {actualStatus}",
+                response.Content, assertionResults);
+        }
+
+        if (!assertionsPassed)
+        {
+            return HealthCheckExecutionResult.Fail(HealthCheckAssertionEvaluator.DescribeFailures(assertionResults), response.Content, assertionResults);
+        }
+
+        if (config.MaxResponseMs.HasValue && stopwatch.ElapsedMilliseconds > config.MaxResponseMs.Value)
+        {
+            return HealthCheckExecutionResult.Fail(
+                $"Responded in {stopwatch.ElapsedMilliseconds} ms, over the {config.MaxResponseMs.Value} ms limit",
+                response.Content, assertionResults);
+        }
+
+        return HealthCheckExecutionResult.Pass(
+            $"Responded with status {actualStatus} in {stopwatch.ElapsedMilliseconds} ms", response.Content, assertionResults);
+    }
+
+    private async Task<(WebhookResponse? Response, string? Error)> CallUpdateAsync(
+        AgentHealthCheck check, WebhookHealthCheckConfig config, CancellationToken cancellationToken)
+    {
         var workflowId = WorkflowIdentifier.BuildWorkflowId(check.TenantId, check.AgentName, config.WorkflowType, check.ActivationName);
         var result = await _webhookReceiverService.ProcessWebhook(
             check.TenantId,
@@ -128,26 +191,49 @@ public class WebhookHealthCheckExecutor : IHealthCheckExecutor
             TimeSpan.FromSeconds(check.TimeoutSeconds),
             cancellationToken);
 
-        if (!result.IsSuccess || result.Data == null)
+        return result.IsSuccess && result.Data != null
+            ? (result.Data, null)
+            : (null, $"Webhook invocation failed ({(int)result.StatusCode}): {result.ErrorMessage ?? "no response"}");
+    }
+
+    /// <summary>
+    /// Mirrors <c>POST /api/user/webhooks/builtin</c>: a Webhook message whose text is the webhook name
+    /// and whose data is the body, sent to the activation's workflow; the agent's <c>OnWebhook</c>
+    /// reply carries the WebhookResponse.
+    /// </summary>
+    private async Task<(WebhookResponse? Response, string? Error)> CallBuiltinAsync(
+        AgentHealthCheck check, WebhookHealthCheckConfig config, CancellationToken cancellationToken)
+    {
+        var validation = await _activationValidationService.ValidateActivationAsync(
+            check.TenantId, check.AgentName, check.ActivationName, config.WorkflowType);
+        if (!validation.IsSuccess)
         {
-            return HealthCheckExecutionResult.Error(
-                $"Webhook invocation failed ({(int)result.StatusCode}): {result.ErrorMessage ?? "no response"}");
+            return (null, $"Activation is not routable: {validation.ErrorMessage}");
         }
 
-        var response = result.Data;
-        var actualStatus = (int)response.StatusCode;
-        var (assertionsPassed, assertionResults) = HealthCheckAssertionEvaluator.Evaluate(response.Content, config.Assertions);
-
-        if (config.ExpectedStatusCode.HasValue && actualStatus != config.ExpectedStatusCode.Value)
+        var workflowId = WorkflowIdentifier.BuildWorkflowId(check.TenantId, check.AgentName, config.WorkflowType, check.ActivationName);
+        var request = new ChatOrDataRequest
         {
-            return HealthCheckExecutionResult.Fail(
-                $"Expected status code {config.ExpectedStatusCode.Value} but got {actualStatus}",
-                response.Content, assertionResults);
+            RequestId = MessageRequestProcessor.GenerateRequestId(workflowId, ChatHealthCheckExecutor.ParticipantId),
+            ParticipantId = ChatHealthCheckExecutor.ParticipantId,
+            WorkflowId = workflowId,
+            Text = config.WebhookName,
+            Data = config.Body,
+            Origin = $"health-check:webhook:{config.WebhookName}"
+        };
+
+        var logger = _loggerFactory.CreateLogger<SyncMessageHandler>();
+        var result = await new SyncMessageHandler(_messageService, _pendingRequestService, logger)
+            .ProcessSyncMessageAsync(request, MessageType.Webhook, check.TimeoutSeconds, cancellationToken);
+
+        if (result is IResult httpResult)
+        {
+            return (null, $"No response from agent: {HealthCheckResultDescriber.Describe(httpResult)}");
         }
 
-        return assertionsPassed
-            ? HealthCheckExecutionResult.Pass($"Responded with status {actualStatus}", response.Content, assertionResults)
-            : HealthCheckExecutionResult.Fail(HealthCheckAssertionEvaluator.DescribeFailures(assertionResults), response.Content, assertionResults);
+        // Same fallback as the builtin endpoint: a reply that isn't a WebhookResponse is returned as 200 JSON.
+        return (WebhookResponseParser.FromSyncResult(result, logger)
+                ?? new WebhookResponse(HttpStatusCode.OK, JsonSerializer.Serialize(result)), null);
     }
 }
 

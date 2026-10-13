@@ -27,6 +27,9 @@ public sealed record WebhookTargetMethod(string Name, string? Description);
 /// <summary>
 /// One of the agent's workflows as a webhook-eval target for an activation. <c>WorkflowType</c> is the
 /// flow name without the agent prefix, which is what a webhook eval stores as its workflow.
+/// <c>Methods</c> are its Temporal Update handlers (update mode); <c>IsBuiltIn</c> marks workflows that
+/// can have an <c>OnWebhook</c> handler and <c>Webhooks</c> the builtin webhook names registered for
+/// this activation in Connections (builtin mode).
 /// </summary>
 public sealed record WebhookTargetWorkflow(
     string WorkflowType,
@@ -34,7 +37,11 @@ public sealed record WebhookTargetWorkflow(
     bool Activable,
     WebhookTargetStatus Status,
     string? Detail,
-    List<WebhookTargetMethod> Methods);
+    List<WebhookTargetMethod> Methods)
+{
+    public bool IsBuiltIn { get; init; }
+    public List<string> Webhooks { get; init; } = new();
+}
 
 public interface IWebhookTargetDiscovery
 {
@@ -55,15 +62,18 @@ public class WebhookTargetDiscovery : IWebhookTargetDiscovery
 
     private readonly IFlowDefinitionRepository _flowDefinitionRepository;
     private readonly ITemporalGatewayFactory _temporalGatewayFactory;
+    private readonly IAppIntegrationService _appIntegrationService;
     private readonly ILogger<WebhookTargetDiscovery> _logger;
 
     public WebhookTargetDiscovery(
         IFlowDefinitionRepository flowDefinitionRepository,
         ITemporalGatewayFactory temporalGatewayFactory,
+        IAppIntegrationService appIntegrationService,
         ILogger<WebhookTargetDiscovery> logger)
     {
         _flowDefinitionRepository = flowDefinitionRepository;
         _temporalGatewayFactory = temporalGatewayFactory;
+        _appIntegrationService = appIntegrationService;
         _logger = logger;
     }
 
@@ -73,7 +83,7 @@ public class WebhookTargetDiscovery : IWebhookTargetDiscovery
         var flows = definitions
             .Where(d => !string.IsNullOrWhiteSpace(d.WorkflowType))
             .GroupBy(d => ToFlowName(d.WorkflowType), StringComparer.Ordinal)
-            .Select(g => (Flow: g.Key, Activable: g.Any(d => d.Activable)))
+            .Select(g => (Flow: g.Key, Activable: g.Any(d => d.Activable), IsBuiltIn: g.Any(d => d.IsBuiltIn)))
             .OrderByDescending(f => f.Activable)
             .ThenBy(f => f.Flow, StringComparer.OrdinalIgnoreCase)
             .ToList();
@@ -83,10 +93,48 @@ public class WebhookTargetDiscovery : IWebhookTargetDiscovery
             return new();
         }
 
+        var webhooksByFlow = await GetBuiltinWebhooksAsync(activation);
         var client = await _temporalGatewayFactory.GetClientAsync(activation.AgentName);
-        var results = await Task.WhenAll(flows.Select(flow =>
-            DescribeAsync(client, activation, flow.Flow, flow.Activable, cancellationToken)));
+        var results = await Task.WhenAll(flows.Select(async flow =>
+            (await DescribeAsync(client, activation, flow.Flow, flow.Activable, cancellationToken)) with
+            {
+                IsBuiltIn = flow.IsBuiltIn,
+                Webhooks = webhooksByFlow.TryGetValue(flow.Flow, out var names) ? names : new(),
+            }));
         return results.ToList();
+    }
+
+    /// <summary>
+    /// Builtin webhooks created for this activation (Connections → Webhooks), grouped by workflow.
+    /// Best effort: the dropdown falls back to a typed webhook name without them.
+    /// </summary>
+    private async Task<Dictionary<string, List<string>>> GetBuiltinWebhooksAsync(AgentActivation activation)
+    {
+        try
+        {
+            var result = await _appIntegrationService.GetBuiltinWebhooksAsync(activation.TenantId, activation.Name, activation.AgentName);
+            if (!result.IsSuccess || result.Data == null)
+            {
+                return new();
+            }
+
+            return result.Data
+                .Where(i => i.IsEnabled)
+                .Select(i => (
+                    Flow: Convert.ToString(i.Configuration.GetValueOrDefault("workflowName")),
+                    Name: Convert.ToString(i.Configuration.GetValueOrDefault("webhookName"))))
+                .Where(w => !string.IsNullOrWhiteSpace(w.Flow) && !string.IsNullOrWhiteSpace(w.Name))
+                .GroupBy(w => w.Flow!, StringComparer.Ordinal)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.Select(w => w.Name!).Distinct(StringComparer.Ordinal).OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList(),
+                    StringComparer.Ordinal);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not list builtin webhooks for activation {ActivationId}", LogSanitizer.Sanitize(activation.Id));
+            return new();
+        }
     }
 
     private async Task<WebhookTargetWorkflow> DescribeAsync(
