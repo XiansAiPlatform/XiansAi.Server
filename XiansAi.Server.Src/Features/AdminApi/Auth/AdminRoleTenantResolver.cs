@@ -1,6 +1,5 @@
 using Shared.Auth;
 using Shared.Data.Models;
-using Shared.Exceptions;
 using Shared.Repositories;
 using Shared.Services;
 using Shared.Utils;
@@ -11,13 +10,16 @@ namespace Features.AdminApi.Auth;
 /// Result of resolving admin roles and tenant context.
 /// <paramref name="ResolvedUserId"/> is the canonical user_id after resolving the API key owner
 /// (which may be stored as a user id or as a legacy email). Null when not applicable.
+/// <paramref name="Failure"/> says why an unsuccessful resolution failed, and so which status code
+/// the caller gets back.
 /// </summary>
 public sealed record AdminRoleTenantResolutionResult(
     bool Success,
     string? FinalTenantId,
     string[]? UserRoles,
     string? ErrorMessage,
-    string? ResolvedUserId = null);
+    string? ResolvedUserId = null,
+    AdminAuthFailure Failure = AdminAuthFailure.Unauthorized);
 
 /// <summary>
 /// Resolves user roles and target tenant for Admin API requests.
@@ -28,7 +30,9 @@ public interface IAdminRoleTenantResolver
 {
     /// <summary>
     /// Resolves the final tenant ID and user roles based on API key and request context.
-    /// Throws TenantNotFoundException when SysAdmin specifies a non-existent tenant.
+    /// When a SysAdmin names a tenant that does not exist, or a tenant id that is not in the tenant id
+    /// format, the result fails with <see cref="AdminAuthFailure.TenantNotFound"/> or
+    /// <see cref="AdminAuthFailure.InvalidTenantId"/> instead of throwing.
     /// </summary>
     /// <param name="userIdOrEmail">
     /// API key owner identity: normally <see cref="User.UserId"/>, but legacy keys may store email.
@@ -117,13 +121,19 @@ public sealed class AdminRoleTenantResolver : IAdminRoleTenantResolver
         {
             if (!string.IsNullOrEmpty(tenantIdFromRequest))
             {
-                var tenant = await _tenantCacheService.GetByTenantIdAsync(tenantIdFromRequest, cancellationToken);
-                if (tenant == null)
+                var failure = await SysAdminTenantCheck.FindFailureAsync(
+                    _tenantCacheService, tenantIdFromRequest, cancellationToken);
+                if (failure != null)
                 {
                     _logger.LogWarning(
-                        "SysAdmin user {UserId} requested non-existent tenant: {TenantId}",
-                        LogSanitizer.RedactUserId(resolvedUserId), LogSanitizer.Sanitize(tenantIdFromRequest));
-                    throw new TenantNotFoundException(tenantIdFromRequest);
+                        "SysAdmin user {UserId} requested a tenant that cannot be used ({Failure}): {TenantId}",
+                        LogSanitizer.RedactUserId(resolvedUserId), failure, LogSanitizer.Sanitize(tenantIdFromRequest));
+                    return new AdminRoleTenantResolutionResult(
+                        Success: false,
+                        null, null,
+                        SysAdminTenantCheck.MessageFor(failure.Value, tenantIdFromRequest),
+                        ResolvedUserId: resolvedUserId,
+                        Failure: failure.Value);
                 }
                 finalTenantId = tenantIdFromRequest;
                 _logger.LogDebug(
