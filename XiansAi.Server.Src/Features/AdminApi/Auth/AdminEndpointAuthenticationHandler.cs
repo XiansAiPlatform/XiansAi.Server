@@ -1,7 +1,6 @@
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.Extensions.Options;
 using Shared.Auth;
-using Shared.Exceptions;
 using Shared.Services;
 using System.Security.Claims;
 using System.Text.Encodings.Web;
@@ -18,6 +17,13 @@ namespace Features.AdminApi.Auth
         /// message instead of a generic one.
         /// </summary>
         public const string FailureReasonItemKey = "AdminApi.AuthFailureReason";
+
+        /// <summary>
+        /// HttpContext.Items key holding the <see cref="AdminAuthFailure"/> of a failure that is not
+        /// a 401 (a SysAdmin naming a missing or malformed tenant), so the authorization result
+        /// handler can answer 404 or 400 instead. Absent for ordinary credential failures.
+        /// </summary>
+        public const string FailureKindItemKey = "AdminApi.AuthFailureKind";
         public const string UserTokenHeaderName = "X-User-Token";
 
         private readonly ITenantContext _tenantContext;
@@ -26,9 +32,13 @@ namespace Features.AdminApi.Auth
         private readonly IAdminRoleTenantResolver _adminRoleTenantResolver;
         private readonly IAdminKeylessUserResolver _keylessUserResolver;
 
-        private AuthenticateResult FailWithReason(string reason)
+        private AuthenticateResult FailWithReason(string reason, AdminAuthFailure failure = AdminAuthFailure.Unauthorized)
         {
             Context.Items[FailureReasonItemKey] = reason;
+            if (failure != AdminAuthFailure.Unauthorized)
+            {
+                Context.Items[FailureKindItemKey] = failure;
+            }
             return AuthenticateResult.Fail(reason);
         }
 
@@ -143,7 +153,7 @@ namespace Features.AdminApi.Auth
 
                         if (!resolutionResult.Success)
                         {
-                            return FailWithReason(resolutionResult.ErrorMessage ?? "Authorization failed");
+                            return FailWithReason(resolutionResult.ErrorMessage ?? "Authorization failed", resolutionResult.Failure);
                         }
 
                         var finalTenantId = resolutionResult.FinalTenantId!;
@@ -165,11 +175,6 @@ namespace Features.AdminApi.Auth
                             LogSanitizer.RedactUserId(resolvedUserId), LogSanitizer.Sanitize(finalTenantId), LogSanitizer.Sanitize(string.Join(", ", userRoles)));
 
                         return AuthenticateResult.Success(BuildTicket(resolvedUserId, finalTenantId));
-                    }
-                    catch (TenantNotFoundException)
-                    {
-                        // Re-throw so global exception handler can return 404 (not 401)
-                        throw;
                     }
                     catch (Exception ex)
                     {
@@ -210,7 +215,7 @@ namespace Features.AdminApi.Auth
                     userToken, originalTenantIdFromRequest, tenantRequiredForSysAdmin: !tenantOptionalForSysAdmin);
                 if (!resolution.Success)
                 {
-                    return FailWithReason(resolution.ErrorMessage ?? "Authorization failed");
+                    return FailWithReason(resolution.ErrorMessage ?? "Authorization failed", resolution.Failure);
                 }
 
                 var finalTenantId = resolution.FinalTenantId!;
@@ -230,10 +235,6 @@ namespace Features.AdminApi.Auth
                     LogSanitizer.RedactUserId(resolvedUserId), LogSanitizer.Sanitize(finalTenantId), LogSanitizer.Sanitize(string.Join(", ", userRoles)));
 
                 return AuthenticateResult.Success(BuildTicket(resolvedUserId, finalTenantId));
-            }
-            catch (TenantNotFoundException)
-            {
-                throw;
             }
             catch (Exception ex)
             {

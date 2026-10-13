@@ -119,4 +119,67 @@ public class AdminRoleTenantResolverTests
         Assert.True(result.Success);
         Assert.DoesNotContain(SystemRoles.TenantParticipant, result.UserRoles!);
     }
+
+    private void KeyOwnerHasRole(string role) =>
+        _roleCache
+            .Setup(x => x.GetUserRolesAsync(UserId, TenantId))
+            .ReturnsAsync(new List<string> { role });
+
+    [Fact]
+    public async Task ResolveAsync_SysAdmin_ResolvesToTheRequestedTenant_WhenItExists()
+    {
+        KeyOwnerHasRole(SystemRoles.SysAdmin);
+        _tenantCache.Setup(x => x.GetByTenantIdAsync("tenant-b", It.IsAny<CancellationToken>(), false))
+            .ReturnsAsync(new Tenant
+            {
+                Id = "id-b", TenantId = "tenant-b", Name = "tenant-b",
+                CreatedAt = DateTime.UtcNow, CreatedBy = "test"
+            });
+
+        var result = await BuildResolver().ResolveAsync(UserId, KeyOwnedBy(UserId), "tenant-b");
+
+        Assert.True(result.Success);
+        Assert.Equal("tenant-b", result.FinalTenantId);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_SysAdmin_FailsWithTenantNotFound_ForANonExistentTenant()
+    {
+        KeyOwnerHasRole(SystemRoles.SysAdmin);
+        _tenantCache.Setup(x => x.GetByTenantIdAsync("ghost-tenant", It.IsAny<CancellationToken>(), false))
+            .ReturnsAsync((Tenant?)null);
+
+        var result = await BuildResolver().ResolveAsync(UserId, KeyOwnedBy(UserId), "ghost-tenant");
+
+        Assert.False(result.Success);
+        Assert.Equal(AdminAuthFailure.TenantNotFound, result.Failure);
+        Assert.Equal("Tenant 'ghost-tenant' was not found", result.ErrorMessage);
+        Assert.Equal(UserId, result.ResolvedUserId);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_SysAdmin_FailsWithInvalidTenantId_WithoutConsultingTheTenantCache()
+    {
+        KeyOwnerHasRole(SystemRoles.SysAdmin);
+
+        var result = await BuildResolver().ResolveAsync(UserId, KeyOwnedBy(UserId), "bad tenant!");
+
+        Assert.False(result.Success);
+        Assert.Equal(AdminAuthFailure.InvalidTenantId, result.Failure);
+        Assert.Equal("Invalid tenant ID format", result.ErrorMessage);
+        _tenantCache.Verify(
+            x => x.GetByTenantIdAsync(It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<bool>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_ACredentialFailure_ReportsUnauthorized()
+    {
+        KeyOwnerHasRole(SystemRoles.TenantUser);
+
+        var result = await BuildResolver().ResolveAsync(UserId, KeyOwnedBy(UserId), string.Empty);
+
+        Assert.False(result.Success);
+        Assert.Equal(AdminAuthFailure.Unauthorized, result.Failure);
+    }
 }
