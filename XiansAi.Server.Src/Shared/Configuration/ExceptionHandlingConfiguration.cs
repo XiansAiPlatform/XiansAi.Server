@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authorization.Policy;
+using Features.AdminApi.Auth;
 using Shared.Exceptions;
 using System.Text;
 using System.Text.Json;
@@ -57,6 +58,8 @@ public static class ExceptionHandlingConfiguration
                         });
                         break;
 
+                    // Admin API auth reports a missing tenant through AuthorizationMiddlewareResultHandler
+                    // without throwing. This stays so anything that does throw it still gets a 404.
                     case TenantNotFoundException tenantEx:
                         logger.LogInformation("Tenant not found: {TenantId}", tenantEx.TenantId);
                         context.Response.StatusCode = StatusCodes.Status404NotFound;
@@ -125,7 +128,7 @@ public class AuthorizationMiddlewareResultHandler : IAuthorizationMiddlewareResu
             // (e.g. "Invalid API key", "Invalid API key format") instead of a generic
             // message, so callers can distinguish a credential mismatch from a missing one.
             var failureMessage = context.Items.TryGetValue(
-                    Features.AdminApi.Auth.AdminEndpointAuthenticationHandler.FailureReasonItemKey,
+                    AdminEndpointAuthenticationHandler.FailureReasonItemKey,
                     out var reason)
                 ? reason as string
                 : null;
@@ -133,6 +136,23 @@ public class AuthorizationMiddlewareResultHandler : IAuthorizationMiddlewareResu
             var message = !string.IsNullOrEmpty(failureMessage)
                 ? failureMessage!
                 : "Authentication is required to access this resource";
+
+            // A SysAdmin naming a missing or malformed tenant is not a credential problem, so it is
+            // answered 404 or 400 rather than 401. The resolver has already logged it as a warning.
+            if (context.Items.TryGetValue(AdminEndpointAuthenticationHandler.FailureKindItemKey, out var kind)
+                && kind is AdminAuthFailure failure
+                && failure != AdminAuthFailure.Unauthorized)
+            {
+                var (statusCode, error) = failure == AdminAuthFailure.TenantNotFound
+                    ? (StatusCodes.Status404NotFound, "Not found")
+                    : (StatusCodes.Status400BadRequest, "Bad request");
+
+                await WriteJsonAsync(context, statusCode, new { error, message });
+
+                _logger.LogInformation("Admin API request rejected with {StatusCode} for path: {Path}: {Message}",
+                    statusCode, LogSanitizer.Sanitize(context.Request.Path), LogSanitizer.Sanitize(message));
+                return;
+            }
 
             var responseBody = new
             {
@@ -214,5 +234,22 @@ public class AuthorizationMiddlewareResultHandler : IAuthorizationMiddlewareResu
 
         // If we get here, something unexpected happened - just continue with the request
         await next(context);
+    }
+
+    private static async Task WriteJsonAsync(HttpContext context, int statusCode, object responseBody)
+    {
+        var jsonString = JsonSerializer.Serialize(responseBody, new JsonSerializerOptions
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        });
+        var bytes = Encoding.UTF8.GetBytes(jsonString);
+
+        context.Response.StatusCode = statusCode;
+        context.Response.ContentType = "application/json; charset=utf-8";
+        context.Response.ContentLength = bytes.Length;
+
+        await context.Response.Body.WriteAsync(bytes, 0, bytes.Length);
+        await context.Response.Body.FlushAsync();
+        await context.Response.CompleteAsync();
     }
 } 
