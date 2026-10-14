@@ -124,6 +124,26 @@ public class AdminTenantSmtpConfigEndpointsTests : AdminApiIntegrationTestBase
     }
 
     [Fact]
+    public async Task SendTestEmail_OverLimit_ReturnsTooManyRequestsForThatTenantOnly()
+    {
+        var invalidTest = new { host = "smtp.example.com", port = 587, senderEmail = "noreply@example.com", to = "not-an-email" };
+        var tenantId = await CreateTenantAsync();
+
+        // The default limit is 5 per tenant; rejected requests still count.
+        for (var i = 0; i < 5; i++)
+        {
+            Assert.Equal(HttpStatusCode.BadRequest, (await PostAsJsonAsync($"{SmtpConfig(tenantId)}/test", invalidTest)).StatusCode);
+        }
+
+        var limited = await PostAsJsonAsync($"{SmtpConfig(tenantId)}/test", invalidTest);
+        Assert.Equal(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.True(limited.Headers.Contains("Retry-After"));
+
+        var otherTenantId = await CreateTenantAsync();
+        Assert.Equal(HttpStatusCode.BadRequest, (await PostAsJsonAsync($"{SmtpConfig(otherTenantId)}/test", invalidTest)).StatusCode);
+    }
+
+    [Fact]
     public async Task TenantAdmin_OwnTenant_CanReadAndSave()
     {
         var tenantId = await CreateTenantAsync(SystemRoles.TenantAdmin);

@@ -7,6 +7,7 @@ using Shared.Utils.Services;
 using Shared.Data.Models;
 using Features.AdminApi.Auth;
 using Features.AdminApi.Utils;
+using Features.Shared.Configuration;
 
 namespace Features.AdminApi.Endpoints;
 
@@ -464,6 +465,7 @@ public static class AdminTenantEndpoints
         })
         .WithName("AdminTestTenantSmtpConfig")
         .RequireCapability(CapabilityActions.TenantSmtpConfigTest)
+        .WithSmtpTestRateLimit()
         .WithSummary("Send a test email")
         .WithDescription("Sends a test email to 'to' with the given SMTP settings without saving them. A blank password uses the saved one.");
     }
