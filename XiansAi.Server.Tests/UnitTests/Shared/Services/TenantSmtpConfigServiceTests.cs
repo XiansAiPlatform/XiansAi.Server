@@ -171,4 +171,50 @@ public class TenantSmtpConfigServiceTests
         Assert.Equal(StatusCode.BadRequest, result.StatusCode);
         Assert.DoesNotContain("10.0.0.5", result.ErrorMessage);
     }
+
+    [Theory]
+    [InlineData("attacker.example.com", "mailer", SmtpSecurity.StartTls)]
+    [InlineData("smtp.example.com", "someone-else", SmtpSecurity.StartTls)]
+    [InlineData("smtp.example.com", "mailer", SmtpSecurity.None)]
+    public async Task Upsert_BlankPasswordWithChangedServer_ReturnsBadRequestAndDoesNotSave(
+        string host, string username, SmtpSecurity security)
+    {
+        SetupSavedConfig();
+        var request = ValidRequest(password: "");
+        request.Host = host;
+        request.Username = username;
+        request.Security = security;
+
+        var result = await CreateService().UpsertAsync(TenantId, request, "admin");
+
+        Assert.Equal(StatusCode.BadRequest, result.StatusCode);
+        _repository.Verify(r => r.UpsertAsync(It.IsAny<string>(), It.IsAny<SmtpSettings>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task SendTestEmail_BlankPasswordWithChangedHost_DoesNotSendSavedPassword()
+    {
+        SetupSavedConfig();
+        var request = ValidTestRequest(password: null);
+        request.Host = "attacker.example.com";
+
+        var result = await CreateService().SendTestEmailAsync(TenantId, request);
+
+        Assert.Equal(StatusCode.BadRequest, result.StatusCode);
+        _smtpSender.VerifyNoOtherCalls();
+    }
+
+    [Fact]
+    public async Task Upsert_BlankPasswordWithSameHostDifferentCase_KeepsSavedPassword()
+    {
+        SetupSavedConfig();
+        var request = ValidRequest(password: "");
+        request.Host = "SMTP.Example.com";
+
+        var result = await CreateService().UpsertAsync(TenantId, request, "admin");
+
+        Assert.True(result.IsSuccess);
+        _repository.Verify(r => r.UpsertAsync(TenantId,
+            It.Is<SmtpSettings>(s => s.Password == SavedPassword), "admin"), Times.Once);
+    }
 }

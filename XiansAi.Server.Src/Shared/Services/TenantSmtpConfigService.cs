@@ -112,7 +112,12 @@ public class TenantSmtpConfigService : ITenantSmtpConfigService
 
         try
         {
-            var settings = ToSettings(request, await _repository.GetAsync(tenantId));
+            var existing = await _repository.GetAsync(tenantId);
+            var reuseError = CheckPasswordReuse(request, existing);
+            if (reuseError != null)
+                return ServiceResult<TenantSmtpConfigResponse>.BadRequest(reuseError);
+
+            var settings = ToSettings(request, existing);
             var error = settings.Validate();
             if (error != null)
                 return ServiceResult<TenantSmtpConfigResponse>.BadRequest(error);
@@ -176,7 +181,12 @@ public class TenantSmtpConfigService : ITenantSmtpConfigService
         SmtpSettings settings;
         try
         {
-            settings = ToSettings(request, await _repository.GetAsync(tenantId));
+            var existing = await _repository.GetAsync(tenantId);
+            var reuseError = CheckPasswordReuse(request, existing);
+            if (reuseError != null)
+                return ServiceResult<bool>.BadRequest(reuseError);
+
+            settings = ToSettings(request, existing);
         }
         catch (Exception ex)
         {
@@ -202,7 +212,28 @@ public class TenantSmtpConfigService : ITenantSmtpConfigService
     }
 
     /// <summary>
-    /// Maps a request to settings. A blank password falls back to the saved one.
+    /// A blank password may only reuse the saved one when it would go to the same server, as the
+    /// same user, over the same security. Otherwise a caller could send the saved password to a
+    /// host they control, or downgrade it to a plain-text connection.
+    /// </summary>
+    private static string? CheckPasswordReuse(TenantSmtpConfigRequest request, TenantSmtpConfig? existing)
+    {
+        if (!string.IsNullOrEmpty(request.Password) || string.IsNullOrEmpty(existing?.Password))
+            return null;
+        return CanReuseSavedPassword(request, existing)
+            ? null
+            : "password is required when the host, username or security changes";
+    }
+
+    private static bool CanReuseSavedPassword(TenantSmtpConfigRequest request, TenantSmtpConfig? existing) =>
+        existing != null
+        && string.Equals(existing.Host, request.Host?.Trim(), StringComparison.OrdinalIgnoreCase)
+        && string.Equals(existing.Username, string.IsNullOrWhiteSpace(request.Username) ? null : request.Username.Trim(), StringComparison.Ordinal)
+        && existing.Security == request.Security;
+
+    /// <summary>
+    /// Maps a request to settings. A blank password falls back to the saved one only when
+    /// <see cref="CanReuseSavedPassword"/> allows it.
     /// </summary>
     private static SmtpSettings ToSettings(TenantSmtpConfigRequest request, TenantSmtpConfig? existing) => new()
     {
@@ -210,7 +241,9 @@ public class TenantSmtpConfigService : ITenantSmtpConfigService
         Port = request.Port,
         Security = request.Security,
         Username = string.IsNullOrWhiteSpace(request.Username) ? null : request.Username.Trim(),
-        Password = string.IsNullOrEmpty(request.Password) ? existing?.Password : request.Password,
+        Password = !string.IsNullOrEmpty(request.Password)
+            ? request.Password
+            : CanReuseSavedPassword(request, existing) ? existing?.Password : null,
         SenderEmail = request.SenderEmail?.Trim() ?? string.Empty,
         SenderName = string.IsNullOrWhiteSpace(request.SenderName) ? null : request.SenderName.Trim()
     };
