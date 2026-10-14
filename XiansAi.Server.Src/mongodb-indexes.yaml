@@ -533,6 +533,11 @@ app_integrations:
     keys:
       tenant_id: asc
       platform_id: asc
+  - name: idx_tenant_platform_api_key
+    keys:
+      tenant_id: asc
+      platform_id: asc
+      configuration.apiKeyId: asc
   - name: idx_tenant_agent_activation
     keys:
       tenant_id: asc
