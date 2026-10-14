@@ -197,7 +197,7 @@ public class TenantSmtpConfigService : ITenantSmtpConfigService
         {
             _logger.LogWarning(ex, "Test email failed for tenant {TenantId} via {Host}:{Port}",
                 LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(settings.Host), settings.Port);
-            return ServiceResult<bool>.BadRequest($"Could not send test email: {ex.Message}");
+            return ServiceResult<bool>.BadRequest("Could not send test email. Check the SMTP settings and try again.");
         }
     }
 

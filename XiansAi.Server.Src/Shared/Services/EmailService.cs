@@ -125,7 +125,7 @@ public class EmailService : IEmailService
         {
             _logger.LogError(ex, "Error sending email for tenant {TenantId} to {RecipientCount} recipient(s) with subject '{Subject}'",
                 LogSanitizer.Sanitize(tenantId), recipients.Count, LogSanitizer.Sanitize(subject));
-            throw new Exception("Error sending email", ex);
+            throw;
         }
     }
 }
