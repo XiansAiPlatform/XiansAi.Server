@@ -1,7 +1,9 @@
 using Features.WebApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Shared.Auth;
+using Shared.Data.Models;
 using Shared.Utils;
+using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using Shared.Providers.Auth;
 using Shared.Services;
