@@ -304,7 +304,7 @@ public class AppIntegrationRepository : IAppIntegrationRepository
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            integration.Id = ObjectId.GenerateNewId().ToString();
+            integration.Id ??= ObjectId.GenerateNewId().ToString();
             integration.GenerateWorkflowId();
 
             // Encrypt secrets before saving

@@ -106,6 +106,7 @@ public class WebhookToolsTests
         Assert.Equal("agent:workflow", result.WorkflowName);
         Assert.Equal("IssueCreated", result.WebhookName);
         Assert.Equal(30, result.TimeoutInSeconds);
+        Assert.Equal("Summarize the issue", result.WorkflowInputs!["Prompt"]);
     }
 
     [Fact]
@@ -115,8 +116,9 @@ public class WebhookToolsTests
                 It.IsAny<CreateBuiltinWebhookRequest>(), "tenant", "user"))
             .ReturnsAsync(ServiceResult<AppIntegrationResponse>.Success(Webhook()));
 
+        var inputs = new Dictionary<string, string> { ["Prompt"] = "Summarize the issue" };
         var result = await Tools().CreateWebhook(
-            _target, "agent:workflow", "IssueCreated", "Issues", "participant", 45);
+            _target, "agent:workflow", "IssueCreated", "Issues", "participant", 45, inputs);
 
         Assert.Equal("/credential-url", result.WebhookUrl);
         _integrations.Verify(service => service.CreateBuiltinWebhookAsync(
@@ -124,7 +126,7 @@ public class WebhookToolsTests
                 request.AgentName == "agent" && request.ActivationName == "activation" &&
                 request.WorkflowName == "agent:workflow" && request.WebhookName == "IssueCreated" &&
                 request.Name == "Issues" && request.ParticipantId == "participant" &&
-                request.TimeoutInSeconds == 45), "tenant", "user"), Times.Once);
+                request.TimeoutInSeconds == 45 && request.WorkflowInputs == inputs), "tenant", "user"), Times.Once);
     }
 
     [Fact]
@@ -269,6 +271,26 @@ public class WebhookToolsTests
         Assert.Equal("delete failed", exception.Message);
     }
 
+    [Fact]
+    public async Task UpdateReplacesWorkflowInputsForExactWebhook()
+    {
+        var inputs = new Dictionary<string, string> { ["Prompt"] = "Create a report" };
+        _integrations.Setup(service => service.GetIntegrationEntityByIdAsync("webhook-id"))
+            .ReturnsAsync(WebhookEntity());
+        _integrations.Setup(service => service.UpdateIntegrationAsync(
+                "webhook-id", It.IsAny<UpdateAppIntegrationRequest>(), "tenant", "user"))
+            .ReturnsAsync(ServiceResult<AppIntegrationResponse>.Success(Webhook()));
+
+        await Tools().UpdateWebhook(_target, "webhook-id", inputs);
+
+        _integrations.Verify(service => service.UpdateIntegrationAsync(
+            "webhook-id",
+            It.Is<UpdateAppIntegrationRequest>(request =>
+                request.Configuration != null && request.Configuration["workflowInputs"] == inputs),
+            "tenant",
+            "user"), Times.Once);
+    }
+
     private static AppIntegration WebhookEntity() => new()
     {
         Id = "webhook-id",
@@ -302,7 +324,8 @@ public class WebhookToolsTests
             ["workflowName"] = "agent:workflow",
             ["webhookName"] = "IssueCreated",
             ["participantId"] = "participant",
-            ["timeoutInSeconds"] = 30
+            ["timeoutInSeconds"] = 30,
+            ["workflowInputs"] = new Dictionary<string, string> { ["Prompt"] = "Summarize the issue" }
         },
         IsEnabled = true,
         CreatedAt = DateTime.UtcNow,

@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Security.Cryptography;
 using System.Text.Json;
+using MongoDB.Bson;
 using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Services;
@@ -598,6 +599,7 @@ public class AppIntegrationService : IAppIntegrationService
             var timeoutInSeconds = request.TimeoutInSeconds ?? 30;
             var webhookName = string.IsNullOrWhiteSpace(request.WebhookName) ? "Default" : request.WebhookName.Trim();
             var integrationName = string.IsNullOrWhiteSpace(request.Name) ? $"Webhook-{webhookName}-{request.ActivationName}" : request.Name.Trim();
+            var integrationId = ObjectId.GenerateNewId().ToString();
 
             if (timeoutInSeconds <= 0 || timeoutInSeconds > 300)
                 return ServiceResult<AppIntegrationResponse>.BadRequest("timeoutInSeconds must be between 1 and 300");
@@ -676,7 +678,8 @@ public class AppIntegrationService : IAppIntegrationService
                 $"agentName={Uri.EscapeDataString(request.AgentName)}",
                 $"workflowName={Uri.EscapeDataString(workflowName)}",
                 $"webhookName={Uri.EscapeDataString(webhookName)}",
-                $"activationName={Uri.EscapeDataString(request.ActivationName)}"
+                $"activationName={Uri.EscapeDataString(request.ActivationName)}",
+                $"webhookId={Uri.EscapeDataString(integrationId)}"
             };
             if (participantId != "webhook")
                 queryParams.Add($"participantId={Uri.EscapeDataString(participantId)}");
@@ -691,10 +694,13 @@ public class AppIntegrationService : IAppIntegrationService
                 ["timeoutInSeconds"] = timeoutInSeconds,
                 ["webhookName"] = webhookName
             };
+            if (request.WorkflowInputs is { Count: > 0 })
+                configuration["workflowInputs"] = request.WorkflowInputs;
 
             var workflowId = $"{tenantId}:{request.AgentName}:{workflowName}:{request.ActivationName}";
             var integration = new AppIntegration
             {
+                Id = integrationId,
                 TenantId = tenantId,
                 PlatformId = "builtin_webhook",
                 Name = integrationName,
