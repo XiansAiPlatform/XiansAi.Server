@@ -275,6 +275,16 @@ message_feedback:
       submitted_at: desc
     background: true
 
+contacts:
+  - name: tenant_id_idx
+    keys:
+      tenant_id: asc
+  - name: tenant_email_unique
+    keys:
+      tenant_id: asc
+      email: asc
+    unique: true
+
 api_keys:
   - name: tenant_name_unique
     keys:
