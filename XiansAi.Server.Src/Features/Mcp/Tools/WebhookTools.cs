@@ -67,11 +67,12 @@ public sealed class WebhookTools(
         if (string.IsNullOrWhiteSpace(workflowType)) throw new McpException("Workflow type is required.");
         if (string.IsNullOrWhiteSpace(webhookName)) throw new McpException("Webhook name is required.");
         if (timeoutInSeconds is < 1 or > 300) throw new McpException("Timeout must be between 1 and 300 seconds.");
+        var workflowName = ToWorkflowName(target.AgentName, workflowType);
         var created = Result(await integrations.CreateBuiltinWebhookAsync(new CreateBuiltinWebhookRequest
         {
             AgentName = target.AgentName,
             ActivationName = target.ActivationName,
-            WorkflowName = workflowType,
+            WorkflowName = workflowName,
             WebhookName = webhookName,
             Name = name,
             ParticipantId = participantId,
@@ -79,6 +80,14 @@ public sealed class WebhookTools(
             WorkflowInputs = workflowInputs
         }, tenantContext.TenantId, tenantContext.LoggedInUser ?? "system"));
         return new CreatedWebhook(ToSummary(created), created.WebhookUrl);
+    }
+
+    private static string ToWorkflowName(string agentName, string workflowType)
+    {
+        var prefix = agentName + ":";
+        return workflowType.StartsWith(prefix, StringComparison.Ordinal)
+            ? workflowType[prefix.Length..]
+            : workflowType;
     }
 
     [McpServerTool(Name = "delete_webhook", Destructive = true)]

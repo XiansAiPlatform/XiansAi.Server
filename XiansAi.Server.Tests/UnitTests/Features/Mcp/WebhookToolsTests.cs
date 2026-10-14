@@ -124,9 +124,23 @@ public class WebhookToolsTests
         _integrations.Verify(service => service.CreateBuiltinWebhookAsync(
             It.Is<CreateBuiltinWebhookRequest>(request =>
                 request.AgentName == "agent" && request.ActivationName == "activation" &&
-                request.WorkflowName == "agent:workflow" && request.WebhookName == "IssueCreated" &&
+                request.WorkflowName == "workflow" && request.WebhookName == "IssueCreated" &&
                 request.Name == "Issues" && request.ParticipantId == "participant" &&
                 request.TimeoutInSeconds == 45 && request.WorkflowInputs == inputs), "tenant", "user"), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreatePreservesShortWorkflowName()
+    {
+        _integrations.Setup(service => service.CreateBuiltinWebhookAsync(
+                It.IsAny<CreateBuiltinWebhookRequest>(), "tenant", "user"))
+            .ReturnsAsync(ServiceResult<AppIntegrationResponse>.Success(Webhook()));
+
+        await Tools().CreateWebhook(_target, "workflow", "IssueCreated");
+
+        _integrations.Verify(service => service.CreateBuiltinWebhookAsync(
+            It.Is<CreateBuiltinWebhookRequest>(request => request.WorkflowName == "workflow"),
+            "tenant", "user"), Times.Once);
     }
 
     [Fact]
