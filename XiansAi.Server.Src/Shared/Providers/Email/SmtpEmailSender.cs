@@ -62,6 +62,8 @@ public class SmtpEmailSender : ISmtpEmailSender
         message.From.Add(new MailboxAddress(settings.SenderName ?? string.Empty, settings.SenderEmail));
         foreach (var recipient in recipients)
         {
+            if (!SmtpSettings.IsValidEmail(recipient))
+                throw new ArgumentException($"Invalid recipient email address: {recipient}", nameof(to));
             message.To.Add(MailboxAddress.Parse(recipient));
         }
         message.Subject = subject;
