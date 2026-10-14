@@ -29,6 +29,7 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
                 Type = "text",
                 Version = "v1",
                 CreatedAt = DateTime.UtcNow.AddHours(-2),
+                UpdatedAt = DateTime.UtcNow.AddHours(-2),
                 CreatedBy = "test-agent",
                 Agent = "test-agent",
                 TenantId = TestTenantId
@@ -41,6 +42,7 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
                 Type = "text",
                 Version = "v2",
                 CreatedAt = DateTime.UtcNow.AddHours(-1),
+                UpdatedAt = DateTime.UtcNow.AddHours(-1),
                 CreatedBy = "test-agent",
                 Agent = "test-agent",
                 TenantId = TestTenantId
@@ -53,6 +55,7 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
                 Type = "text",
                 Version = "v3",
                 CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
                 CreatedBy = "test-agent",
                 Agent = "test-agent",
                 TenantId = TestTenantId

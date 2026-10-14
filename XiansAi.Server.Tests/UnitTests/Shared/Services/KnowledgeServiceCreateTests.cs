@@ -159,6 +159,48 @@ public class KnowledgeServiceCreateTests
 
         var ok = Assert.IsType<Ok<Knowledge>>(result);
         Assert.Same(existing, ok.Value);
+        _repo.Verify(r => r.TouchUpdatedAtAsync(existing.Id, It.IsAny<DateTime>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateWithStatus_NewRecord_ReportsCreated()
+    {
+        SetupExactLookup(null);
+
+        var (knowledge, created, error) = await _sut.CreateWithStatus(Request());
+
+        Assert.NotNull(knowledge);
+        Assert.True(created);
+        Assert.Null(error);
+        _repo.Verify(r => r.TouchUpdatedAtAsync(It.IsAny<string>(), It.IsAny<DateTime>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateWithStatus_ExistingRecord_ReportsNotCreatedAndTouches()
+    {
+        var existing = Existing();
+        SetupExactLookup(existing);
+
+        var (knowledge, created, error) = await _sut.CreateWithStatus(Request());
+
+        Assert.Same(existing, knowledge);
+        Assert.False(created);
+        Assert.Null(error);
+        _repo.Verify(r => r.TouchUpdatedAtAsync(existing.Id, It.IsAny<DateTime>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateWithStatus_NonSystemWithoutTenant_ReturnsErrorAndNoWrites()
+    {
+        _tenantContext.SetupGet(t => t.TenantId).Returns(string.Empty);
+
+        var (knowledge, created, error) = await _sut.CreateWithStatus(Request());
+
+        Assert.Null(knowledge);
+        Assert.False(created);
+        Assert.NotNull(error);
+        _repo.Verify(r => r.CreateAsync(It.IsAny<Knowledge>()), Times.Never);
+        _repo.Verify(r => r.TouchUpdatedAtAsync(It.IsAny<string>(), It.IsAny<DateTime>()), Times.Never);
     }
 
     [Fact]
@@ -225,5 +267,6 @@ public class KnowledgeServiceCreateTests
 
         Assert.False(created);
         Assert.Same(existing, knowledge);
+        _repo.Verify(r => r.TouchUpdatedAtAsync(existing.Id, It.IsAny<DateTime>()), Times.Once);
     }
 }
