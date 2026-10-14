@@ -273,6 +273,20 @@ public class Program
         var indexSynchronizer = scope.ServiceProvider.GetRequiredService<IMongoIndexSynchronizer>();
         await indexSynchronizer.EnsureIndexesAsync();
 
+        // Backfill knowledge.updated_at for legacy documents (idempotent)
+        try
+        {
+            var knowledgeRepository = scope.ServiceProvider.GetRequiredService<Shared.Repositories.IKnowledgeRepository>();
+            var knowledgeMigration = new Shared.Data.Migrations.KnowledgeUpdatedAtMigration(
+                knowledgeRepository,
+                scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger<Shared.Data.Migrations.KnowledgeUpdatedAtMigration>());
+            await knowledgeMigration.MigrateAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Knowledge updated_at backfill failed; it will be retried on next startup");
+        }
+
         // Seed default data 
         await SeedData.SeedDefaultDataAsync(app.Services, _logger);
 

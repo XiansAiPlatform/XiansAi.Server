@@ -842,7 +842,7 @@ Returns the created knowledge object with all properties including auto-generate
                     }
                 }
 
-                // Always creates a new document with a new id and CreatedAt so "latest" resolution
+                // Always creates a new document with a new id and CreatedAt/UpdatedAt so "latest" resolution
                 // (by timestamp) stays correct even when content matches an older revision.
                 var updatedKnowledge = await knowledgeService.UpdateForTenantAsync(
                     knowledgeId,
@@ -878,11 +878,11 @@ Returns the created knowledge object with all properties including auto-generate
         .Produces(StatusCodes.Status500InternalServerError)
         
         .WithSummary("Update knowledge (always creates a new version)")
-        .WithDescription(@"Patches knowledge by **always** inserting a new row: new id, new `CreatedAt`, and a `version` value of the form `contentHash:objectId` (hash of content + type, plus a unique suffix for the DB unique index). Prior revisions remain for history.
+        .WithDescription(@"Patches knowledge by **always** inserting a new row: new id, new `CreatedAt`/`UpdatedAt`, and a `version` value of the form `contentHash:objectId` (hash of content + type, plus a unique suffix for the DB unique index). Prior revisions remain for history.
 
             **Behavior:**
             - Content hash is derived from content + type (request `version` is ignored)
-            - Same content as an older revision still inserts a new row; latest is by `CreatedAt`");
+            - Same content as an older revision still inserts a new row; latest is by `UpdatedAt`");
 
         // Delete knowledge by ID
         adminKnowledgeGroup.MapDelete("/{knowledgeId}", async (

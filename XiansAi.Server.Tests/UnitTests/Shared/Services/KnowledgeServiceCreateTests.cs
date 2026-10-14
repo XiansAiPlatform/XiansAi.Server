@@ -96,6 +96,7 @@ public class KnowledgeServiceCreateTests
     public async Task Create_ExactRowExists_ReturnsExistingWithoutInsert()
     {
         var existing = Existing();
+        existing.UpdatedAt = existing.CreatedAt = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         SetupExactLookup(existing);
 
         var result = await _sut.Create(Request());
@@ -103,6 +104,8 @@ public class KnowledgeServiceCreateTests
         var ok = Assert.IsType<Ok<Knowledge>>(result);
         Assert.Same(existing, ok.Value);
         _repo.Verify(r => r.CreateAsync(It.IsAny<Knowledge>()), Times.Never);
+        _repo.Verify(r => r.TouchUpdatedAtAsync(existing.Id, It.IsAny<DateTime>()), Times.Once);
+        Assert.True(existing.UpdatedAt > existing.CreatedAt);
     }
 
     [Fact]
@@ -181,6 +184,7 @@ public class KnowledgeServiceCreateTests
         Assert.False(created);
         Assert.Same(existing, knowledge);
         _repo.Verify(r => r.CreateAsync(It.IsAny<Knowledge>()), Times.Never);
+        _repo.Verify(r => r.TouchUpdatedAtAsync(existing.Id, It.IsAny<DateTime>()), Times.Once);
     }
 
     [Fact]
@@ -191,6 +195,7 @@ public class KnowledgeServiceCreateTests
         await Assert.ThrowsAsync<KnowledgeConflictException>(() => _sut.CreateOrGetForTenantAsync(
             "playbook", "new content", "markdown", Tenant, "admin", AgentName, version: Hash("old content", "markdown")));
         _repo.Verify(r => r.CreateAsync(It.IsAny<Knowledge>()), Times.Never);
+        _repo.Verify(r => r.TouchUpdatedAtAsync(It.IsAny<string>(), It.IsAny<DateTime>()), Times.Never);
     }
 
     [Fact]

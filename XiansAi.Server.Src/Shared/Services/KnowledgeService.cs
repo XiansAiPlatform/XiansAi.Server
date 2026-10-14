@@ -120,6 +120,7 @@ public interface IKnowledgeService
     Task<IResult> DeleteAllVersions(DeleteAllVersionsRequest request);
     Task<IResult> GetLatestAll(string agent);
     Task<IResult> Create(KnowledgeRequest request);
+    Task<(Knowledge? Knowledge, bool Created, IResult? Error)> CreateWithStatus(KnowledgeRequest request);
     Task<IResult> GetLatestByAgent(string agent);
     
     // Admin methods that accept explicit tenantId
@@ -401,7 +402,7 @@ public class KnowledgeService : IKnowledgeService
             // 1. System-scoped: Latest where TenantId is null AND SystemScoped is true
             var systemItem = systemScopedKnowledge
                 .Where(k => k.Name == name)
-                .OrderByDescending(k => k.CreatedAt)
+                .OrderByDescending(k => k.UpdatedAt)
                 .FirstOrDefault();
             
             if (systemItem != null)
@@ -418,7 +419,7 @@ public class KnowledgeService : IKnowledgeService
             // 2. Tenant default: Latest where ActivationName is null
             var tenantDefault = tenantItems
                 .Where(k => string.IsNullOrEmpty(k.ActivationName))
-                .OrderByDescending(k => k.CreatedAt)
+                .OrderByDescending(k => k.UpdatedAt)
                 .FirstOrDefault();
             
             if (tenantDefault != null)
@@ -532,14 +533,31 @@ public class KnowledgeService : IKnowledgeService
 
     public async Task<IResult> Create(KnowledgeRequest request)
     {
+        var (knowledge, _, error) = await CreateWithStatus(request);
+        return error ?? Results.Ok(knowledge);
+    }
+
+    /// <summary>
+    /// Re-posting an identical record: bump updated_at and return the existing row.
+    /// </summary>
+    private async Task<Knowledge> TouchExistingAsync(Knowledge existing)
+    {
+        var now = DateTime.UtcNow;
+        await _knowledgeRepository.TouchUpdatedAtAsync(existing.Id, now);
+        existing.UpdatedAt = now;
+        return existing;
+    }
+
+    public async Task<(Knowledge? Knowledge, bool Created, IResult? Error)> CreateWithStatus(KnowledgeRequest request)
+    {
         // Validate that non-system knowledge has a tenant ID
         if (!request.SystemScoped && string.IsNullOrWhiteSpace(_tenantContext.TenantId))
         {
-            _logger.LogError("Cannot create non-system knowledge without a tenant ID. User: {UserId}", 
+            _logger.LogError("Cannot create non-system knowledge without a tenant ID. User: {UserId}",
                 LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
-            return Results.Json(
+            return (null, false, Results.Json(
                 new { error = "BadRequest", message = "Non-system knowledge must be associated with a tenant" },
-                statusCode: StatusCodes.Status400BadRequest);
+                statusCode: StatusCodes.Status400BadRequest));
         }
 
         // Check system admin permission for system-scoped knowledge
@@ -547,9 +565,9 @@ public class KnowledgeService : IKnowledgeService
         {
             _logger.LogWarning("Unauthorized access attempt to create system-scoped knowledge by user {UserId}",
                 LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
-            return Results.Json(
+            return (null, false, Results.Json(
                 new { error = "Forbidden", message = "Only system administrators can create system-scoped knowledge" },
-                statusCode: StatusCodes.Status403Forbidden);
+                statusCode: StatusCodes.Status403Forbidden));
         }
 
         // System admins have access to all agents
@@ -561,9 +579,9 @@ public class KnowledgeService : IKnowledgeService
             {
                 _logger.LogWarning("Unauthorized access attempt to create knowledge for agent {Agent} by user {UserId}",
                     LogSanitizer.Sanitize(request.Agent), LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
-                return Results.Json(
+                return (null, false, Results.Json(
                     new { error = "Forbidden", message = "You do not have permission to create knowledge for this agent" },
-                    statusCode: StatusCodes.Status403Forbidden);
+                    statusCode: StatusCodes.Status403Forbidden));
             }
         }
 
@@ -580,7 +598,7 @@ public class KnowledgeService : IKnowledgeService
         if (existing != null)
         {
             _logger.LogInformation("Knowledge {Name} already exists with the same content hash, scope, and activation", LogSanitizer.Sanitize(request.Name));
-            return Results.Ok(existing);
+            return (await TouchExistingAsync(existing), false, null);
         }
 
         // Create the knowledge
@@ -618,7 +636,7 @@ public class KnowledgeService : IKnowledgeService
                     ? $"System-scoped knowledge '{knowledge.Name}' ({knowledge.Type}) for agent '{knowledge.Agent}' was created by '{knowledge.CreatedBy}'."
                     : $"Knowledge '{knowledge.Name}' ({knowledge.Type}) for agent '{knowledge.Agent}' was created by '{knowledge.CreatedBy}'{(string.IsNullOrWhiteSpace(knowledge.ActivationName) ? "" : $" for activation '{knowledge.ActivationName}'")}.");
 
-            return Results.Ok(knowledge);
+            return (knowledge, true, null);
         }
         catch (MongoWriteException ex) when (ex.WriteError?.Category == ServerErrorCategory.DuplicateKey)
         {
@@ -631,7 +649,7 @@ public class KnowledgeService : IKnowledgeService
             if (existingKnowledge != null)
             {
                 _logger.LogInformation("Returning existing knowledge {Name} after duplicate key error", LogSanitizer.Sanitize(request.Name));
-                return Results.Ok(existingKnowledge);
+                return (await TouchExistingAsync(existingKnowledge), false, null);
             }
             
             // If we still can't find it, throw the original exception
@@ -827,7 +845,7 @@ public class KnowledgeService : IKnowledgeService
         var existing = await GetByExactKeyAsync(name, version, agentName, tenantId, activationName, systemScoped);
         if (existing != null)
         {
-            return (ResolveExisting(existing, name, content, type, version), false);
+            return (await TouchExistingAsync(ResolveExisting(existing, name, content, type, version)), false);
         }
 
         var knowledge = new Knowledge
@@ -857,7 +875,7 @@ public class KnowledgeService : IKnowledgeService
             _logger.LogWarning(ex, "Duplicate key creating knowledge {Name}; returning existing document", LogSanitizer.Sanitize(name));
             var raced = await GetByExactKeyAsync(name, version, agentName, tenantId, activationName, systemScoped);
             if (raced == null) throw;
-            return (ResolveExisting(raced, name, content, type, version), false);
+            return (await TouchExistingAsync(ResolveExisting(raced, name, content, type, version)), false);
         }
 
         var metadata = new { tenantId, knowledgeId = knowledge.Id, name = knowledge.Name, type = knowledge.Type, agentName, activationName, systemScoped, version = knowledge.Version, createdBy };
