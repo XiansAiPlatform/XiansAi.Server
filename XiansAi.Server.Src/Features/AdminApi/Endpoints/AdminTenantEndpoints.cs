@@ -395,6 +395,77 @@ public static class AdminTenantEndpoints
 
         // Per-tenant Temporal connection override — SysAdmin only.
         MapTenantTemporalConfigEndpoints(adminApiGroup);
+
+        // Per-tenant email (SMTP) override — TenantAdmin.
+        MapTenantSmtpConfigEndpoints(adminApiGroup);
+    }
+
+    /// <summary>
+    /// Maps the per-tenant email (SMTP) endpoints (<c>/tenants/{tenantId}/smtp-config</c>).
+    /// A tenant config overrides the server default (<c>Email:Smtp</c>); deleting it reverts
+    /// to the server default. The password is write-only and never returned.
+    /// </summary>
+    private static void MapTenantSmtpConfigEndpoints(RouteGroupBuilder adminApiGroup)
+    {
+        var smtpGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/smtp-config")
+            .WithTags("AdminAPI - Tenant Email Config")
+            .RequireAuthorization("AdminEndpointAuthPolicy")
+            .AddEndpointFilter<TenantRouteScopeFilter>()
+            .EnforceCapabilities();
+
+        smtpGroup.MapGet("", async (
+            string tenantId,
+            [FromServices] ITenantSmtpConfigService service) =>
+        {
+            var result = await service.GetForTenantAsync(tenantId);
+            return result.ToHttpResult();
+        })
+        .WithName("AdminGetTenantSmtpConfig")
+        .RequireCapability(CapabilityActions.TenantSmtpConfigGet)
+        .WithSummary("Get the tenant email configuration")
+        .WithDescription("Returns which SMTP server the tenant's email uses (Tenant, Server, or None when email is off), plus the tenant's SMTP settings without the password.");
+
+        smtpGroup.MapPut("", async (
+            string tenantId,
+            [FromBody] TenantSmtpConfigRequest request,
+            [FromServices] ITenantSmtpConfigService service,
+            [FromServices] ITenantContext tenantContext) =>
+        {
+            var actor = tenantContext.LoggedInUser ?? "system";
+            var result = await service.UpsertAsync(tenantId, request, actor);
+            return result.ToHttpResult();
+        })
+        .WithName("AdminUpdateTenantSmtpConfig")
+        .RequireCapability(CapabilityActions.TenantSmtpConfigSet)
+        .WithSummary("Set the tenant email configuration")
+        .WithDescription("Creates or replaces the tenant's SMTP server, overriding the server default. A blank password keeps the saved one.");
+
+        smtpGroup.MapDelete("", async (
+            string tenantId,
+            [FromServices] ITenantSmtpConfigService service,
+            [FromServices] ITenantContext tenantContext) =>
+        {
+            var actor = tenantContext.LoggedInUser ?? "system";
+            var result = await service.DeleteAsync(tenantId, actor);
+            return result.ToHttpResult();
+        })
+        .WithName("AdminDeleteTenantSmtpConfig")
+        .RequireCapability(CapabilityActions.TenantSmtpConfigDelete)
+        .WithSummary("Remove the tenant email configuration")
+        .WithDescription("Removes the tenant's SMTP server so the server default applies again.");
+
+        smtpGroup.MapPost("/test", async (
+            string tenantId,
+            [FromBody] SendTestEmailRequest request,
+            [FromServices] ITenantSmtpConfigService service) =>
+        {
+            var result = await service.SendTestEmailAsync(tenantId, request);
+            return result.ToHttpResult();
+        })
+        .WithName("AdminTestTenantSmtpConfig")
+        .RequireCapability(CapabilityActions.TenantSmtpConfigTest)
+        .WithSummary("Send a test email")
+        .WithDescription("Sends a test email to 'to' with the given SMTP settings without saving them. A blank password uses the saved one.");
     }
 
     /// <summary>
