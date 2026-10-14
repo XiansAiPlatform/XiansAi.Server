@@ -114,8 +114,8 @@ public class EmailService : IEmailService
             var settings = tenantConfig?.ToSettings() ?? _serverSmtp;
             if (settings == null)
             {
-                _logger.LogInformation("Email '{Subject}' for tenant {TenantId} was not sent: no email server is configured",
-                    LogSanitizer.Sanitize(subject), LogSanitizer.Sanitize(tenantId));
+                _logger.LogInformation("Email for tenant {TenantId} was not sent: no email server is configured (SubjectLength: {SubjectLength})",
+                    LogSanitizer.Sanitize(tenantId), subject?.Length ?? 0);
                 return;
             }
 
@@ -123,8 +123,8 @@ public class EmailService : IEmailService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error sending email for tenant {TenantId} to {RecipientCount} recipient(s) with subject '{Subject}'",
-                LogSanitizer.Sanitize(tenantId), recipients.Count, LogSanitizer.Sanitize(subject));
+            _logger.LogError(ex, "Error sending email for tenant {TenantId} to {RecipientCount} recipient(s) (SubjectLength: {SubjectLength})",
+                LogSanitizer.Sanitize(tenantId), recipients.Count, subject?.Length ?? 0);
             throw;
         }
     }
