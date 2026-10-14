@@ -1,7 +1,9 @@
 using Features.WebApi.Services;
 using Microsoft.AspNetCore.Authorization;
 using Shared.Auth;
+using Shared.Data.Models;
 using Shared.Utils;
+using System.ComponentModel.DataAnnotations;
 using System.Security.Claims;
 using Shared.Providers.Auth;
 using Shared.Services;
@@ -82,7 +84,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
     private readonly ITenantContext _tenantContext;
     private readonly IAuthProviderFactory _authProviderFactory;
     private readonly ITokenValidationCache _tokenCache;
-    private readonly ITenantService _tenantService;
+    private readonly ITenantCacheService _tenantCacheService;
     private readonly IUserTenantService _userTenantService;
     public AuthRequirementHandler(
         ILogger<AuthRequirementHandler> logger,
@@ -90,13 +92,13 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         IAuthProviderFactory authProviderFactory,
         ITokenValidationCache tokenCache,
         IUserTenantService userTenantService,
-        ITenantService tenantService)
+        ITenantCacheService tenantCacheService)
     {
         _logger = logger;
         _tenantContext = tenantContext;
         _authProviderFactory = authProviderFactory;
         _tokenCache = tokenCache;
-        _tenantService = tenantService;
+        _tenantCacheService = tenantCacheService;
         _userTenantService = userTenantService;
     }
     
@@ -197,8 +199,8 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         {
             // if (currentTenantId != Constants.DefaultTenantId)
             // { 
-                var tenantResult = await _tenantService.GetTenantByTenantId(currentTenantId, httpContext.RequestAborted);
-                if (!tenantResult.IsSuccess || tenantResult.Data == null)
+                var tenant = await GetTenantConfig(currentTenantId, httpContext.RequestAborted);
+                if (tenant == null)
                 {
                     _logger.LogWarning("Tenant configuration not found for tenant ID: {TenantId}", LogSanitizer.Sanitize(currentTenantId));
                     context.Fail(new AuthorizationFailureReason(this, 
@@ -207,7 +209,7 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
                 }
                 
                 // Check if tenant is enabled
-                if (!tenantResult.Data.Enabled)
+                if (!tenant.Enabled)
                 {
                     _logger.LogWarning("Tenant {TenantId} is disabled", LogSanitizer.Sanitize(currentTenantId));
                     context.Fail(new AuthorizationFailureReason(this, 
@@ -230,6 +232,29 @@ public class AuthRequirementHandler : AuthorizationHandler<AuthRequirement>
         // Set tenant ID in context
         _tenantContext.TenantId = currentTenantId;
         return true;
+    }
+
+    /// <summary>
+    /// Looks up the tenant through the singleton cache rather than ITenantService, whose scoped
+    /// dependency graph is far too heavy to construct on every authorized request.
+    /// Returns null when the tenant is missing, the ID is invalid, or the lookup fails.
+    /// </summary>
+    private async Task<Tenant?> GetTenantConfig(string tenantId, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _tenantCacheService.GetByTenantIdAsync(tenantId, cancellationToken);
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Invalid tenant ID {TenantId}: {Message}", LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(ex.Message));
+            return null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Error retrieving tenant configuration for tenant ID {TenantId}", LogSanitizer.Sanitize(tenantId));
+            return null;
+        }
     }
     
     private async Task<(bool success, string? loggedInUser, IEnumerable<string>? authorizedTenantIds)> 
