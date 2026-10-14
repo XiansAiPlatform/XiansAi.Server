@@ -70,6 +70,7 @@ public class AdminAuditLogService : IAdminAuditLogService
     internal static readonly TimeSpan ViewAsIdempotencyWindow = TimeSpan.FromHours(1);
     private const string TargetParticipantIdKey = "targetParticipantId";
     private const int MaxActionFilters = 50;
+    private const int MaxActionLength = 200;
 
     private readonly IAuditLogRepository _auditLogRepository;
     private readonly ITenantContext _tenantContext;
@@ -252,6 +253,7 @@ public class AdminAuditLogService : IAdminAuditLogService
 
         var actions = action
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(a => a.Length <= MaxActionLength)
             .Distinct(StringComparer.Ordinal)
             .Take(MaxActionFilters)
             .ToList();

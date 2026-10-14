@@ -57,6 +57,8 @@ public class AdminAuditLogEndpointsTests : AdminApiIntegrationTestBase
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("secret.deleted", body);
         Assert.DoesNotContain("agent.access.changed", body);
+        using var document = JsonDocument.Parse(body);
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
     }
 
     [Fact]

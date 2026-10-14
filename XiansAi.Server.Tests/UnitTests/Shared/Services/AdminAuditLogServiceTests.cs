@@ -60,6 +60,37 @@ public class AdminAuditLogServiceTests
     }
 
     [Fact]
+    public void ParseActions_CapsAtFiftyDistinctActions()
+    {
+        var input = string.Join(",", Enumerable.Range(0, 51).Select(i => $"action.{i}"));
+
+        var result = AdminAuditLogService.ParseActions(input);
+
+        Assert.NotNull(result);
+        Assert.Equal(50, result!.Count);
+        Assert.DoesNotContain("action.50", result);
+    }
+
+    [Fact]
+    public void ParseActions_DeduplicatesCaseSensitively()
+    {
+        var result = AdminAuditLogService.ParseActions("Action,action,Action");
+
+        Assert.Equal(new[] { "Action", "action" }, result);
+    }
+
+    [Fact]
+    public void ParseActions_DropsValuesLongerThanLimit()
+    {
+        var tooLong = new string('a', 201);
+        var atLimit = new string('b', 200);
+
+        var result = AdminAuditLogService.ParseActions($"{tooLong},{atLimit},ok");
+
+        Assert.Equal(new[] { atLimit, "ok" }, result);
+    }
+
+    [Fact]
     public async Task CreateEntryAsync_PersistsViewAs_WithActorAndTargetSeparated()
     {
         AuditLogEntry? captured = null;
