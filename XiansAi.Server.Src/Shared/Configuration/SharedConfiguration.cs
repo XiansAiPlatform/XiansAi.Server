@@ -222,6 +222,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<ITenantRepository, TenantRepository>();
         builder.Services.AddScoped<ITenantOidcConfigRepository, TenantOidcConfigRepository>();
         builder.Services.AddScoped<ITenantTemporalConfigRepository, TenantTemporalConfigRepository>();
+        builder.Services.AddScoped<ITenantSmtpConfigRepository, TenantSmtpConfigRepository>();
         builder.Services.AddScoped<ISecretVaultRepository, SecretVaultRepository>();
         builder.Services.AddScoped<IUsageEventRepository, UsageEventRepository>();
         builder.Services.AddScoped<IActivationRepository, ActivationRepository>();
@@ -261,6 +262,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IContactService, ContactService>();
         builder.Services.AddScoped<ITenantOidcConfigService, TenantOidcConfigService>();
         builder.Services.AddScoped<ITenantTemporalConfigService, TenantTemporalConfigService>();
+        builder.Services.AddScoped<ITenantSmtpConfigService, TenantSmtpConfigService>();
         builder.Services.AddScoped<ISecretVaultService, SecretVaultService>();
         builder.Services.AddSingleton<ISecureEncryptionService, SecureEncryptionService>();
         builder.Services.AddSingleton<ITenantMetadataProtector, TenantMetadataProtector>();

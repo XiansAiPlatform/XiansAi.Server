@@ -581,7 +581,7 @@ public class UserManagementService : IUserManagementService
                 ExpiresAt = DateTime.UtcNow.AddDays(7)
             };
             await _invitationRepository.CreateAsync(invitation);
-            await _emailService.SendEmailAsync(invite.Email, EMAIL_SUBJECT, GetEmailBody(invitation.ExpiresAt.ToString("f")), false);
+            await _emailService.SendEmailAsync(invite.TenantId, invite.Email, EMAIL_SUBJECT, GetEmailBody(invitation.ExpiresAt.ToString("f")), false);
 
             _logger.LogInformation("Invitation created for {Email} (tenant: {TenantId}) by user {UserId}", 
                 LogSanitizer.Sanitize(invite.Email), LogSanitizer.Sanitize(invite.TenantId), LogSanitizer.Sanitize(_tenantContext.LoggedInUser));

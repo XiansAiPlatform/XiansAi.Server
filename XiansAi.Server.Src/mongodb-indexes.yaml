@@ -618,3 +618,9 @@ audit_logs:
     unique: true
     sparse: true
     background: true
+
+tenant_smtp_config:
+  - name: tenant_id_1
+    keys:
+      tenant_id: asc
+    unique: true
