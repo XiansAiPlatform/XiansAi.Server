@@ -68,7 +68,8 @@ public class TenantServiceDisableTests
             Mock.Of<IActivationService>(),
             Mock.Of<IKnowledgeRepository>(),
             _audit.Object,
-            _deactivationService.Object);
+            _deactivationService.Object,
+            Mock.Of<IContactRepository>());
     }
 
     [Fact]

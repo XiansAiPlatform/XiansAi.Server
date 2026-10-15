@@ -275,6 +275,16 @@ message_feedback:
       submitted_at: desc
     background: true
 
+contacts:
+  - name: tenant_id_idx
+    keys:
+      tenant_id: asc
+  - name: tenant_email_unique
+    keys:
+      tenant_id: asc
+      email: asc
+    unique: true
+
 api_keys:
   - name: tenant_name_unique
     keys:
@@ -533,6 +543,11 @@ app_integrations:
     keys:
       tenant_id: asc
       platform_id: asc
+  - name: idx_tenant_platform_api_key
+    keys:
+      tenant_id: asc
+      platform_id: asc
+      configuration.apiKeyId: asc
   - name: idx_tenant_agent_activation
     keys:
       tenant_id: asc
@@ -613,3 +628,9 @@ audit_logs:
     unique: true
     sparse: true
     background: true
+
+tenant_smtp_config:
+  - name: tenant_id_1
+    keys:
+      tenant_id: asc
+    unique: true
