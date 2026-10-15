@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
 using Shared.Auth;
+using Shared.Data.Models;
 using Shared.Services;
 using Shared.Utils.Services;
 using Shared.Utils;
@@ -41,7 +42,7 @@ public static class KnowledgeEndpoints
         .Produces<object>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        
+
         .WithSummary("Get latest knowledge")
         .WithDescription(KnowledgeFallbackDocs.FallbackSummary +
             "\n\nThe tenantId is derived from the request's certificate-authenticated tenant context. " +
@@ -59,7 +60,7 @@ public static class KnowledgeEndpoints
         .Produces<object>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status404NotFound)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
-        
+
         .WithSummary("Get latest system knowledge")
         .WithDescription("Retrieves the most recent system-scoped knowledge (no tenant) for the specified name and agent");
 
@@ -80,11 +81,24 @@ public static class KnowledgeEndpoints
                 Description = request.Description,
                 Visible = request.Visible
             };
-            var result = await endpoint.Create(knowledgeRequest);
-            return Results.Created($"/api/agent/knowledge/latest?name={request.Name}&agent={request.Agent}", result);
+            var (knowledge, created, error) = await endpoint.CreateWithStatus(knowledgeRequest);
+            if (error != null)
+            {
+                return error;
+            }
+            if (!created)
+            {
+                // Identical record already existed: updated_at was refreshed, nothing new was created.
+                return Results.Ok(knowledge);
+            }
+            return Results.Created(
+                $"/api/agent/knowledge/latest?name={Uri.EscapeDataString(request.Name)}&agent={Uri.EscapeDataString(request.Agent)}",
+                knowledge);
         })
-        .Produces<object>(StatusCodes.Status201Created)
+        .Produces<Knowledge>(StatusCodes.Status201Created)
+        .Produces<Knowledge>(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status400BadRequest)
+        .ProducesProblem(StatusCodes.Status403Forbidden)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
         
         .WithSummary("Create knowledge")

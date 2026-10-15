@@ -29,6 +29,7 @@ public class KnowledgeServiceCreateTests
 
     private readonly Mock<IKnowledgeRepository> _repo = new();
     private readonly Mock<ITenantContext> _tenantContext = new();
+    private readonly Mock<IAgentRepository> _agentRepo = new();
     private readonly KnowledgeService _sut;
 
     public KnowledgeServiceCreateTests()
@@ -41,7 +42,7 @@ public class KnowledgeServiceCreateTests
             _repo.Object,
             NullLogger<KnowledgeService>.Instance,
             _tenantContext.Object,
-            new Mock<IAgentRepository>().Object,
+            _agentRepo.Object,
             new Mock<IWebhookEventPublisher>().Object,
             new Mock<IAuditLogService>().Object);
     }
@@ -96,6 +97,7 @@ public class KnowledgeServiceCreateTests
     public async Task Create_ExactRowExists_ReturnsExistingWithoutInsert()
     {
         var existing = Existing();
+        existing.UpdatedAt = existing.CreatedAt = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc);
         SetupExactLookup(existing);
 
         var result = await _sut.Create(Request());
@@ -103,6 +105,8 @@ public class KnowledgeServiceCreateTests
         var ok = Assert.IsType<Ok<Knowledge>>(result);
         Assert.Same(existing, ok.Value);
         _repo.Verify(r => r.CreateAsync(It.IsAny<Knowledge>()), Times.Never);
+        _repo.Verify(r => r.TouchUpdatedAtAsync(existing.Id, It.IsAny<DateTime>()), Times.Once);
+        Assert.True(existing.UpdatedAt > existing.CreatedAt);
     }
 
     [Fact]
@@ -156,6 +160,110 @@ public class KnowledgeServiceCreateTests
 
         var ok = Assert.IsType<Ok<Knowledge>>(result);
         Assert.Same(existing, ok.Value);
+        _repo.Verify(r => r.TouchUpdatedAtAsync(existing.Id, It.IsAny<DateTime>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateWithStatus_NewRecord_ReportsCreated()
+    {
+        SetupExactLookup(null);
+
+        var (knowledge, created, error) = await _sut.CreateWithStatus(Request());
+
+        Assert.NotNull(knowledge);
+        Assert.True(created);
+        Assert.Null(error);
+        _repo.Verify(r => r.TouchUpdatedAtAsync(It.IsAny<string>(), It.IsAny<DateTime>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateWithStatus_ExistingRecord_ReportsNotCreatedAndTouches()
+    {
+        var existing = Existing();
+        SetupExactLookup(existing);
+
+        var (knowledge, created, error) = await _sut.CreateWithStatus(Request());
+
+        Assert.Same(existing, knowledge);
+        Assert.False(created);
+        Assert.Null(error);
+        _repo.Verify(r => r.TouchUpdatedAtAsync(existing.Id, It.IsAny<DateTime>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task CreateWithStatus_NonSystemWithoutTenant_ReturnsErrorAndNoWrites()
+    {
+        _tenantContext.SetupGet(t => t.TenantId).Returns(string.Empty);
+
+        var (knowledge, created, error) = await _sut.CreateWithStatus(Request());
+
+        Assert.Null(knowledge);
+        Assert.False(created);
+        AssertStatus(StatusCodes.Status400BadRequest, error);
+        AssertNoWrites();
+    }
+
+    [Fact]
+    public async Task CreateWithStatus_SystemScopedByNonSysAdmin_Returns403()
+    {
+        _tenantContext.SetupGet(t => t.UserRoles).Returns(Array.Empty<string>());
+
+        var (knowledge, created, error) = await _sut.CreateWithStatus(Request(systemScoped: true));
+
+        Assert.Null(knowledge);
+        Assert.False(created);
+        AssertStatus(StatusCodes.Status403Forbidden, error);
+        AssertNoWrites();
+    }
+
+    [Fact]
+    public async Task CreateWithStatus_NonSysAdminWithoutAgentAccess_Returns403()
+    {
+        _tenantContext.SetupGet(t => t.UserRoles).Returns(Array.Empty<string>());
+        _agentRepo.Setup(r => r.GetAgentsWithPermissionAsync(It.IsAny<string>(), It.IsAny<string?>()))
+            .ReturnsAsync(new List<Agent> { TestAgent("Some Other Agent") });
+
+        var (knowledge, created, error) = await _sut.CreateWithStatus(Request());
+
+        Assert.Null(knowledge);
+        Assert.False(created);
+        AssertStatus(StatusCodes.Status403Forbidden, error);
+        AssertNoWrites();
+    }
+
+    [Fact]
+    public async Task CreateWithStatus_NonSysAdminWithAgentAccess_Creates()
+    {
+        _tenantContext.SetupGet(t => t.UserRoles).Returns(Array.Empty<string>());
+        _agentRepo.Setup(r => r.GetAgentsWithPermissionAsync(It.IsAny<string>(), It.IsAny<string?>()))
+            .ReturnsAsync(new List<Agent> { TestAgent(AgentName) });
+        SetupExactLookup(null);
+
+        var (knowledge, created, error) = await _sut.CreateWithStatus(Request());
+
+        Assert.NotNull(knowledge);
+        Assert.True(created);
+        Assert.Null(error);
+    }
+
+    private static Agent TestAgent(string name) => new()
+    {
+        Id = ObjectId.GenerateNewId().ToString(),
+        Name = name,
+        Tenant = Tenant,
+        CreatedBy = "seed"
+    };
+
+    private static void AssertStatus(int expected, IResult? error)
+    {
+        var result = Assert.IsAssignableFrom<IStatusCodeHttpResult>(error);
+        Assert.Equal(expected, result.StatusCode);
+    }
+
+    private void AssertNoWrites()
+    {
+        _repo.Verify(r => r.CreateAsync(It.IsAny<Knowledge>()), Times.Never);
+        _repo.Verify(r => r.TouchUpdatedAtAsync(It.IsAny<string>(), It.IsAny<DateTime>()), Times.Never);
     }
 
     [Fact]
@@ -181,6 +289,7 @@ public class KnowledgeServiceCreateTests
         Assert.False(created);
         Assert.Same(existing, knowledge);
         _repo.Verify(r => r.CreateAsync(It.IsAny<Knowledge>()), Times.Never);
+        _repo.Verify(r => r.TouchUpdatedAtAsync(existing.Id, It.IsAny<DateTime>()), Times.Once);
     }
 
     [Fact]
@@ -191,6 +300,7 @@ public class KnowledgeServiceCreateTests
         await Assert.ThrowsAsync<KnowledgeConflictException>(() => _sut.CreateOrGetForTenantAsync(
             "playbook", "new content", "markdown", Tenant, "admin", AgentName, version: Hash("old content", "markdown")));
         _repo.Verify(r => r.CreateAsync(It.IsAny<Knowledge>()), Times.Never);
+        _repo.Verify(r => r.TouchUpdatedAtAsync(It.IsAny<string>(), It.IsAny<DateTime>()), Times.Never);
     }
 
     [Fact]
@@ -220,5 +330,6 @@ public class KnowledgeServiceCreateTests
 
         Assert.False(created);
         Assert.Same(existing, knowledge);
+        _repo.Verify(r => r.TouchUpdatedAtAsync(existing.Id, It.IsAny<DateTime>()), Times.Once);
     }
 }
