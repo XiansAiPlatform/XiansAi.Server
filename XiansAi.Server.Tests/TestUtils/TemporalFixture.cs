@@ -27,20 +27,35 @@ public sealed class TemporalFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        var options = new WorkflowEnvironmentStartLocalOptions
-        {
-            Namespace = "default",
-            SearchAttributes =
-            [
-                SearchAttributeKey.CreateKeyword(Constants.TenantIdKey),
-                SearchAttributeKey.CreateKeyword(Constants.AgentKey),
-                SearchAttributeKey.CreateKeyword(Constants.UserIdKey),
-                SearchAttributeKey.CreateKeyword(Constants.IdPostfixKey)
-            ],
-            DevServerOptions = CreateDevServerOptions()
-        };
+        _environment = await StartAdditionalServerAsync();
+    }
 
-        _environment = await WorkflowEnvironment.StartLocalAsync(options);
+    /// <summary>
+    /// Starts another local Temporal server with the same namespace and search attributes
+    /// as the collection fixture. Used when a test assigns a tenant its own cluster.
+    /// </summary>
+    /// <remarks>
+    /// Parallel suite shards download one shared CLI into the temp directory. Temporalio
+    /// 1.13 gives up after 20 seconds while that file is still being written, so a shard
+    /// that loses the race retries until the download finishes.
+    /// </remarks>
+    public static async Task<WorkflowEnvironment> StartAdditionalServerAsync()
+    {
+        const int maxAttempts = 6;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await WorkflowEnvironment.StartLocalAsync(CreateStartOptions());
+            }
+            catch (InvalidOperationException ex) when (
+                attempt < maxAttempts && IsCliDownloadContended(ex))
+            {
+                Console.Error.WriteLine(
+                    $"Temporal CLI download is still in progress in another process " +
+                    $"(attempt {attempt} of {maxAttempts}). Waiting for it to finish.");
+            }
+        }
     }
 
     public async Task DisposeAsync()
@@ -52,6 +67,39 @@ public sealed class TemporalFixture : IAsyncLifetime
 
         await _environment.DisposeAsync();
         _environment = null;
+    }
+
+    private static WorkflowEnvironmentStartLocalOptions CreateStartOptions()
+    {
+        return new WorkflowEnvironmentStartLocalOptions
+        {
+            Namespace = "default",
+            SearchAttributes =
+            [
+                SearchAttributeKey.CreateKeyword(Constants.TenantIdKey),
+                SearchAttributeKey.CreateKeyword(Constants.AgentKey),
+                SearchAttributeKey.CreateKeyword(Constants.UserIdKey),
+                SearchAttributeKey.CreateKeyword(Constants.IdPostfixKey)
+            ],
+            DevServerOptions = CreateDevServerOptions()
+        };
+    }
+
+    /// <summary>
+    /// True when another process still holds <c>temporal-sdk-dotnet-*.downloading</c>.
+    /// </summary>
+    private static bool IsCliDownloadContended(Exception exception)
+    {
+        for (Exception? current = exception; current != null; current = current.InnerException)
+        {
+            if (current.Message.Contains(".downloading", StringComparison.Ordinal)
+                && current.Message.Contains("not complete", StringComparison.Ordinal))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private static DevServerOptions CreateDevServerOptions()

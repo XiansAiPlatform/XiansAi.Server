@@ -96,6 +96,8 @@ public class TenantService : ITenantService
     private readonly IActivationService _activationService;
     private readonly IKnowledgeRepository _knowledgeRepository;
     private readonly IAuditLogService _auditLogService;
+    private readonly IContactRepository _contactRepository;
+    private readonly ITenantAgentDeactivationService _agentDeactivationService;
 
 
     public TenantService(
@@ -109,7 +111,9 @@ public class TenantService : ITenantService
         IActivationRepository activationRepository,
         IActivationService activationService,
         IKnowledgeRepository knowledgeRepository,
-        IAuditLogService auditLogService)
+        IAuditLogService auditLogService,
+        ITenantAgentDeactivationService agentDeactivationService,
+        IContactRepository contactRepository)
     {
         _tenantRepository = tenantRepository ?? throw new ArgumentNullException(nameof(tenantRepository));
         _tenantCacheService = tenantCacheService ?? throw new ArgumentNullException(nameof(tenantCacheService));
@@ -122,6 +126,8 @@ public class TenantService : ITenantService
         _activationService = activationService ?? throw new ArgumentNullException(nameof(activationService));
         _knowledgeRepository = knowledgeRepository ?? throw new ArgumentNullException(nameof(knowledgeRepository));
         _auditLogService = auditLogService ?? throw new ArgumentNullException(nameof(auditLogService));
+        _agentDeactivationService = agentDeactivationService ?? throw new ArgumentNullException(nameof(agentDeactivationService));
+        _contactRepository = contactRepository ?? throw new ArgumentNullException(nameof(contactRepository));
     }
 
     private string EnsureTenantAccessOrThrow(string tenantId)
@@ -847,6 +853,13 @@ public class TenantService : ITenantService
                     description: $"Tenant '{existingTenant.Name}' ({existingTenant.TenantId}) was {verb}. It was previously {(enabled ? "disabled" : "enabled")}.");
             }
 
+            // Queued on every disable (not only on a change) so sending enabled: false again retries
+            // any agents a previous run failed to deactivate.
+            if (result.IsSuccess && requestedEnabled == false)
+            {
+                _agentDeactivationService.Enqueue(new TenantAgentDeactivationRequest(existingTenant.TenantId));
+            }
+
             return result;
         }
         catch (ValidationException ex)
@@ -1034,6 +1047,7 @@ public class TenantService : ITenantService
             if (!string.IsNullOrEmpty(existingTenant.TenantId))
             {
                 await ForceDeleteActivationsForTenantAsync(existingTenant.TenantId);
+                await DeleteContactsForTenantAsync(existingTenant.TenantId);
             }
 
             var success = await _tenantRepository.DeleteAsync(id);
@@ -1077,6 +1091,21 @@ public class TenantService : ITenantService
         {
             _logger.LogError(ex, "Error deleting tenant with ID {Id}", LogSanitizer.Sanitize(id));
             return ServiceResult<bool>.InternalServerError("An error occurred while deleting the tenant.");
+        }
+    }
+
+    /// <summary>
+    /// Deletes a tenant's contacts. Best-effort, like the activation cleanup below.
+    /// </summary>
+    private async Task DeleteContactsForTenantAsync(string tenantId)
+    {
+        try
+        {
+            await _contactRepository.DeleteByTenantAsync(tenantId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to delete contacts for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
         }
     }
 

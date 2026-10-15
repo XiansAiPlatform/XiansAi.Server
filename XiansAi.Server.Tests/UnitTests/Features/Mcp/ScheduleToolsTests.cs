@@ -186,12 +186,12 @@ public class ScheduleToolsTests
         else _schedules.Verify(x => x.ResumeScheduleAsync(id), Times.Once);
     }
 
-    private void RegisterWorkflow()
+    private void RegisterWorkflow(List<ParameterDefinition>? parameters = null)
     {
         AllowAccess();
         _definitions.Setup(x => x.GetByNameAsync("agent", "tenant")).ReturnsAsync([
             new FlowDefinition { Id = "id", Agent = "agent", WorkflowType = "agent:scheduled", Hash = "hash",
-                CreatedBy = "user", ActivityDefinitions = [], ParameterDefinitions = [] }
+                CreatedBy = "user", ActivityDefinitions = [], ParameterDefinitions = parameters ?? [] }
         ]);
     }
 
@@ -219,7 +219,7 @@ public class ScheduleToolsTests
     [Fact]
     public async Task CreatePreservesInputsAndTarget()
     {
-        RegisterWorkflow();
+        RegisterWorkflow([new ParameterDefinition { Name = "request", Type = "ScheduledPromptRequest" }]);
         _temporal.Setup(x => x.GetClientAsync("agent")).ReturnsAsync(_client.Object);
         Schedule? created = null;
         _client.Setup(x => x.CreateScheduleAsync("tenant:agent:activation:test", It.IsAny<Schedule>(), It.IsAny<ScheduleOptions>()))
@@ -236,6 +236,22 @@ public class ScheduleToolsTests
         Assert.Equal(arguments[0].GetRawText(), Assert.IsType<JsonElement>(Assert.Single(action.Args)).GetRawText());
         Assert.Equal("description", action.Options.Memo!["description"]);
         Assert.Equal(Temporalio.Api.Enums.V1.WorkflowIdConflictPolicy.Unspecified, action.Options.IdConflictPolicy);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(3)]
+    public async Task CreateRejectsWrongArgumentCount(int count)
+    {
+        RegisterWorkflow([
+            new ParameterDefinition { Name = "required", Type = "string" },
+            new ParameterDefinition { Name = "optional", Type = "string", Optional = true }
+        ]);
+        var arguments = Enumerable.Range(0, count)
+            .Select(value => JsonSerializer.SerializeToElement(value)).ToArray();
+        await Assert.ThrowsAsync<McpException>(() => Tools().CreateSchedule(
+            _target, "test", "agent:scheduled", arguments, "0 9 * * *"));
+        _temporal.VerifyNoOtherCalls();
     }
 
     [Fact]

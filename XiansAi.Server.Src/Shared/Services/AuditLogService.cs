@@ -156,7 +156,7 @@ public class AuditLogService : IAuditLogService
             (page, pageSize) = NormalizePaging(page, pageSize);
 
             var result = await _auditLogRepository.GetFilteredAsync(
-                _tenantContext.TenantId, performedBy, activationName, onlyWithoutActivation, startTime, endTime, page, pageSize);
+                _tenantContext.TenantId, performedBy, action: null, activationName, onlyWithoutActivation, startTime, endTime, page, pageSize);
 
             return ServiceResult<(IEnumerable<AuditLogEntry> entries, long totalCount)>.Success(result);
         }

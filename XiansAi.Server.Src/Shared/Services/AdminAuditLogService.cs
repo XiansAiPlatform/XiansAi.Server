@@ -41,6 +41,7 @@ public interface IAdminAuditLogService
     Task<ServiceResult<AdminAuditLogListResponse>> GetEntriesAsync(
         string tenantId,
         string? performedBy,
+        string? action,
         string? activationName,
         bool onlyWithoutActivation,
         DateTime? startDate,
@@ -53,6 +54,9 @@ public interface IAdminAuditLogService
 
     /// <summary>Distinct activation names recorded for the tenant, for populating a filter dropdown.</summary>
     Task<ServiceResult<IEnumerable<string>>> GetActivationNameOptionsAsync(string tenantId);
+
+    /// <summary>Distinct actions recorded for the tenant, for populating a filter dropdown.</summary>
+    Task<ServiceResult<IEnumerable<string>>> GetActionOptionsAsync(string tenantId);
 }
 
 /// <summary>
@@ -134,6 +138,7 @@ public class AdminAuditLogService : IAdminAuditLogService
     public async Task<ServiceResult<AdminAuditLogListResponse>> GetEntriesAsync(
         string tenantId,
         string? performedBy,
+        string? action,
         string? activationName,
         bool onlyWithoutActivation,
         DateTime? startDate,
@@ -159,7 +164,7 @@ public class AdminAuditLogService : IAdminAuditLogService
             }
 
             var (entries, totalCount) = await _auditLogRepository.GetFilteredAsync(
-                tenantId, performedBy, activationName, onlyWithoutActivation, startDate, endDate, page, pageSize);
+                tenantId, performedBy, action, activationName, onlyWithoutActivation, startDate, endDate, page, pageSize);
 
             var response = new AdminAuditLogListResponse
             {
@@ -214,6 +219,25 @@ public class AdminAuditLogService : IAdminAuditLogService
         {
             _logger.LogError(ex, "Error retrieving activation name options for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
             return ServiceResult<IEnumerable<string>>.InternalServerError("An error occurred while retrieving activation name options");
+        }
+    }
+
+    public async Task<ServiceResult<IEnumerable<string>>> GetActionOptionsAsync(string tenantId)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(tenantId))
+            {
+                return ServiceResult<IEnumerable<string>>.BadRequest("Tenant ID is required");
+            }
+
+            var values = await _auditLogRepository.GetDistinctActionsAsync(tenantId);
+            return ServiceResult<IEnumerable<string>>.Success(values);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error retrieving action options for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
+            return ServiceResult<IEnumerable<string>>.InternalServerError("An error occurred while retrieving action options");
         }
     }
 

@@ -37,7 +37,11 @@ public interface IAppIntegrationRepository
     /// <summary>
     /// Get integrations for a specific agent activation
     /// </summary>
-    Task<List<AppIntegration>> GetByAgentActivationAsync(string tenantId, string agentName, string activationName);
+    Task<List<AppIntegration>> GetByAgentActivationAsync(
+        string tenantId,
+        string agentName,
+        string activationName,
+        string? platformId = null);
 
     /// <summary>
     /// Get all enabled integrations for a tenant
@@ -48,6 +52,11 @@ public interface IAppIntegrationRepository
     /// Check if an integration with the same name exists for the tenant, agent, and activation
     /// </summary>
     Task<bool> ExistsByNameAsync(string tenantId, string agentName, string activationName, string name, string? excludeId = null);
+
+    /// <summary>
+    /// Check whether another builtin webhook uses an API key.
+    /// </summary>
+    Task<bool> HasOtherBuiltinWebhookWithApiKeyAsync(string tenantId, string apiKeyId, string excludeId);
 
     /// <summary>
     /// Create a new integration
@@ -86,58 +95,6 @@ public class AppIntegrationRepository : IAppIntegrationRepository
         _integrations = database.GetCollection<AppIntegration>(CollectionName);
         _logger = logger;
         _encryptionService = encryptionService;
-
-        // Ensure indexes are created
-        CreateIndexesAsync().Wait();
-    }
-
-    private async Task CreateIndexesAsync()
-    {
-        try
-        {
-            var indexModels = new List<CreateIndexModel<AppIntegration>>
-            {
-                // Index for tenant lookups
-                new CreateIndexModel<AppIntegration>(
-                    Builders<AppIntegration>.IndexKeys.Ascending(x => x.TenantId),
-                    new CreateIndexOptions { Name = "idx_tenant_id" }),
-
-                // Compound index for tenant + platform lookups
-                new CreateIndexModel<AppIntegration>(
-                    Builders<AppIntegration>.IndexKeys
-                        .Ascending(x => x.TenantId)
-                        .Ascending(x => x.PlatformId),
-                    new CreateIndexOptions { Name = "idx_tenant_platform" }),
-
-                // Compound index for agent activation lookups
-                new CreateIndexModel<AppIntegration>(
-                    Builders<AppIntegration>.IndexKeys
-                        .Ascending(x => x.TenantId)
-                        .Ascending(x => x.AgentName)
-                        .Ascending(x => x.ActivationName),
-                    new CreateIndexOptions { Name = "idx_tenant_agent_activation" }),
-
-                // Index for workflow ID lookups
-                new CreateIndexModel<AppIntegration>(
-                    Builders<AppIntegration>.IndexKeys.Ascending(x => x.WorkflowId),
-                    new CreateIndexOptions { Name = "idx_workflow_id" }),
-
-                // Unique index for tenant + agent + activation + name to prevent duplicates
-                new CreateIndexModel<AppIntegration>(
-                    Builders<AppIntegration>.IndexKeys
-                        .Ascending(x => x.TenantId)
-                        .Ascending(x => x.AgentName)
-                        .Ascending(x => x.ActivationName)
-                        .Ascending(x => x.Name),
-                    new CreateIndexOptions { Name = "idx_tenant_agent_activation_name_unique", Unique = true })
-            };
-
-            await _integrations.Indexes.CreateManyAsync(indexModels);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to create indexes for {Collection}. They may already exist.", LogSanitizer.Sanitize(CollectionName));
-        }
     }
 
     public async Task<AppIntegration?> GetByIdAsync(string id)
@@ -211,14 +168,22 @@ public class AppIntegrationRepository : IAppIntegrationRepository
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetAppIntegrationsByActivation");
     }
 
-    public async Task<List<AppIntegration>> GetByAgentActivationAsync(string tenantId, string agentName, string activationName)
+    public async Task<List<AppIntegration>> GetByAgentActivationAsync(
+        string tenantId,
+        string agentName,
+        string activationName,
+        string? platformId = null)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
+            var filter = Builders<AppIntegration>.Filter.And(
+                Builders<AppIntegration>.Filter.Eq(x => x.TenantId, tenantId),
+                Builders<AppIntegration>.Filter.Eq(x => x.AgentName, agentName),
+                Builders<AppIntegration>.Filter.Eq(x => x.ActivationName, activationName));
+            if (!string.IsNullOrEmpty(platformId))
+                filter &= Builders<AppIntegration>.Filter.Eq(x => x.PlatformId, platformId.ToLowerInvariant());
             var integrations = await _integrations
-                .Find(x => x.TenantId == tenantId && 
-                           x.AgentName == agentName && 
-                           x.ActivationName == activationName)
+                .Find(filter)
                 .SortByDescending(x => x.CreatedAt)
                 .ToListAsync();
             DecryptSecretsList(integrations);
@@ -261,6 +226,19 @@ public class AppIntegrationRepository : IAppIntegrationRepository
             var count = await _integrations.CountDocumentsAsync(filter);
             return count > 0;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "CheckAppIntegrationExistsByName");
+    }
+
+    public async Task<bool> HasOtherBuiltinWebhookWithApiKeyAsync(string tenantId, string apiKeyId, string excludeId)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var filter = Builders<AppIntegration>.Filter.And(
+                Builders<AppIntegration>.Filter.Eq(x => x.TenantId, tenantId),
+                Builders<AppIntegration>.Filter.Eq(x => x.PlatformId, "builtin_webhook"),
+                Builders<AppIntegration>.Filter.Eq("configuration.apiKeyId", apiKeyId),
+                Builders<AppIntegration>.Filter.Ne(x => x.Id, excludeId));
+            return await _integrations.CountDocumentsAsync(filter, new CountOptions { Limit = 1 }) > 0;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "CheckBuiltinWebhookApiKeyUsage");
     }
 
     public async Task<string> CreateAsync(AppIntegration integration)

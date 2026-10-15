@@ -40,6 +40,12 @@ public static class DomainEventTypes
     /// <summary>A tenant's Temporal (flow-server) configuration was reverted to the platform default.</summary>
     public const string TenantTemporalReverted = "tenant.temporal.reverted";
 
+    /// <summary>A tenant's email (SMTP) configuration was created or updated.</summary>
+    public const string TenantSmtpUpdated = "tenant.smtp.updated";
+
+    /// <summary>A tenant's email (SMTP) configuration was removed, reverting to the server default.</summary>
+    public const string TenantSmtpDeleted = "tenant.smtp.deleted";
+
     /// <summary>The platform was bootstrapped (first SysAdmin, tenant, and API key).</summary>
     public const string PlatformBootstrapped = "platform.bootstrapped";
 
@@ -242,6 +248,8 @@ public static class DomainEventTypes
         TenantOidcDeleted => "A tenant's OIDC configuration was deleted.",
         TenantTemporalUpdated => "A tenant's Temporal configuration was created or updated.",
         TenantTemporalReverted => "A tenant's Temporal configuration was reverted to the platform default.",
+        TenantSmtpUpdated => "A tenant's email (SMTP) configuration was created or updated.",
+        TenantSmtpDeleted => "A tenant's email (SMTP) configuration was removed, reverting to the server default.",
         PlatformBootstrapped => "The platform was bootstrapped (first SysAdmin, tenant, and API key).",
         CapabilityMatrixUpdated => "A capability-matrix row was created or updated.",
         CapabilityMatrixDeleted => "A capability-matrix row was deleted, reverting its action to the code-level default.",

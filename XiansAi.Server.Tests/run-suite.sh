@@ -9,7 +9,9 @@
 #
 # Temporal classes share one collection, so they run one at a time inside a process.
 # TEMPORAL_SHARDS (default 2) starts that many processes, each with its own local
-# Temporal CLI. Raise it only if the machine can spare the CPU and memory.
+# Temporal CLI. The CLI binary is downloaded once into the temp directory; a shard
+# that finds that download still in progress retries. Raise the shard count only
+# if the machine can spare the CPU and memory.
 #
 #   TEMPORAL_SHARDS=3 ./XiansAi.Server.Tests/run-suite.sh
 

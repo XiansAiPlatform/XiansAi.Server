@@ -4,6 +4,7 @@ using Shared.Utils;
 using Shared.Providers;
 using Shared.Utils.Temporal;
 using Shared.Data;
+using Shared.Repositories;
 using Shared.Services;
 using Shared.Configuration;
 
@@ -23,8 +24,8 @@ public static class SharedServices
         // Register cache services using the combined factory
         RegisterCacheProviders(services, configuration);
 
-        // Register email services using the combined factory
-        RegisterEmailProviders(services, configuration);
+        // Register email (SMTP) services
+        RegisterEmailServices(services, configuration);
 
         // Register the active Secret Store provider (database default, optional Azure Key Vault)
         RegisterSecretStoreProvider(services, configuration);
@@ -37,7 +38,6 @@ public static class SharedServices
         
         // Register business services
         services.AddScoped<ITenantContext, TenantContext>();
-        services.AddScoped<IEmailService, EmailService>();
         services.AddScoped<IAuthorizationCacheService, AuthorizationCacheService>();
         
 
@@ -81,6 +81,11 @@ public static class SharedServices
             services.AddSingleton<IBackgroundTaskService>(sp => sp.GetRequiredService<BackgroundTaskService>());
             services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<BackgroundTaskService>());
         }
+
+        // Deactivates a disabled tenant's agents in the background
+        services.AddSingleton<TenantAgentDeactivationService>();
+        services.AddSingleton<ITenantAgentDeactivationService>(sp => sp.GetRequiredService<TenantAgentDeactivationService>());
+        services.AddHostedService(sp => sp.GetRequiredService<TenantAgentDeactivationService>());
 
         // Periodically remove expired message file attachments from GridFS. Their message documents
         // expire via a MongoDB TTL index, but the GridFS blobs need an explicit sweep because a native
@@ -143,14 +148,30 @@ public static class SharedServices
     }
 
     /// <summary>
-    /// Registers email services using the combined factory
+    /// Registers email services. The server default SMTP server comes from <c>Email:Smtp</c>; when
+    /// <c>Email:Smtp:Host</c> is not set there is no server default and email is off unless a tenant
+    /// configures its own SMTP server.
     /// </summary>
     /// <param name="services">Service collection</param>
     /// <param name="configuration">Application configuration</param>
-    private static void RegisterEmailProviders(IServiceCollection services, IConfiguration configuration)
+    private static void RegisterEmailServices(IServiceCollection services, IConfiguration configuration)
     {
-        // Register the active email provider and the factory itself
-        EmailProviderFactory.RegisterProvider(services, configuration);
+        var serverSmtp = configuration.GetSection("Email:Smtp").Get<SmtpSettings>();
+        if (string.IsNullOrWhiteSpace(serverSmtp?.Host))
+        {
+            serverSmtp = null;
+        }
+        else if (serverSmtp.Validate() is { } error)
+        {
+            throw new InvalidOperationException($"Email:Smtp is misconfigured: {error}");
+        }
+
+        services.AddSingleton<ISmtpEmailSender, SmtpEmailSender>();
+        services.AddScoped<IEmailService>(sp => new EmailService(
+            sp.GetRequiredService<ITenantSmtpConfigRepository>(),
+            sp.GetRequiredService<ISmtpEmailSender>(),
+            sp.GetRequiredService<ILogger<EmailService>>(),
+            serverSmtp));
     }
 
     /// <summary>

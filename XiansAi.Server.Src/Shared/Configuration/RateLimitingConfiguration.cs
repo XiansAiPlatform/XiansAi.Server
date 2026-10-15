@@ -32,6 +32,11 @@ public class RateLimitSettings
     /// Agent/User API rate limit settings.
     /// </summary>
     public RateLimitPolicySettings AgentUser { get; set; } = new();
+
+    /// <summary>
+    /// Tenant SMTP test-email rate limit settings, counted per tenant.
+    /// </summary>
+    public RateLimitPolicySettings SmtpTest { get; set; } = new() { PermitLimit = 5, WindowSeconds = 300 };
 }
 
 /// <summary>
@@ -70,6 +75,7 @@ public static class RateLimitingConfiguration
     public const string AuthenticationPolicy = "AuthenticationRateLimit";
     public const string PublicApiPolicy = "PublicApiRateLimit";
     public const string AgentUserApiPolicy = "AgentUserApiRateLimit";
+    public const string SmtpTestPolicy = "SmtpTestRateLimit";
 
     /// <summary>
     /// Adds rate limiting services with configured policies.
@@ -151,6 +157,15 @@ public static class RateLimitingConfiguration
                     rateLimitSettings.AgentUser, 
                     AgentUserApiPolicy
                 ));
+
+            // SMTP test-email policy - counted per tenant, since Studio calls with one shared API key
+            options.AddPolicy(SmtpTestPolicy, context =>
+                CreateRateLimitPartition(
+                    context,
+                    rateLimitSettings.SmtpTest,
+                    SmtpTestPolicy,
+                    $"{SmtpTestPolicy}:tenant:{context.GetRouteValue("tenantId")}"
+                ));
         });
 
         builder.Services.AddSingleton(rateLimitSettings);
@@ -184,10 +199,11 @@ public static class RateLimitingConfiguration
     private static RateLimitPartition<string> CreateRateLimitPartition(
         HttpContext context,
         RateLimitPolicySettings settings,
-        string policyName)
+        string policyName,
+        string? partitionKey = null)
     {
-        // Create partition key based on user identity or IP address
-        var partitionKey = GetPartitionKey(context, policyName);
+        // Create partition key based on user identity or IP address, unless the policy supplies one
+        partitionKey ??= GetPartitionKey(context, policyName);
 
         // Use sliding window if segments are configured, otherwise use fixed window
         if (settings.SegmentsPerWindow > 0)
@@ -288,6 +304,15 @@ public static class RateLimitingConfiguration
             settings.AgentUser.WindowSeconds = 60;
             settings.AgentUser.SegmentsPerWindow = 0; // Fixed window
             settings.AgentUser.QueueLimit = 5; // Allow small queue for burst traffic
+        }
+
+        // SMTP test-email defaults - 5 requests per 5 minutes per tenant
+        if (settings.SmtpTest.PermitLimit == 0)
+        {
+            settings.SmtpTest.PermitLimit = 5;
+            settings.SmtpTest.WindowSeconds = 300;
+            settings.SmtpTest.SegmentsPerWindow = 0; // Fixed window
+            settings.SmtpTest.QueueLimit = 0;
         }
     }
 }

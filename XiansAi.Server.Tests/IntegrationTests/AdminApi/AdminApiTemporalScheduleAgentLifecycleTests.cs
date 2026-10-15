@@ -12,7 +12,8 @@ namespace Tests.IntegrationTests.AdminApi;
 /// <summary>
 /// System scheduling agent authored with Xians.Lib. An Activable Setup workflow creates an
 /// interval schedule that starts Tick. Admin list/get/history/pause/resume/delete round-trip
-/// that schedule. Schedule IDs follow {tenant}:{agent}:{activation}:{scheduleName}.
+/// that schedule. Deactivating an activation deletes its schedule and leaves another
+/// activation's schedule in place. Schedule IDs follow {tenant}:{agent}:{activation}:{scheduleName}.
 /// </summary>
 [Collection(AdminApiTemporalCollection.Name)]
 public class AdminApiTemporalScheduleAgentLifecycleTests : AdminApiTemporalIntegrationTestBase
@@ -107,6 +108,63 @@ public class AdminApiTemporalScheduleAgentLifecycleTests : AdminApiTemporalInteg
         Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
 
         await RemoveLibActivationAsync(ownerTenant, activationId);
+        await RemoveLibDeploymentAsync(ownerTenant, agentName);
+        await RemoveLibTemplateAsync(agentName);
+    }
+
+    [Fact]
+    public async Task SchedulerAgent_Deactivate_DeletesOnlyThatActivationSchedule()
+    {
+        var ownerTenant = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(ownerTenant);
+        await CreateTestTenantAsync(ownerTenant);
+        BindTenantContext(ownerTenant, _adminUserId!);
+
+        var agentName = $"Scheduler {Guid.NewGuid():N}";
+        const string ownerActivation = "front-desk";
+        const string otherActivation = "back-office";
+        const string scheduleName = "tick";
+        var ownerScheduleId = $"{ownerTenant}:{agentName}:{ownerActivation}:{scheduleName}";
+        var otherScheduleId = $"{ownerTenant}:{agentName}:{otherActivation}:{scheduleName}";
+        var schedulesPath = $"/api/v1/admin/tenants/{ownerTenant}/agents/{Uri.EscapeDataString(agentName)}/schedules";
+
+        await using var host = await LibAgentWorkflowHost.StartAsync(
+            _factory.Server,
+            Temporal.TargetHost,
+            Temporal.Namespace,
+            ownerTenant,
+            _adminUserId!);
+
+        var agent = RegisterSchedulerAgent(host, agentName);
+        await host.StartWorkersAsync(agent);
+        await WaitForTemplateAsync(agentName);
+        await DeployLibTemplateAsync(ownerTenant, agentName);
+
+        var (ownerActivationId, _) = await ActivateLibAgentWithWorkflowsAsync(
+            ownerTenant, agentName, ownerActivation);
+        var (otherActivationId, _) = await ActivateLibAgentWithWorkflowsAsync(
+            ownerTenant, agentName, otherActivation);
+
+        Assert.True(
+            await WaitForScheduleInListAsync(schedulesPath, ownerScheduleId),
+            $"Schedule {ownerScheduleId} was not created by Setup.");
+        Assert.True(
+            await WaitForScheduleInListAsync(schedulesPath, otherScheduleId),
+            $"Schedule {otherScheduleId} was not created by Setup.");
+
+        await RemoveLibActivationAsync(ownerTenant, ownerActivationId);
+
+        var removed = await GetAsync($"{schedulesPath}/by-id?scheduleId={Uri.EscapeDataString(ownerScheduleId)}");
+        Assert.Equal(HttpStatusCode.NotFound, removed.StatusCode);
+
+        var kept = await GetAsync($"{schedulesPath}/by-id?scheduleId={Uri.EscapeDataString(otherScheduleId)}");
+        Assert.Equal(HttpStatusCode.OK, kept.StatusCode);
+        using (var keptJson = JsonDocument.Parse(await kept.Content.ReadAsStringAsync()))
+        {
+            Assert.Equal(otherScheduleId, keptJson.RootElement.GetProperty("id").GetString());
+        }
+
+        await RemoveLibActivationAsync(ownerTenant, otherActivationId);
         await RemoveLibDeploymentAsync(ownerTenant, agentName);
         await RemoveLibTemplateAsync(agentName);
     }

@@ -1,7 +1,6 @@
 using System.Net;
 using System.Text.Json;
 using Features.AdminApi.Endpoints;
-using Shared.Auth;
 using Shared.Services;
 using Tests.TestUtils;
 using Xians.Lib.Agents.Core;
@@ -12,8 +11,9 @@ namespace Tests.IntegrationTests.AdminApi;
 
 /// <summary>
 /// Agent Studio creates two secret shapes: tenant-scoped (tenant id only) and user-scoped
-/// (tenant id + participant id, no agent). A running Lib agent must read each shape only at
-/// that scope, and Admin callers must not cross tenants or see the value.
+/// (tenant id + participant id, no agent). A running Lib agent must read and write each shape
+/// only at that scope, refuse an explicit other tenant or participant, and Admin callers must
+/// not cross tenants or see the value.
 /// </summary>
 [Collection(AdminApiTemporalCollection.Name)]
 public class AdminApiTemporalSecretVaultUserScopeAgentLifecycleTests : AdminApiTemporalIntegrationTestBase
@@ -33,6 +33,8 @@ public class AdminApiTemporalSecretVaultUserScopeAgentLifecycleTests : AdminApiT
 
         await CreateStudioSecretsAsync(run);
         await AssertRunningAgentRespectsTenantAndUserAsync(run);
+        await AssertAgentWritesRespectScopeAsync(run);
+        await AssertAgentCannotNameAnotherScopeAsync(run);
         await AssertAdminReadsMetadataOnlyAsync(run);
         await AssertTenantAdminCannotCrossTenantsAsync(run);
         await RemoveAgentsAsync(run);
@@ -85,6 +87,10 @@ public class AdminApiTemporalSecretVaultUserScopeAgentLifecycleTests : AdminApiT
             UserKey = $"user-api-key-{suffix}",
             UserValue = $"sk-user-{suffix}",
             OtherUserValue = $"sk-other-user-{suffix}",
+            AgentTenantKey = $"agent-tenant-key-{suffix}",
+            AgentTenantValue = $"sk-agent-tenant-{suffix}",
+            AgentUserKey = $"agent-user-key-{suffix}",
+            AgentUserValue = $"sk-agent-user-{suffix}",
             OwnerActivationId = await ActivateLibAgentAsync(ownerTenant, agentName, activation),
             OtherTenantActivationId = await ActivateLibAgentAsync(otherTenant, agentName, activation),
             OtherAgentActivationId = await ActivateLibAgentAsync(ownerTenant, otherAgentName, activation)
@@ -137,6 +143,52 @@ public class AdminApiTemporalSecretVaultUserScopeAgentLifecycleTests : AdminApiT
         await AssertFetchAsync(run, run.OwnerTenant, run.OtherAgentName, "tenant", run.TenantKey, run.TenantValue, run.OwnerParticipant);
         await AssertFetchAsync(run, run.OwnerTenant, run.OtherAgentName, "user", run.UserKey, run.UserValue, run.OwnerParticipant);
         await AssertFetchAsync(run, run.OwnerTenant, run.OtherAgentName, "user", run.UserKey, Missing("user", run.UserKey), run.OtherParticipant);
+    }
+
+    private async Task AssertAgentWritesRespectScopeAsync(ScopeRun run)
+    {
+        await AssertAgentRepliesWithAsync(
+            run.OwnerTenant,
+            run.AgentName,
+            run.Activation,
+            CreatedShape("tenant", run.AgentTenantKey, userId: "none"),
+            userText: $"create tenant {run.AgentTenantKey} {run.AgentTenantValue}",
+            participantId: run.OwnerParticipant);
+        await AssertFetchAsync(run, run.OwnerTenant, run.AgentName, "tenant", run.AgentTenantKey, run.AgentTenantValue, run.OtherParticipant);
+        await AssertFetchAsync(run, run.OtherTenant, run.AgentName, "tenant", run.AgentTenantKey, Missing("tenant", run.AgentTenantKey), run.OwnerParticipant);
+        await AssertFetchAsync(run, run.OwnerTenant, run.OtherAgentName, "tenant", run.AgentTenantKey, run.AgentTenantValue, run.OwnerParticipant);
+        await AssertFetchAsync(run, run.OwnerTenant, run.AgentName, "user", run.AgentTenantKey, Missing("user", run.AgentTenantKey), run.OwnerParticipant);
+
+        await AssertAgentRepliesWithAsync(
+            run.OwnerTenant,
+            run.AgentName,
+            run.Activation,
+            CreatedShape("user", run.AgentUserKey, run.OwnerParticipant),
+            userText: $"create user {run.AgentUserKey} {run.AgentUserValue}",
+            participantId: run.OwnerParticipant);
+        await AssertFetchAsync(run, run.OwnerTenant, run.AgentName, "user", run.AgentUserKey, run.AgentUserValue, run.OwnerParticipant);
+        await AssertFetchAsync(run, run.OwnerTenant, run.AgentName, "user", run.AgentUserKey, Missing("user", run.AgentUserKey), run.OtherParticipant);
+        await AssertFetchAsync(run, run.OwnerTenant, run.OtherAgentName, "user", run.AgentUserKey, run.AgentUserValue, run.OwnerParticipant);
+        await AssertFetchAsync(run, run.OwnerTenant, run.AgentName, "tenant", run.AgentUserKey, Missing("tenant", run.AgentUserKey), run.OwnerParticipant);
+        await AssertFetchAsync(run, run.OtherTenant, run.AgentName, "user", run.AgentUserKey, Missing("user", run.AgentUserKey), run.OwnerParticipant);
+    }
+
+    private async Task AssertAgentCannotNameAnotherScopeAsync(ScopeRun run)
+    {
+        await AssertAgentRepliesWithAsync(
+            run.OwnerTenant,
+            run.AgentName,
+            run.Activation,
+            $"error: Secret Vault tenantId scope '{run.OtherTenant}'",
+            userText: $"escape tenant {run.OtherTenant} {run.TenantKey}",
+            participantId: run.OwnerParticipant);
+        await AssertAgentRepliesWithAsync(
+            run.OwnerTenant,
+            run.AgentName,
+            run.Activation,
+            $"error: Secret Vault userId scope '{run.OtherParticipant}'",
+            userText: $"escape user {run.OtherParticipant} {run.UserKey}",
+            participantId: run.OwnerParticipant);
     }
 
     private async Task AssertAdminReadsMetadataOnlyAsync(ScopeRun run)
@@ -319,9 +371,14 @@ public class AdminApiTemporalSecretVaultUserScopeAgentLifecycleTests : AdminApiT
         Assert.DoesNotContain(run.OtherTenantValue, body);
         Assert.DoesNotContain(run.UserValue, body);
         Assert.DoesNotContain(run.OtherUserValue, body);
+        Assert.DoesNotContain(run.AgentTenantValue, body);
+        Assert.DoesNotContain(run.AgentUserValue, body);
     }
 
     private static string Missing(string scope, string key) => $"missing:{scope}:{key}";
+
+    private static string CreatedShape(string scope, string key, string userId)
+        => $"created:{scope}:{key}:user={userId}:agent=none";
 
     private static XiansAgent RegisterUserScopeAgent(LibAgentWorkflowHost host, string agentName)
     {
@@ -358,6 +415,10 @@ public class AdminApiTemporalSecretVaultUserScopeAgentLifecycleTests : AdminApiT
         public required string UserKey { get; init; }
         public required string UserValue { get; init; }
         public required string OtherUserValue { get; init; }
+        public required string AgentTenantKey { get; init; }
+        public required string AgentTenantValue { get; init; }
+        public required string AgentUserKey { get; init; }
+        public required string AgentUserValue { get; init; }
         public required string OwnerActivationId { get; init; }
         public required string OtherTenantActivationId { get; init; }
         public required string OtherAgentActivationId { get; init; }
@@ -370,16 +431,46 @@ public class AdminApiTemporalSecretVaultUserScopeAgentLifecycleTests : AdminApiT
     {
         public static async Task<string> ExecuteAsync(string? text)
         {
-            var parts = (text ?? string.Empty).Split(' ', 3, StringSplitOptions.RemoveEmptyEntries);
-            if (parts.Length != 3 || parts[0] != "fetch")
+            var parts = (text ?? string.Empty).Split(' ', 4, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 3)
+            {
+                return "unknown-command";
+            }
+
+            if (parts[0] == "create" && parts.Length == 4)
+            {
+                var created = await ResolveScope(parts[1]).CreateAsync(parts[2], parts[3]);
+                var userId = created.UserId ?? "none";
+                var agentId = created.AgentId ?? "none";
+                return $"created:{parts[1]}:{created.Key}:user={userId}:agent={agentId}";
+            }
+
+            if (parts[0] == "escape" && parts.Length == 4)
+            {
+                var fetched = await ResolveEscape(parts[1], parts[2]).FetchByKeyAsync(parts[3]);
+                return fetched?.Value ?? $"escaped:{parts[1]}:{parts[3]}";
+            }
+
+            if (parts[0] != "fetch" || parts.Length != 3)
             {
                 return "unknown-command";
             }
 
             var scope = parts[1];
             var key = parts[2];
-            var fetched = await ResolveScope(scope).FetchByKeyAsync(key);
-            return fetched?.Value ?? $"missing:{scope}:{key}";
+            var fetchedByScope = await ResolveScope(scope).FetchByKeyAsync(key);
+            return fetchedByScope?.Value ?? $"missing:{scope}:{key}";
+        }
+
+        private static SecretVaultScopeBuilder ResolveEscape(string dimension, string foreignId)
+        {
+            var vault = XiansContext.CurrentAgent.Secrets.TenantScope();
+            return dimension switch
+            {
+                "tenant" => vault.TenantScope(foreignId),
+                "user" => vault.ParticipantScope(foreignId),
+                _ => throw new InvalidOperationException($"Unknown secret scope '{dimension}'.")
+            };
         }
 
         private static SecretVaultScopeBuilder ResolveScope(string scope)

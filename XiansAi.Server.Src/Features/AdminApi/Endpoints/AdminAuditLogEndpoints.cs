@@ -33,6 +33,7 @@ public static class AdminAuditLogEndpoints
             string tenantId,
             [FromServices] IAdminAuditLogService auditLogService,
             [FromQuery] string? performedBy = null,
+            [FromQuery] string? action = null,
             [FromQuery] string? activationName = null,
             [FromQuery] bool onlyWithoutActivation = false,
             [FromQuery] DateTime? startDate = null,
@@ -46,7 +47,7 @@ public static class AdminAuditLogEndpoints
             }
 
             var result = await auditLogService.GetEntriesAsync(
-                tenantId, performedBy, activationName, onlyWithoutActivation, startDate, endDate, page, pageSize);
+                tenantId, performedBy, action, activationName, onlyWithoutActivation, startDate, endDate, page, pageSize);
 
             return result.ToHttpResult();
         })
@@ -57,7 +58,7 @@ public static class AdminAuditLogEndpoints
         .WithSummary("List audit log entries")
         .WithDescription(
             "Returns a paginated list of audit log entries for the tenant, newest first. " +
-            "Filter by performedBy, activationName, a createdAt date range, or set onlyWithoutActivation=true " +
+            "Filter by performedBy, action, activationName, a createdAt date range, or set onlyWithoutActivation=true " +
             "to list only entries that have no associated activation. Page size is limited to 100.");
 
         auditLogGroup.MapGet("/performed-by", async (
@@ -97,6 +98,25 @@ public static class AdminAuditLogEndpoints
         .WithName("GetAdminAuditLogActivationNameOptions")
         .WithSummary("List distinct activation names")
         .WithDescription("Returns the distinct, non-empty activation names recorded for the tenant, sorted alphabetically.");
+
+        auditLogGroup.MapGet("/actions", async (
+            string tenantId,
+            [FromServices] IAdminAuditLogService auditLogService) =>
+        {
+            if (AuditLogTenants.IsPlatform(tenantId))
+            {
+                return Results.NotFound();
+            }
+
+            var result = await auditLogService.GetActionOptionsAsync(tenantId);
+            return result.ToHttpResult();
+        })
+        .Produces<IEnumerable<string>>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest)
+        .RequireCapability(CapabilityActions.TenantAuditLogAccess)
+        .WithName("GetAdminAuditLogActionOptions")
+        .WithSummary("List distinct actions")
+        .WithDescription("Returns the distinct, non-empty actions recorded for the tenant, sorted alphabetically.");
 
         auditLogGroup.MapPost("", async (
             string tenantId,
@@ -140,7 +160,7 @@ public static class AdminAuditLogEndpoints
             [FromQuery] int pageSize = 20) =>
         {
             var result = await auditLogService.GetEntriesAsync(
-                AuditLogTenants.Platform, performedBy, activationName: null, onlyWithoutActivation: false,
+                AuditLogTenants.Platform, performedBy, action: null, activationName: null, onlyWithoutActivation: false,
                 startDate, endDate, page, pageSize);
 
             return result.ToHttpResult();
