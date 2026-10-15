@@ -326,6 +326,16 @@ knowledge:
       name: asc
       agent: asc
       tenant_id: asc
+  # perf: covers "latest knowledge" resolution (name + agent + tenant, newest updated_at first,
+  # created_at as fallback for legacy rows without updated_at)
+  - name: name_1_agent_1_tenant_id_1_updated_at_-1_created_at_-1
+    keys:
+      name: asc
+      agent: asc
+      tenant_id: asc
+      updated_at: desc
+      created_at: desc
+    background: true
   - name: agent_1_tenant_id_1
     keys:
       agent: asc
