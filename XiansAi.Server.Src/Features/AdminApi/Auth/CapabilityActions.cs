@@ -162,6 +162,12 @@ public static class CapabilityActions
     public const string TenantTemporalConfigRevert = "tenant.temporalConfig.revert";
     public const string TenantTemporalConfigTestConnection = "tenant.temporalConfig.testConnection";
 
+    // AdminTenantEndpoints: /tenants/{tenantId}/smtp-config
+    public const string TenantSmtpConfigGet = "tenant.smtpConfig.get";
+    public const string TenantSmtpConfigSet = "tenant.smtpConfig.set";
+    public const string TenantSmtpConfigDelete = "tenant.smtpConfig.delete";
+    public const string TenantSmtpConfigTest = "tenant.smtpConfig.test";
+
     // AdminTenantEndpoints: /tenants/{tenantId}/oidc-config
     public const string TenantOidcConfigGet = "tenant.oidcConfig.get";
     public const string TenantOidcConfigUpsert = "tenant.oidcConfig.upsert";
@@ -495,6 +501,15 @@ public static class CapabilityActions
             "Revert a tenant to the platform's default Temporal connection."),
         new(TenantTemporalConfigTestConnection, [],
             "Test a Temporal connection without saving it."),
+
+        new(TenantSmtpConfigGet, [SystemRoles.TenantAdmin],
+            "Read a tenant's email (SMTP) configuration. The password is never returned."),
+        new(TenantSmtpConfigSet, [SystemRoles.TenantAdmin],
+            "Create or replace a tenant's email (SMTP) configuration."),
+        new(TenantSmtpConfigDelete, [SystemRoles.TenantAdmin],
+            "Remove a tenant's email (SMTP) configuration, reverting to the server default."),
+        new(TenantSmtpConfigTest, [SystemRoles.TenantAdmin],
+            "Send a test email with the given SMTP settings without saving them."),
 
         new(TenantOidcConfigGet, [],
             "Read a tenant's OIDC token-acceptance configuration."),
