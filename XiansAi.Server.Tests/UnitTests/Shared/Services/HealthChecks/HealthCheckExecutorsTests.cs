@@ -261,7 +261,7 @@ public class HealthCheckExecutorsTests
         Assert.Contains("over the 10 ms limit", result.Detail);
     }
 
-    // ----- Webhook, builtin mode (OnWebhook through messaging) -----
+    // ----- Webhook, built-in mode (OnWebhook) -----
 
     private static AgentHealthCheck BuiltinWebhookCheck(int? expectedStatus = null, params HealthCheckAssertion[] assertions) =>
         Check(HealthCheckType.Webhook, c => c.Webhook = new WebhookHealthCheckConfig
@@ -329,7 +329,7 @@ public class HealthCheckExecutorsTests
                 && r.ParticipantId == ChatHealthCheckExecutor.ParticipantId
                 && r.WorkflowId == $"{TenantId}:{AgentName}:Integrator Workflow:{ActivationName}"),
             MessageType.Webhook), Times.Once);
-        receiver.VerifyNoOtherCalls(); // never the Update path
+        receiver.VerifyNoOtherCalls(); // the update method path is not used
     }
 
     [Fact]

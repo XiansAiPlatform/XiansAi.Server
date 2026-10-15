@@ -128,8 +128,8 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
                 RemoveService<IActivationCleanupService>(services);
                 services.AddSingleton(mockActivationCleanupService.Object);
 
-                // Health checks: record schedule intent in memory and don't start the worker,
-                // which would otherwise keep retrying a Temporal connection for the whole run.
+                // Health checks: keep schedules in memory and don't start the worker,
+                // so tests don't keep trying to connect to Temporal.
                 RemoveService<IHealthCheckScheduler>(services);
                 services.AddSingleton<FakeHealthCheckScheduler>();
                 services.AddSingleton<IHealthCheckScheduler>(sp => sp.GetRequiredService<FakeHealthCheckScheduler>());

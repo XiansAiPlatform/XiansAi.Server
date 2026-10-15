@@ -13,8 +13,7 @@ using Xunit;
 namespace Tests.IntegrationTests.AdminApi;
 
 /// <summary>
-/// AdminApi health-check endpoints against Mongo, with Temporal scheduling replaced by
-/// <see cref="FakeHealthCheckScheduler"/>.
+/// Tests the health-check endpoints with Mongo and a fake scheduler (no Temporal).
 /// </summary>
 public class AdminHealthCheckEndpointsTests : AdminApiIntegrationTestBase
 {
@@ -207,14 +206,14 @@ public class AdminHealthCheckEndpointsTests : AdminApiIntegrationTestBase
         var fetched = await ReadAsJsonAsync<AgentHealthCheck>(await GetAsync($"{ChecksRoute(tenantId, activation.Id)}/{check.Id}"));
         Assert.Equal([contact.Id], fetched!.NotifyContactIds);
 
-        // A well-formed id that isn't a contact of this tenant is rejected.
+        // An id that isn't a contact in this tenant is rejected.
         body["name"] = "unknown contact";
         body["notifyContactIds"] = new System.Text.Json.Nodes.JsonArray(ObjectId.GenerateNewId().ToString());
         var rejected = await PostAsJsonAsync(ChecksRoute(tenantId, activation.Id), body);
         Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
         Assert.Contains("notifyContactIds", await rejected.Content.ReadAsStringAsync());
 
-        // Replacing without the field clears the contacts.
+        // Saving without the field removes the contacts.
         var cleared = await PutAsJsonAsync($"{ChecksRoute(tenantId, activation.Id)}/{check.Id}", ChatCheck());
         Assert.Equal(HttpStatusCode.OK, cleared.StatusCode);
         Assert.Empty((await ReadAsJsonAsync<AgentHealthCheck>(cleared))!.NotifyContactIds);
@@ -351,7 +350,7 @@ public class AdminHealthCheckEndpointsTests : AdminApiIntegrationTestBase
         Assert.True(Scheduler.Get(tenantId, check.Id)!.Paused);
         var after = (await ReadAsJsonAsync<AgentHealthCheck>(await GetAsync($"{ChecksRoute(tenantId, activation.Id)}/{check.Id}")))!;
         Assert.Equal(HealthCheckScheduleState.Paused, after.ScheduleState);
-        Assert.True(after.Enabled); // the definition itself is untouched; reactivation resumes it
+        Assert.True(after.Enabled); // the check stays enabled and resumes when the activation is active again
     }
 
     [Fact]
@@ -408,7 +407,7 @@ public class AdminHealthCheckEndpointsTests : AdminApiIntegrationTestBase
             (await GetAsync($"/api/v1/admin/tenants/{tenantId}/health-checks?status=broken")).StatusCode);
     }
 
-    /// <summary>Writes runs oldest first, the way the runner would, so the last status wins.</summary>
+    /// <summary>Saves runs oldest first, like the runner does, so the last one sets the status.</summary>
     private async Task SeedRunsAsync(string tenantId, AgentHealthCheck check, params HealthCheckStatus[] statuses)
     {
         using var scope = _factory.Services.CreateScope();

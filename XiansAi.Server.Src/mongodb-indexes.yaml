@@ -589,7 +589,7 @@ agent_health_checks:
       name: asc
     unique: true
     background: true
-  # Tenant-wide "what is failing right now" view.
+  # Find failing checks across a tenant.
   - name: health_check_tenant_status
     keys:
       tenant_id: asc
@@ -604,7 +604,7 @@ agent_health_check_runs:
       check_id: asc
       started_at: desc
     background: true
-  # TTL cleanup: run history retention (override with
+  # Delete old runs (change with
   # MongoIndexes__agent_health_check_runs__health_check_run_ttl__ExpireAfter).
   - name: health_check_run_ttl
     keys:

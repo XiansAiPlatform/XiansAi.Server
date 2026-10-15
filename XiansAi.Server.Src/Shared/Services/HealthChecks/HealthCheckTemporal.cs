@@ -8,10 +8,9 @@ using Temporalio.Workflows;
 namespace Shared.Services.HealthChecks;
 
 /// <summary>
-/// Connection to the platform-default Temporal namespace (the root <c>Temporal</c> configuration
-/// section). Health-check schedules for every tenant and the server's health-check worker live
-/// there, never in a tenant's own namespace: the server cannot run a worker against every tenant
-/// cluster, and activation cleanup purges schedules in tenant namespaces by search attribute.
+/// The connection to the platform's main Temporal namespace.
+/// All health-check schedules and the server's health-check worker use this namespace,
+/// not the tenants' own namespaces.
 /// </summary>
 public interface IHealthCheckTemporalClientProvider
 {
@@ -86,15 +85,14 @@ public sealed class HealthCheckTemporalClientProvider : IHealthCheckTemporalClie
 }
 
 /// <summary>
-/// Started by each check's Temporal Schedule. Deliberately thin: all side effects live in the
-/// single activity, which runs inside the server process with full DI access.
+/// Started by each check's schedule. It only calls one activity, which does all the work.
 /// </summary>
 [Workflow(Name)]
 public class AgentHealthCheckWorkflow
 {
     public const string Name = "Xians.AgentHealthCheck";
 
-    /// <summary>Upper bound for one run: the longest check timeout (120s) plus executor and persistence slack.</summary>
+    /// <summary>The most time one run can take: the longest timeout (120 seconds) plus some extra time.</summary>
     public static readonly TimeSpan ActivityTimeout = TimeSpan.FromMinutes(5);
 
     [WorkflowRun]
@@ -104,8 +102,7 @@ public class AgentHealthCheckWorkflow
             new ActivityOptions
             {
                 StartToCloseTimeout = ActivityTimeout,
-                // A failing check is a result to record, not an error to retry; retries would mask
-                // flakiness and repeat the agent's (LLM) work.
+                // Don't retry. A failed check is a result to save, and a retry would call the agent again.
                 RetryPolicy = new RetryPolicy { MaximumAttempts = 1 }
             });
 }

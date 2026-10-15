@@ -4,10 +4,9 @@ using Temporalio.Worker;
 namespace Shared.Services.HealthChecks;
 
 /// <summary>
-/// Hosts the server's Temporal worker for health-check runs on the platform namespace, and runs the
-/// schedule reconciler on an interval. Every server instance polls the same task queue; Temporal hands
-/// each scheduled run to exactly one of them. If the platform Temporal is unreachable, it retries
-/// rather than failing host startup.
+/// Runs the server's Temporal worker for health checks, and runs the reconciler on an interval.
+/// Each run goes to only one server. If Temporal can't be reached, it keeps retrying
+/// instead of stopping the server.
 /// </summary>
 public class HealthCheckWorkerService : BackgroundService
 {

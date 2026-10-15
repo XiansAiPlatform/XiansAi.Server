@@ -10,17 +10,16 @@ public enum HealthCheckNotificationKind
 {
     None,
 
-    /// <summary>The check was passing (or had never run) and this run failed or errored.</summary>
+    /// <summary>The check was passing (or never ran) and this run failed.</summary>
     Failing,
 
-    /// <summary>The check was failing or erroring and this run passed.</summary>
+    /// <summary>The check was failing and this run passed.</summary>
     Recovered
 }
 
 /// <summary>
-/// When a run is worth an email. Contacts hear about state changes only (passing → failing, failing →
-/// passing), so a check that stays broken doesn't send an email every interval. Fail ↔ error is not a
-/// change: the check is broken either way.
+/// Decides when to send an email. Emails are only sent when a check starts failing or passes again,
+/// not after every failed run. Fail and Error both count as failing.
 /// </summary>
 public static class HealthCheckNotificationPolicy
 {
@@ -38,9 +37,9 @@ public static class HealthCheckNotificationPolicy
 public interface IHealthCheckNotifier
 {
     /// <summary>
-    /// Emails the check's notification contacts when <paramref name="run"/> changes the check's state.
-    /// <paramref name="check"/> is the check as it was before the run (its last status and failure count).
-    /// Never throws: a notification problem must not affect the run.
+    /// Emails the check's contacts when the run changes the check from passing to failing, or back.
+    /// <paramref name="check"/> is the check as it was before the run.
+    /// It never throws, so email problems don't affect the run.
     /// </summary>
     Task NotifyAsync(AgentHealthCheck check, AgentHealthCheckRun run);
 }
@@ -76,13 +75,13 @@ public class HealthCheckNotifier : IHealthCheckNotifier
                 return;
             }
 
-            // Contacts deleted since the check was saved are skipped.
+            // Skip contacts that were deleted.
             var wanted = check.NotifyContactIds.ToHashSet(StringComparer.Ordinal);
             var contacts = (await _contactRepository.ListAsync(check.TenantId)).Where(c => wanted.Contains(c.Id)).ToList();
 
             var subject = BuildSubject(check, kind);
             var sent = 0;
-            // One email per contact, so recipients don't see each other's addresses.
+            // Send one email per contact, so they don't see each other's addresses.
             foreach (var contact in contacts)
             {
                 try

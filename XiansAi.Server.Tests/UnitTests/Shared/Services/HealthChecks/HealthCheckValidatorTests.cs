@@ -280,7 +280,7 @@ public class HealthCheckValidatorTests
             A(HealthCheckAssertionOp.HeaderExists, "X-Request-Id"),
         ]), Options);
         Assert.Null(error);
-        Assert.Equal(string.Empty, definition!.Webhook!.Assertions[1].Value); // exists ops store no value
+        Assert.Equal(string.Empty, definition!.Webhook!.Assertions[1].Value); // "exists" checks save no value
 
         Assert.Contains("path is required", HealthCheckValidator.Validate(Webhook(w => w.Assertions = [A(HealthCheckAssertionOp.JsonExists)]), Options).Error);
         Assert.Contains("not a supported JSON path", HealthCheckValidator.Validate(Webhook(w => w.Assertions = [A(HealthCheckAssertionOp.JsonExists, "$..x")]), Options).Error);

@@ -2,7 +2,7 @@ using Shared.Data.Models.HealthChecks;
 
 namespace Shared.Services.HealthChecks;
 
-/// <summary>What an executor observed. Persisted by the runner as an <see cref="AgentHealthCheckRun"/>.</summary>
+/// <summary>The result of running a check. The runner saves it as a run.</summary>
 public sealed record HealthCheckExecutionResult(
     HealthCheckStatus Status,
     string? Detail,

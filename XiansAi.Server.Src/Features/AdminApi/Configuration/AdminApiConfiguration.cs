@@ -70,8 +70,7 @@ public static class AdminApiConfiguration
     }
 
     /// <summary>
-    /// Automated agent health checks: CRUD/history services, the per-type executors, and the
-    /// Temporal worker + reconciler that run them on the platform namespace.
+    /// Registers the health check services, the check runners, and the Temporal worker and reconciler.
     /// </summary>
     private static void AddHealthCheckServices(WebApplicationBuilder builder)
     {
@@ -90,11 +89,10 @@ public static class AdminApiConfiguration
         builder.Services.AddScoped<IHealthCheckExecutor, WebhookHealthCheckExecutor>();
         builder.Services.AddScoped<IHealthCheckExecutor, ScheduleHealthCheckExecutor>();
 
-        // The webhook executor drives the inbound webhook path. TryAdd: UserApi registers it too
-        // when it runs in the same process.
+        // The webhook check needs this service. UserApi may register it too, so use TryAdd.
         builder.Services.TryAddScoped<IWebhookReceiverService, WebhookReceiverService>();
 
-        // TryAdd so tests can substitute fakes that don't need a Temporal server.
+        // TryAdd lets tests use fakes that don't need Temporal.
         builder.Services.TryAddSingleton<IHealthCheckTemporalClientProvider, HealthCheckTemporalClientProvider>();
         builder.Services.TryAddSingleton<IHealthCheckScheduler, HealthCheckScheduler>();
         builder.Services.AddHostedService<HealthCheckWorkerService>();

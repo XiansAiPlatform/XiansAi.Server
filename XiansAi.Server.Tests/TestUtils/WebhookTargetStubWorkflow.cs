@@ -4,8 +4,8 @@ using Temporalio.Workflows;
 namespace Tests.TestUtils;
 
 /// <summary>
-/// Dynamic stand-in for an agent workflow that handles inbound webhooks (Temporal updates), so tests
-/// can check that the webhook-eval target discovery reads update method names from a live workflow.
+/// A fake agent workflow with update methods, used to test that update method names are read
+/// from a running workflow.
 /// </summary>
 [Workflow(Dynamic = true)]
 public class WebhookTargetStubWorkflow

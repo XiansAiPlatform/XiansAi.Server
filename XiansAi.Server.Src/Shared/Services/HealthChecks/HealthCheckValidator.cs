@@ -6,7 +6,7 @@ using Shared.Data.Models.Validation;
 
 namespace Shared.Services.HealthChecks;
 
-/// <summary>The validated, normalized definition fields of a health check.</summary>
+/// <summary>The checked and cleaned-up fields of a health check.</summary>
 public sealed record HealthCheckDefinition(
     string Name,
     HealthCheckType Type,
@@ -19,8 +19,8 @@ public sealed record HealthCheckDefinition(
     List<string> NotifyContactIds);
 
 /// <summary>
-/// Synchronous validation of a <see cref="HealthCheckRequest"/>: shape, limits, interval floor (R7),
-/// assertion rules (R5). Checks that need I/O (workflow and schedule existence) run in the service.
+/// Checks a health check request: required fields, limits, the minimum interval and the checks.
+/// Checks that need the database (does the workflow or schedule exist) are done in the service.
 /// </summary>
 public static class HealthCheckValidator
 {
@@ -74,7 +74,7 @@ public static class HealthCheckValidator
             case HealthCheckType.Schedule:
                 if (request.Schedule == null) return Invalid("schedule is required for a schedule check");
                 (schedule, error) = ValidateSchedule(request.Schedule);
-                // The timeout is unused by metadata checks; store the default for a consistent document.
+                // Schedule checks don't use a timeout, so save the default.
                 timeout = HealthCheckLimits.DefaultTimeoutSeconds;
                 break;
         }
@@ -91,7 +91,7 @@ public static class HealthCheckValidator
     }
 
     /// <summary>
-    /// Shape only (ObjectId format, count, duplicates dropped); the service checks the contacts exist in the tenant.
+    /// Checks the id format and count, and removes duplicates. The service checks that the contacts exist.
     /// </summary>
     private static (List<string>?, string?) ValidateNotifyContactIds(List<string>? contactIds)
     {
@@ -147,7 +147,7 @@ public static class HealthCheckValidator
             webhookName = webhook.WebhookName?.Trim();
             if (string.IsNullOrEmpty(webhookName) || webhookName.Length > HealthCheckLimits.MaxWebhookNameLength)
                 return (null, $"webhook.webhookName is required for builtin webhooks and must be at most {HealthCheckLimits.MaxWebhookNameLength} characters");
-            // The builtin endpoint passes the body (and webhook name) to OnWebhook, not query parameters.
+            // Built-in webhooks don't receive query parameters.
             if (webhook.QueryParams is { Count: > 0 })
                 return (null, "webhook.queryParams are not sent to builtin webhooks; put the data in webhook.body");
         }
@@ -164,8 +164,7 @@ public static class HealthCheckValidator
                 return (null, $"webhook.queryParams keys must be 1 to {HealthCheckLimits.MaxQueryParamKeyLength} characters");
             if ((value?.Length ?? 0) > HealthCheckLimits.MaxQueryParamValueLength)
                 return (null, $"webhook.queryParams values must be at most {HealthCheckLimits.MaxQueryParamValueLength} characters");
-            // The inbound endpoint strips credentials from the query before it reaches the workflow;
-            // refuse to store them here at all.
+            // Don't save API keys or tokens in query parameters.
             if (key.Equals("apikey", StringComparison.OrdinalIgnoreCase) || key.Equals("access_token", StringComparison.OrdinalIgnoreCase))
                 return (null, $"webhook.queryParams must not contain credential parameter '{key}'");
         }
@@ -205,8 +204,8 @@ public static class HealthCheckValidator
     }
 
     /// <summary>
-    /// Text ops (contains / notContains) everywhere; JSON and header ops only where
-    /// <paramref name="allowStructured"/> (webhook responses carry JSON and headers, chat replies don't).
+    /// Text checks are allowed everywhere. JSON and header checks are only allowed when
+    /// <paramref name="allowStructured"/> is true (webhooks).
     /// </summary>
     private static (List<HealthCheckAssertion>?, string?) ValidateAssertions(
         List<HealthCheckAssertionRequest>? assertions, string field, bool allowStructured)
@@ -254,7 +253,7 @@ public static class HealthCheckValidator
         return (result, null);
     }
 
-    /// <summary>Workflow types are stored as the flow name alone; the agent prefix comes from the activation.</summary>
+    /// <summary>Workflow names are saved without the agent name.</summary>
     private static string? ValidateFlowName(string workflowType, string field)
     {
         if (workflowType.Length > HealthCheckLimits.MaxWorkflowTypeLength)

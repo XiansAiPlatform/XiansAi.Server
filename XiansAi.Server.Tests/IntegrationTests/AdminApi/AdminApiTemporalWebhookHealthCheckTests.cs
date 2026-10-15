@@ -11,10 +11,8 @@ using Xunit;
 namespace Tests.IntegrationTests.AdminApi;
 
 /// <summary>
-/// Builtin-mode webhook health checks end to end: a real Xians.Lib agent answers webhooks through
-/// <c>OnWebhook</c>; a health check created over the AdminApi is triggered in Temporal, run by the
-/// server's own worker through the same message path as <c>/api/user/webhooks/builtin</c>, and graded
-/// with JSON-path assertions.
+/// End-to-end test for built-in webhook checks: a real agent answers with <c>OnWebhook</c>,
+/// and checks created through the API are run by the server's worker and graded with JSON checks.
 /// </summary>
 [Collection(AdminApiTemporalCollection.Name)]
 public class AdminApiTemporalWebhookHealthCheckTests : AdminApiTemporalIntegrationTestBase

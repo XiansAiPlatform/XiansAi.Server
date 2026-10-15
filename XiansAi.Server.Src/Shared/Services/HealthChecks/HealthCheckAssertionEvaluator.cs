@@ -4,14 +4,13 @@ using Shared.Data.Models.HealthChecks;
 
 namespace Shared.Services.HealthChecks;
 
-/// <summary>What a check received: the response body and, for webhooks, its headers.</summary>
+/// <summary>The response a check got: the body and, for webhooks, the headers.</summary>
 public sealed record HealthCheckResponse(string? Text, IReadOnlyDictionary<string, string[]>? Headers = null);
 
 /// <summary>
-/// Evaluates health-check assertions. Text ops (R5) are case-insensitive substring checks on the whole
-/// body. JSON ops read one value with a small JSON path (<c>$.data.items[0].status</c>); equality is
-/// exact for strings and numeric for numbers. Header ops look the header up case-insensitively and
-/// compare its value case-insensitively. A response passes only when every assertion does.
+/// Runs the checks on a response. Text checks ignore case. JSON checks read one value
+/// (like <c>$.data.items[0].status</c>). Header checks ignore case.
+/// The response passes only when all checks pass.
 /// </summary>
 public static class HealthCheckAssertionEvaluator
 {
@@ -70,7 +69,7 @@ public static class HealthCheckAssertionEvaluator
         }
     }
 
-    /// <summary>A one-line summary of the assertions that failed, for the run detail.</summary>
+    /// <summary>A one-line summary of the checks that failed.</summary>
     public static string DescribeFailures(IEnumerable<HealthCheckAssertionResult> results)
     {
         var failures = results.Where(r => !r.Passed).Select(r => r.Op switch
@@ -132,7 +131,7 @@ public static class HealthCheckAssertionEvaluator
             : (string.Equals(actual.Trim(), assertion.Value.Trim(), StringComparison.OrdinalIgnoreCase), actual);
     }
 
-    /// <summary>Strings without quotes; numbers, booleans and null as written; objects and arrays as JSON.</summary>
+    /// <summary>Turns a JSON value into text. Strings have no quotes.</summary>
     private static string ValueText(JsonElement element) => element.ValueKind switch
     {
         JsonValueKind.String => element.GetString() ?? string.Empty,
@@ -144,8 +143,8 @@ public static class HealthCheckAssertionEvaluator
 }
 
 /// <summary>
-/// The JSON path subset health checks accept: <c>$</c>, then <c>.name</c> and <c>[index]</c> segments,
-/// e.g. <c>$.data.items[0].status</c>. No wildcards, filters or recursive descent.
+/// A simple JSON path: <c>$</c> followed by <c>.name</c> and <c>[index]</c> parts,
+/// like <c>$.data.items[0].status</c>. Wildcards and filters are not supported.
 /// </summary>
 public static class JsonPath
 {

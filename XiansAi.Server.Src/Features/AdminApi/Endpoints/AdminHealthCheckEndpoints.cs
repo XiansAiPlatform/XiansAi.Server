@@ -10,10 +10,9 @@ using Shared.Utils.Services;
 namespace Features.AdminApi.Endpoints;
 
 /// <summary>
-/// AdminApi endpoints for automated agent health checks: periodic chat / webhook / schedule checks
-/// attached to an agent activation, their pass/fail history, and health summaries. Every route is
-/// gated by the single <see cref="CapabilityActions.TenantHealthChecksManage"/> action (R6).
-/// Results are only recorded; nothing here emits alerts (alerting is a separate feature).
+/// AdminApi endpoints for agent health checks: create and manage checks for an activation,
+/// and read their run history and health summary.
+/// All routes need the <see cref="CapabilityActions.TenantHealthChecksManage"/> capability.
 /// </summary>
 public static class AdminHealthCheckEndpoints
 {

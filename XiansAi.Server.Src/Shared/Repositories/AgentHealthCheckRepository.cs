@@ -6,17 +6,16 @@ using Shared.Utils;
 
 namespace Shared.Repositories;
 
-/// <summary>A page of health-check runs plus the total matching count.</summary>
+/// <summary>A page of runs and the total number of matching runs.</summary>
 public sealed record HealthCheckRunPage(List<AgentHealthCheckRun> Items, long TotalCount, int Page, int PageSize);
 
 /// <summary>
-/// Persistence for automated agent health checks (<c>agent_health_checks</c>) and their run
-/// history (<c>agent_health_check_runs</c>). Every read and write except the reconciler's
-/// cross-tenant listing is scoped by tenant id.
+/// Saves and reads health checks (<c>agent_health_checks</c>) and their runs (<c>agent_health_check_runs</c>).
+/// All queries filter by tenant, except the reconciler's list of all checks.
 /// </summary>
 public interface IAgentHealthCheckRepository
 {
-    /// <summary>Inserts a check. Returns false when the name is already used in the activation.</summary>
+    /// <summary>Adds a check. Returns false if the activation already has a check with that name.</summary>
     Task<bool> InsertAsync(AgentHealthCheck check);
 
     Task<AgentHealthCheck?> GetByIdAsync(string tenantId, string checkId);
@@ -24,16 +23,16 @@ public interface IAgentHealthCheckRepository
     Task<long> CountByActivationAsync(string tenantId, string activationId);
     Task<List<AgentHealthCheck>> ListByTenantAsync(string tenantId, IReadOnlyCollection<HealthCheckStatus>? statuses, string? agentName);
 
-    /// <summary>Every check across all tenants, for schedule reconciliation.</summary>
+    /// <summary>All checks in all tenants, for the reconciler.</summary>
     Task<List<AgentHealthCheck>> ListAllAsync();
 
-    /// <summary>Replaces the definition. Returns null when the check no longer exists, false on a name conflict.</summary>
+    /// <summary>Replaces the check. Returns null if it was deleted, or false if the name is already used.</summary>
     Task<bool?> ReplaceAsync(AgentHealthCheck check);
 
     Task<bool> DeleteAsync(string tenantId, string checkId);
     Task SetScheduleStateAsync(string checkId, HealthCheckScheduleState state);
 
-    /// <summary>Updates the denormalized health fields after a run. A no-op if the check was deleted meanwhile.</summary>
+    /// <summary>Saves the latest status after a run. Does nothing if the check was deleted.</summary>
     Task RecordRunResultAsync(string checkId, HealthCheckStatus status, DateTime runAt, string? detail);
 
     Task InsertRunAsync(AgentHealthCheckRun run);
@@ -60,8 +59,7 @@ public class AgentHealthCheckRepository : IAgentHealthCheckRepository
 
     public async Task<bool> InsertAsync(AgentHealthCheck check)
     {
-        // Not wrapped in MongoRetryHelper: a duplicate name is ordinary user input, and the helper
-        // logs every non-retryable exception at error level.
+        // No retry helper here: a duplicate name is a normal user error and shouldn't be logged as an error.
         try
         {
             await _checks.InsertOneAsync(check);

@@ -12,24 +12,23 @@ namespace Shared.Services.HealthChecks;
 [JsonConverter(typeof(JsonStringEnumConverter<WebhookTargetStatus>))]
 public enum WebhookTargetStatus
 {
-    /// <summary>The activation's workflow answered; <c>methods</c> lists its update handlers.</summary>
+    /// <summary>The workflow answered and its update methods are listed.</summary>
     [JsonStringEnumMemberName("running")] Running,
 
-    /// <summary>No workflow with this id exists for the activation, so its methods can't be listed.</summary>
+    /// <summary>The workflow is not running for this activation, so its methods can't be listed.</summary>
     [JsonStringEnumMemberName("notRunning")] NotRunning,
 
-    /// <summary>The workflow exists but nothing answered (agent worker stopped, or timed out).</summary>
+    /// <summary>The workflow exists but did not answer (the agent is stopped, or it timed out).</summary>
     [JsonStringEnumMemberName("unavailable")] Unavailable
 }
 
 public sealed record WebhookTargetMethod(string Name, string? Description);
 
 /// <summary>
-/// One of the agent's workflows as a webhook-eval target for an activation. <c>WorkflowType</c> is the
-/// flow name without the agent prefix, which is what a webhook eval stores as its workflow.
-/// <c>Methods</c> are its Temporal Update handlers (update mode); <c>IsBuiltIn</c> marks workflows that
-/// can have an <c>OnWebhook</c> handler and <c>Webhooks</c> the builtin webhook names registered for
-/// this activation in Connections (builtin mode).
+/// One of the agent's workflows that a webhook eval can call.
+/// WorkflowType is the flow name without the agent name.
+/// Methods are its update methods. IsBuiltIn is true for built-in workflows.
+/// Webhooks are the built-in webhook names added for this activation in Connections.
 /// </summary>
 public sealed record WebhookTargetWorkflow(
     string WorkflowType,
@@ -49,11 +48,8 @@ public interface IWebhookTargetDiscovery
 }
 
 /// <summary>
-/// Lists the webhook targets (workflow + Temporal Update method) a webhook eval can call on an
-/// activation. Workflow types come from the agent's registered flow definitions. Update handler
-/// names aren't stored by the server, so they're read live with Temporal's built-in
-/// <c>__temporal_workflow_metadata</c> query against the activation's workflow; that only works while
-/// the workflow exists and an agent worker is running.
+/// Lists the workflows and webhooks that a webhook eval can call for an activation.
+/// Update method names are read from the running workflow, so they only show while the agent is running.
 /// </summary>
 public class WebhookTargetDiscovery : IWebhookTargetDiscovery
 {
@@ -105,8 +101,8 @@ public class WebhookTargetDiscovery : IWebhookTargetDiscovery
     }
 
     /// <summary>
-    /// Builtin webhooks created for this activation (Connections → Webhooks), grouped by workflow.
-    /// Best effort: the dropdown falls back to a typed webhook name without them.
+    /// The built-in webhooks added for this activation in Connections, grouped by workflow.
+    /// If this fails, an empty list is returned and the user can type the name.
     /// </summary>
     private async Task<Dictionary<string, List<string>>> GetBuiltinWebhooksAsync(AgentActivation activation)
     {
@@ -177,7 +173,7 @@ public class WebhookTargetDiscovery : IWebhookTargetDiscovery
         }
     }
 
-    /// <summary><c>Agent Name:Flow Name</c> → <c>Flow Name</c> (agent names can't contain ':').</summary>
+    /// <summary>Turns <c>Agent Name:Flow Name</c> into <c>Flow Name</c>.</summary>
     public static string ToFlowName(string workflowType)
     {
         var separator = workflowType.IndexOf(':');

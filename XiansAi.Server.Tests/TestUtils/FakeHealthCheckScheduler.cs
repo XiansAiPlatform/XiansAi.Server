@@ -5,8 +5,7 @@ using Shared.Services.HealthChecks;
 namespace Tests.TestUtils;
 
 /// <summary>
-/// In-memory <see cref="IHealthCheckScheduler"/> for tests that run without a Temporal server.
-/// Records the last desired state of each check's schedule so tests can assert pause/resume/delete.
+/// A fake scheduler that keeps schedules in memory, for tests without Temporal.
 /// </summary>
 public sealed class FakeHealthCheckScheduler : IHealthCheckScheduler
 {
@@ -16,7 +15,7 @@ public sealed class FakeHealthCheckScheduler : IHealthCheckScheduler
 
     public IReadOnlyDictionary<string, ScheduledCheck> Schedules => _schedules;
 
-    /// <summary>When set, every call throws, simulating an unreachable Temporal.</summary>
+    /// <summary>When true, every call throws, as if Temporal is down.</summary>
     public bool Fail { get; set; }
 
     public ScheduledCheck? Get(string tenantId, string checkId)
@@ -44,7 +43,7 @@ public sealed class FakeHealthCheckScheduler : IHealthCheckScheduler
         return Task.FromResult(_schedules.Keys.ToList());
     }
 
-    /// <summary>Adds a schedule with no backing check, as left behind by a failed delete.</summary>
+    /// <summary>Adds a schedule that has no check, like one left over after a failed delete.</summary>
     public void AddOrphan(string tenantId, string checkId)
         => _schedules[HealthCheckScheduler.GetScheduleId(tenantId, checkId)] = new ScheduledCheck(tenantId, checkId, 5, false);
 

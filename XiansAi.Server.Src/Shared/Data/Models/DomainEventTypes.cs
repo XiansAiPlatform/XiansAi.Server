@@ -159,15 +159,15 @@ public static class DomainEventTypes
     public const string ActivationDeleted = "activation.deleted";
 
     // ----- Health checks -----
-    // Definition changes only. Run results are telemetry and deliberately not events.
+    // Only for changes to checks. Run results don't create events.
 
-    /// <summary>An automated health check was attached to an agent activation.</summary>
+    /// <summary>A health check was added to an activation.</summary>
     public const string HealthCheckCreated = "healthcheck.created";
 
-    /// <summary>An automated health check's definition was updated (including enable/disable).</summary>
+    /// <summary>A health check was changed (including enabled or disabled).</summary>
     public const string HealthCheckUpdated = "healthcheck.updated";
 
-    /// <summary>An automated health check and its run history were deleted.</summary>
+    /// <summary>A health check and its runs were deleted.</summary>
     public const string HealthCheckDeleted = "healthcheck.deleted";
 
     // ----- Knowledge -----

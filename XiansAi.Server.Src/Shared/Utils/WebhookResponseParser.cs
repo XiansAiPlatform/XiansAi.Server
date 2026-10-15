@@ -4,10 +4,9 @@ using Shared.Models;
 namespace Shared.Utils;
 
 /// <summary>
-/// Extracts the <see cref="WebhookResponse"/> an agent returned for a builtin webhook. The sync
-/// message path (<see cref="SyncMessageHandler"/>) yields an anonymous object with the agent's reply;
-/// the WebhookResponse is normally in its <c>Data</c> (as JsonElement or object) and, failing that,
-/// serialized in its <c>Text</c>. Shared by the builtin webhook endpoint and webhook health checks.
+/// Reads the <see cref="WebhookResponse"/> from an agent's reply to a built-in webhook.
+/// It looks in the reply's Data first, then in its Text.
+/// Used by the built-in webhook endpoint and by webhook health checks.
 /// </summary>
 public static class WebhookResponseParser
 {

@@ -14,10 +14,8 @@ using Shared.Utils.Services;
 namespace Shared.Services.HealthChecks;
 
 /// <summary>
-/// Runs one type of health check. Executors run inside a scope whose <c>ITenantContext</c> is the
-/// health-check system principal for the check's tenant, so tenant-scoped services work unchanged.
-/// Executors report problems as <see cref="HealthCheckStatus.Fail"/>/<see cref="HealthCheckStatus.Error"/>
-/// results; an exception escaping one is mapped to Error by the runner.
+/// Runs one type of health check, acting as the system user for the check's tenant.
+/// Problems are returned as Fail or Error results. If an executor throws, the runner records Error.
 /// </summary>
 public interface IHealthCheckExecutor
 {
@@ -27,14 +25,12 @@ public interface IHealthCheckExecutor
 }
 
 /// <summary>
-/// Sends a chat message through the same synchronous message path as the AdminApi heartbeat and
-/// checks the agent's reply against the assertions.
+/// Sends a chat message to the agent and checks its reply.
 /// </summary>
 public class ChatHealthCheckExecutor : IHealthCheckExecutor
 {
     /// <summary>
-    /// Participant used for every health-check conversation, keeping its thread separate from real
-    /// users' threads and its usage attributable.
+    /// The participant used for all health-check chats, so they stay apart from real users' chats.
     /// </summary>
     public const string ParticipantId = "xians-health-check";
 
@@ -103,14 +99,8 @@ public class ChatHealthCheckExecutor : IHealthCheckExecutor
 }
 
 /// <summary>
-/// Calls one of the agent's inbound webhooks and checks the WebhookResponse it returns:
-/// <list type="bullet">
-/// <item><see cref="WebhookHealthCheckMode.Update"/>: a Temporal Update method via
-/// <see cref="IWebhookReceiverService"/> (the <c>/webhooks/{workflow}/{method}</c> path, per Q2);</item>
-/// <item><see cref="WebhookHealthCheckMode.Builtin"/>: the agent's <c>OnWebhook</c> handler through the
-/// same sync message path as <c>/webhooks/builtin</c>.</item>
-/// </list>
-/// Then the status code, the assertions (text, JSON path, headers) and the response time.
+/// Calls one of the agent's webhooks (an update method or the <c>OnWebhook</c> handler)
+/// and checks the status code, the response and how long it took.
 /// </summary>
 public class WebhookHealthCheckExecutor : IHealthCheckExecutor
 {
@@ -197,9 +187,8 @@ public class WebhookHealthCheckExecutor : IHealthCheckExecutor
     }
 
     /// <summary>
-    /// Mirrors <c>POST /api/user/webhooks/builtin</c>: a Webhook message whose text is the webhook name
-    /// and whose data is the body, sent to the activation's workflow; the agent's <c>OnWebhook</c>
-    /// reply carries the WebhookResponse.
+    /// Works like <c>POST /api/user/webhooks/builtin</c>: sends the webhook name and body to the agent
+    /// and waits for its <c>OnWebhook</c> reply.
     /// </summary>
     private async Task<(WebhookResponse? Response, string? Error)> CallBuiltinAsync(
         AgentHealthCheck check, WebhookHealthCheckConfig config, CancellationToken cancellationToken)
@@ -231,15 +220,15 @@ public class WebhookHealthCheckExecutor : IHealthCheckExecutor
             return (null, $"No response from agent: {HealthCheckResultDescriber.Describe(httpResult)}");
         }
 
-        // Same fallback as the builtin endpoint: a reply that isn't a WebhookResponse is returned as 200 JSON.
+        // Same as the built-in endpoint: any other reply is treated as a 200 JSON response.
         return (WebhookResponseParser.FromSyncResult(result, logger)
                 ?? new WebhookResponse(HttpStatusCode.OK, JsonSerializer.Serialize(result)), null);
     }
 }
 
 /// <summary>
-/// Metadata-only check of an agent schedule (Q3): it exists, belongs to the activation's agent,
-/// is not paused, and (optionally) its latest run did not fail. Never triggers a run.
+/// Checks that an agent schedule exists, belongs to the agent, is not paused and, if asked,
+/// that its last run did not fail. It never runs the schedule.
 /// </summary>
 public class ScheduleHealthCheckExecutor : IHealthCheckExecutor
 {
@@ -306,7 +295,7 @@ internal static class HealthCheckResultDescriber
 {
     private const int MaxLength = 300;
 
-    /// <summary>Turns an error <see cref="IResult"/> from the shared HTTP-shaped helpers into one line of text.</summary>
+    /// <summary>Turns an error result into one line of text.</summary>
     public static string Describe(IResult result)
     {
         var statusCode = (result as IStatusCodeHttpResult)?.StatusCode;

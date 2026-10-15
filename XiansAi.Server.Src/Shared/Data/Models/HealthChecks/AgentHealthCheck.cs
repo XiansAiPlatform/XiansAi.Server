@@ -13,8 +13,8 @@ public enum HealthCheckType
 }
 
 /// <summary>
-/// Outcome of a single health-check run. <see cref="Fail"/> means the agent answered but the answer
-/// was wrong; <see cref="Error"/> means no answer could be obtained (timeout, no worker, exception).
+/// The result of one run. Fail: the agent answered, but the answer was wrong.
+/// Error: the agent did not answer (timeout, no worker, or an exception).
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<HealthCheckStatus>))]
 public enum HealthCheckStatus
@@ -25,9 +25,9 @@ public enum HealthCheckStatus
 }
 
 /// <summary>
-/// What an assertion checks. Text ops compare against the whole response body; JSON ops read one
-/// value at <see cref="HealthCheckAssertion.Path"/> (e.g. <c>$.data.status</c>); header ops read the
-/// response header named by <see cref="HealthCheckAssertion.Path"/>. Chat checks support text ops only.
+/// What a check looks at. Text checks look at the whole response. JSON checks look at one value
+/// (for example <c>$.data.status</c>). Header checks look at one response header.
+/// Chat checks can only use the text checks.
 /// </summary>
 [JsonConverter(typeof(JsonStringEnumConverter<HealthCheckAssertionOp>))]
 public enum HealthCheckAssertionOp
@@ -44,25 +44,25 @@ public enum HealthCheckAssertionOp
 [JsonConverter(typeof(JsonStringEnumConverter<WebhookHealthCheckMode>))]
 public enum WebhookHealthCheckMode
 {
-    /// <summary>A Temporal Update method on the workflow: <c>/api/user/webhooks/{workflow}/{method}</c>.</summary>
+    /// <summary>Calls an update method on the workflow, like <c>/api/user/webhooks/{workflow}/{method}</c>.</summary>
     [JsonStringEnumMemberName("update")] Update,
 
-    /// <summary>The agent's <c>OnWebhook</c> handler via messaging: <c>/api/user/webhooks/builtin</c>.</summary>
+    /// <summary>Calls the agent's <c>OnWebhook</c> handler, like <c>/api/user/webhooks/builtin</c>.</summary>
     [JsonStringEnumMemberName("builtin")] Builtin
 }
 
-/// <summary>Whether the check's Temporal schedule is known to match its stored definition.</summary>
+/// <summary>Whether the check's Temporal schedule is up to date.</summary>
 [JsonConverter(typeof(JsonStringEnumConverter<HealthCheckScheduleState>))]
 public enum HealthCheckScheduleState
 {
-    /// <summary>Not yet created/updated in Temporal; the reconciler will retry.</summary>
+    /// <summary>Not saved in Temporal yet. The reconciler will try again.</summary>
     [JsonStringEnumMemberName("pending")] Pending,
     [JsonStringEnumMemberName("active")] Active,
     [JsonStringEnumMemberName("paused")] Paused
 }
 
 /// <summary>
-/// One check on a response: a case-insensitive substring (R5), or a JSON value / header (webhooks).
+/// One check on a response: some text, a JSON value, or a header.
 /// </summary>
 public class HealthCheckAssertion
 {
@@ -70,19 +70,19 @@ public class HealthCheckAssertion
     [BsonRepresentation(BsonType.String)]
     public HealthCheckAssertionOp Op { get; set; }
 
-    /// <summary>JSON path for JSON ops, header name for header ops; unused by text ops.</summary>
+    /// <summary>The JSON path or the header name. Not used by text checks.</summary>
     [BsonElement("path")]
     [BsonIgnoreIfNull]
     public string? Path { get; set; }
 
-    /// <summary>Expected text or value; unused by the <c>*Exists</c> ops.</summary>
+    /// <summary>The expected text or value. Not used by the "exists" checks.</summary>
     [BsonElement("value")]
     public string Value { get; set; } = string.Empty;
 }
 
 public class ChatHealthCheckConfig
 {
-    /// <summary>Workflow to message. Null uses the activation's conversational workflow.</summary>
+    /// <summary>The workflow to send the message to. If empty, the activation's chat workflow is used.</summary>
     [BsonElement("workflow_type")]
     public string? WorkflowType { get; set; }
 
@@ -94,9 +94,8 @@ public class ChatHealthCheckConfig
 }
 
 /// <summary>
-/// Calls an inbound webhook of the agent: a Temporal Update method (<see cref="WebhookHealthCheckMode.Update"/>,
-/// the original Q2 path) or the agent's builtin <c>OnWebhook</c> handler (<see cref="WebhookHealthCheckMode.Builtin"/>).
-/// Documents stored before modes existed have no mode and read as Update.
+/// Calls one of the agent's webhooks: an update method or the <c>OnWebhook</c> handler.
+/// Old checks saved without a mode are treated as update mode.
 /// </summary>
 public class WebhookHealthCheckConfig
 {
@@ -107,16 +106,16 @@ public class WebhookHealthCheckConfig
     [BsonElement("workflow_type")]
     public required string WorkflowType { get; set; }
 
-    /// <summary>Update mode: the Temporal Update method name.</summary>
+    /// <summary>Update mode: the update method name.</summary>
     [BsonElement("method_name")]
     public string MethodName { get; set; } = string.Empty;
 
-    /// <summary>Builtin mode: the webhook name the agent's <c>OnWebhook</c> handler receives.</summary>
+    /// <summary>Built-in mode: the webhook name sent to the agent's <c>OnWebhook</c> handler.</summary>
     [BsonElement("webhook_name")]
     [BsonIgnoreIfNull]
     public string? WebhookName { get; set; }
 
-    /// <summary>When set, a response slower than this fails the check.</summary>
+    /// <summary>If set, the check fails when the response takes longer than this.</summary>
     [BsonElement("max_response_ms")]
     [BsonIgnoreIfNull]
     public int? MaxResponseMs { get; set; }
@@ -127,7 +126,7 @@ public class WebhookHealthCheckConfig
     [BsonElement("body")]
     public string Body { get; set; } = string.Empty;
 
-    /// <summary>When set, the WebhookResponse status code must equal this value.</summary>
+    /// <summary>If set, the response status code must be this value.</summary>
     [BsonElement("expected_status_code")]
     public int? ExpectedStatusCode { get; set; }
 
@@ -135,7 +134,7 @@ public class WebhookHealthCheckConfig
     public List<HealthCheckAssertion> Assertions { get; set; } = new();
 }
 
-/// <summary>Metadata-only check of an existing agent schedule, per Q3.</summary>
+/// <summary>Checks the state of an agent schedule. It never runs the schedule.</summary>
 public class ScheduleHealthCheckConfig
 {
     [BsonElement("schedule_id")]
@@ -146,9 +145,9 @@ public class ScheduleHealthCheckConfig
 }
 
 /// <summary>
-/// A periodic health check attached to an <see cref="AgentActivation"/> (Q4). Exactly one of
-/// <see cref="Chat"/>, <see cref="Webhook"/>, <see cref="Schedule"/> is set, matching <see cref="Type"/>.
-/// Stored in the <c>agent_health_checks</c> collection.
+/// A health check that runs on a schedule for one activation.
+/// Only one of Chat, Webhook or Schedule is set, based on Type.
+/// Saved in the <c>agent_health_checks</c> collection.
 /// </summary>
 [BsonIgnoreExtraElements]
 public class AgentHealthCheck
@@ -163,11 +162,11 @@ public class AgentHealthCheck
     [BsonElement("activation_id")]
     public required string ActivationId { get; set; }
 
-    /// <summary>Denormalized from the activation at create time.</summary>
+    /// <summary>Copied from the activation when the check is created.</summary>
     [BsonElement("agent_name")]
     public required string AgentName { get; set; }
 
-    /// <summary>Denormalized from the activation at create time; part of the target workflow id.</summary>
+    /// <summary>Copied from the activation when the check is created. Used to build the workflow id.</summary>
     [BsonElement("activation_name")]
     public required string ActivationName { get; set; }
 
@@ -200,13 +199,13 @@ public class AgentHealthCheck
     public ScheduleHealthCheckConfig? Schedule { get; set; }
 
     /// <summary>
-    /// Tenant contacts (<see cref="Contact"/> ids) emailed when the check starts failing and when it
-    /// recovers. Ids of contacts deleted since are skipped at send time.
+    /// Ids of the tenant contacts to email when the check starts failing and when it passes again.
+    /// Deleted contacts are skipped.
     /// </summary>
     [BsonElement("notify_contact_ids")]
     public List<string> NotifyContactIds { get; set; } = new();
 
-    // ----- Denormalized health, written after every run -----
+    // ----- Latest status, updated after every run -----
 
     [BsonElement("last_run_at")]
     public DateTime? LastRunAt { get; set; }

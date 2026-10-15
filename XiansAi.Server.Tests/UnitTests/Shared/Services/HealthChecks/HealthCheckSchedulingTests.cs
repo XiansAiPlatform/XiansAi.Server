@@ -172,7 +172,7 @@ public class HealthCheckSchedulingTests
         var harness = new ReconcilerHarness();
         harness.Activations.Setup(a => a.GetByIdAsync("66f0000000000000000000a1")).ReturnsAsync(Activation(active: false));
         var check = Check("66f000000000000000000001", scheduleState: HealthCheckScheduleState.Active);
-        harness.Scheduler.AddOrphan("acme", check.Id); // exists, but running
+        harness.Scheduler.AddOrphan("acme", check.Id); // the schedule exists and is not paused
 
         var result = await harness.Build(check).ReconcileAsync(CancellationToken.None);
 

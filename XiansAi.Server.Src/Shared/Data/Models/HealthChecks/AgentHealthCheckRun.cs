@@ -19,15 +19,15 @@ public class HealthCheckAssertionResult
     [BsonElement("passed")]
     public bool Passed { get; set; }
 
-    /// <summary>What the response actually held, for JSON and header ops (truncated).</summary>
+    /// <summary>The value found in the response, for JSON and header checks (shortened).</summary>
     [BsonElement("actual")]
     [BsonIgnoreIfNull]
     public string? Actual { get; set; }
 }
 
 /// <summary>
-/// The persisted result of one health-check execution, in the <c>agent_health_check_runs</c>
-/// collection. Expired by the <c>health_check_run_ttl</c> index (30 days by default).
+/// The saved result of one run, in the <c>agent_health_check_runs</c> collection.
+/// Deleted after 30 days by default.
 /// </summary>
 [BsonIgnoreExtraElements]
 public class AgentHealthCheckRun
@@ -72,7 +72,7 @@ public class AgentHealthCheckRun
     [BsonElement("assertion_results")]
     public List<HealthCheckAssertionResult> AssertionResults { get; set; } = new();
 
-    /// <summary>Temporal run id of the health-check workflow that produced this result.</summary>
+    /// <summary>The Temporal run id of the workflow that made this result.</summary>
     [BsonElement("workflow_run_id")]
     [BsonIgnoreIfNull]
     public string? WorkflowRunId { get; set; }

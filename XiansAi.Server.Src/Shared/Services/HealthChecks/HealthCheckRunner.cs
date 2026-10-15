@@ -6,16 +6,14 @@ using Shared.Utils;
 
 namespace Shared.Services.HealthChecks;
 
-/// <summary>The identity scheduled health-check runs execute as.</summary>
+/// <summary>The user that scheduled health-check runs act as.</summary>
 public static class HealthCheckSystemPrincipal
 {
     public const string UserId = "system:health-check";
 
     /// <summary>
-    /// Makes a fresh scope's tenant context act for <paramref name="tenantId"/>. TenantAdmin is
-    /// scoped to that tenant alone and mirrors the only role allowed to configure checks
-    /// (<c>tenant.healthChecks.manage</c>); it is what agent-permission checks such as reading a
-    /// schedule require.
+    /// Sets the tenant context to act as a tenant admin for <paramref name="tenantId"/> only.
+    /// This is needed to read the agent's schedules and workflows.
     /// </summary>
     public static void Apply(ITenantContext tenantContext, string tenantId)
     {
@@ -30,10 +28,10 @@ public static class HealthCheckSystemPrincipal
 
 public enum HealthCheckRunOutcome
 {
-    /// <summary>A result was persisted.</summary>
+    /// <summary>A result was saved.</summary>
     Recorded,
 
-    /// <summary>Nothing ran: the check was deleted or disabled, or its activation is gone or inactive.</summary>
+    /// <summary>Nothing ran: the check is deleted or disabled, or the activation is deleted or inactive.</summary>
     Skipped
 }
 
@@ -43,14 +41,13 @@ public interface IHealthCheckRunner
 }
 
 /// <summary>
-/// Executes one scheduled run: re-reads the check and its activation, skips when either is no
-/// longer eligible (R8; also covers a schedule firing while it is being paused), runs the
-/// type-specific executor under the check's timeout, and records the result. Check failures are
-/// results, never exceptions.
+/// Runs one scheduled check and saves the result.
+/// Skips the run if the check or its activation is no longer active.
+/// A failed check is saved as a result; it never throws.
 /// </summary>
 public class HealthCheckRunner : IHealthCheckRunner
 {
-    /// <summary>Slack over the check's own timeout before the run is abandoned.</summary>
+    /// <summary>Extra time on top of the check's timeout before the run is stopped.</summary>
     private static readonly TimeSpan TimeoutGrace = TimeSpan.FromSeconds(15);
 
     private readonly IAgentHealthCheckRepository _repository;
@@ -116,7 +113,7 @@ public class HealthCheckRunner : IHealthCheckRunner
         await _repository.InsertRunAsync(run);
         await _repository.RecordRunResultAsync(check.Id, result.Status, startedAt, detail);
 
-        // `check` still holds the status from before this run, which is what the notifier compares against.
+        // `check` still has the status from before this run. The notifier compares it with the new result.
         await _notifier.NotifyAsync(check, run);
 
         _logger.LogInformation("Health check {CheckId} ({Type}) for {Agent}/{Activation}: {Status} in {DurationMs}ms",

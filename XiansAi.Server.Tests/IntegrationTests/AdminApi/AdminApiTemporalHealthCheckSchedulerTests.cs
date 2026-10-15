@@ -10,9 +10,7 @@ using Xunit;
 namespace Tests.IntegrationTests.AdminApi;
 
 /// <summary>
-/// The real <see cref="HealthCheckScheduler"/> against the local Temporal dev server: schedules are
-/// created in the platform namespace with the check's interval, overlap=Skip and paused state, kept in
-/// line on update, listed by prefix, and deleted idempotently.
+/// Tests the real scheduler against the local Temporal server: create, update, list and delete schedules.
 /// </summary>
 public class AdminApiTemporalHealthCheckSchedulerTests : AdminApiTemporalIntegrationTestBase
 {
@@ -85,9 +83,8 @@ public class AdminApiTemporalHealthCheckSchedulerTests : AdminApiTemporalIntegra
     }
 
     /// <summary>
-    /// End to end through the server's own worker: a schedule check created over the API is
-    /// triggered in Temporal, the health-check workflow runs the activity in-process, and the
-    /// result lands in the run history and the check's status.
+    /// End-to-end test: a schedule check created through the API is triggered in Temporal,
+    /// run by the server's worker, and its result is saved.
     /// </summary>
     [Fact]
     public async Task TriggeredScheduleCheck_IsExecutedByTheServerWorkerAndRecorded()
@@ -135,8 +132,8 @@ public class AdminApiTemporalHealthCheckSchedulerTests : AdminApiTemporalIntegra
     }
 
     /// <summary>
-    /// The webhook eval form's dropdowns: a running workflow reports its update methods through
-    /// Temporal's metadata query; a registered workflow that isn't running is listed without methods.
+    /// Webhook targets: a running workflow lists its update methods, and a workflow
+    /// that isn't running is listed without methods.
     /// </summary>
     [Fact]
     public async Task WebhookTargets_ListUpdateMethodsOfRunningWorkflows()
@@ -144,7 +141,7 @@ public class AdminApiTemporalHealthCheckSchedulerTests : AdminApiTemporalIntegra
         var (tenantId, agent, chatFlow, activation) = await SeedActiveActivationAsync();
         await CreateBuiltInFlowDefinitionAsync(agent.Name, tenantId, flowName: "Git Events");
 
-        // A builtin webhook registered for this activation, created the way Connections -> Webhooks does.
+        // Add a built-in webhook for this activation, the same way Connections -> Webhooks does.
         var webhook = await PostAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/webhooks", new
         {
             activationName = activation.Name,
@@ -206,7 +203,7 @@ public class AdminApiTemporalHealthCheckSchedulerTests : AdminApiTemporalIntegra
         await Scheduler.UpsertAsync(check, activationActive: true);
         var scheduleId = HealthCheckScheduler.GetScheduleId(check.TenantId, check.Id);
 
-        // Temporal's schedule listing is eventually consistent; give visibility a moment.
+        // The schedule list can take a moment to update.
         List<string> ids = [];
         for (var attempt = 0; attempt < 20 && !ids.Contains(scheduleId); attempt++)
         {
@@ -218,6 +215,6 @@ public class AdminApiTemporalHealthCheckSchedulerTests : AdminApiTemporalIntegra
         Assert.All(ids, id => Assert.StartsWith(HealthCheckScheduler.ScheduleIdPrefix, id));
 
         await Scheduler.DeleteAsync(check.TenantId, check.Id);
-        await Scheduler.DeleteAsync(check.TenantId, check.Id); // already gone: no exception
+        await Scheduler.DeleteAsync(check.TenantId, check.Id); // already deleted: no error
     }
 }

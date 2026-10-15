@@ -142,7 +142,7 @@ public static class WebhookEndpoints
                     return httpResult;
                 }
 
-                // Parse the WebhookResponse the workflow returned (Data, falling back to Text).
+                // Read the WebhookResponse from the workflow's reply.
                 var webhookResponse = WebhookResponseParser.FromSyncResult(result, logger);
 
                 // Apply the WebhookResponse to the HTTP context

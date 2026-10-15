@@ -21,20 +21,20 @@ public interface IAgentHealthCheckService
     Task<ServiceResult<ActivationHealthSummary>> GetSummaryAsync(string tenantId, string activationId);
     Task<ServiceResult<List<AgentHealthCheck>>> ListByTenantAsync(string tenantId, IReadOnlyCollection<HealthCheckStatus>? statuses, string? agentName);
 
-    /// <summary>The agent's workflows and their callable update methods, for the webhook eval form.</summary>
+    /// <summary>The agent's workflows and webhooks, for the webhook eval form.</summary>
     Task<ServiceResult<List<WebhookTargetWorkflow>>> GetWebhookTargetsAsync(string tenantId, string activationId);
 }
 
 /// <summary>
-/// Activation lifecycle hooks (R8), called by <see cref="ActivationService"/>. Best effort: a
-/// failure is logged and left for the reconciler, never surfaced to the activation operation.
+/// Called by <see cref="ActivationService"/> when an activation changes.
+/// Errors are only logged; the reconciler fixes them later.
 /// </summary>
 public interface IHealthCheckActivationHooks
 {
-    /// <summary>Pauses or resumes the activation's check schedules to match its new active state.</summary>
+    /// <summary>Pauses or resumes the activation's checks when it is deactivated or activated.</summary>
     Task OnActivationStateChangedAsync(AgentActivation activation);
 
-    /// <summary>Deletes the activation's checks, their run history and their schedules.</summary>
+    /// <summary>Deletes the activation's checks, their runs and their schedules.</summary>
     Task OnActivationDeletedAsync(AgentActivation activation);
 }
 
@@ -271,8 +271,8 @@ public class AgentHealthCheckService : IAgentHealthCheckService, IHealthCheckAct
     }
 
     /// <summary>
-    /// Derives activation health from the latest result of each enabled check that has run.
-    /// Disabled checks and checks with no runs yet do not count.
+    /// Works out the activation's health from the latest result of each check.
+    /// Disabled checks and checks that haven't run yet are ignored.
     /// </summary>
     public static ActivationHealthSummary BuildSummary(AgentActivation activation, IReadOnlyList<AgentHealthCheck> checks)
     {
@@ -316,8 +316,8 @@ public class AgentHealthCheckService : IAgentHealthCheckService, IHealthCheckAct
     }
 
     /// <summary>
-    /// Checks that need I/O. Catching a typo here returns 400 instead of creating a check that
-    /// can only ever fail.
+    /// Checks that need the database, such as whether the workflow, schedule and contacts exist.
+    /// This catches typos before the check is saved.
     /// </summary>
     private async Task<string?> ValidateTargetAsync(HealthCheckDefinition definition, AgentActivation activation)
     {
@@ -348,7 +348,7 @@ public class AgentHealthCheckService : IAgentHealthCheckService, IHealthCheckAct
         return null;
     }
 
-    /// <summary>Applies the schedule and records its state; on failure records Pending for the reconciler.</summary>
+    /// <summary>Creates or updates the schedule. If that fails, the state is Pending and the reconciler retries.</summary>
     private async Task<HealthCheckScheduleState> SyncScheduleAsync(AgentHealthCheck check, bool activationActive)
     {
         HealthCheckScheduleState state;
@@ -375,7 +375,7 @@ public class AgentHealthCheckService : IAgentHealthCheckService, IHealthCheckAct
         }
         catch (Exception ex)
         {
-            // The reconciler deletes schedules with no matching check, so the record can still go.
+            // The reconciler removes leftover schedules later, so the check can still be deleted.
             _logger.LogWarning(ex, "Could not delete Temporal schedule for health check {CheckId}; the reconciler will remove it",
                 LogSanitizer.Sanitize(check.Id));
         }

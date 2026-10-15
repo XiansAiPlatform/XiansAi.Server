@@ -607,7 +607,7 @@ public class ActivationService : IActivationService
                 _logger.LogInformation("Successfully activated {StartedCount}/{TotalCount} workflows for activation {ActivationId}",
                     startedCount, flowDefinitions.Count, LogSanitizer.Sanitize(activationId));
 
-                // Resume the activation's enabled health checks (best effort; never fails activation).
+                // Resume the activation's enabled health checks. Errors here don't stop the activation.
                 await _healthCheckHooks.OnActivationStateChangedAsync(activation);
 
                 var metadata = new { tenantId, activationId = activation.Id, name = activation.Name, agentName = activation.AgentName, workflowIds = activation.WorkflowIds };
@@ -723,7 +723,7 @@ public class ActivationService : IActivationService
 
             _activationValidationService.InvalidateActivationCache(activation.TenantId, activation.AgentName, activation.Name);
 
-            // Pause the activation's health checks so they don't run against a stopped agent (R8).
+            // Pause the activation's health checks so they don't run while it is stopped.
             await _healthCheckHooks.OnActivationStateChangedAsync(activation);
 
             _logger.LogInformation(
@@ -908,8 +908,7 @@ public class ActivationService : IActivationService
             _logger.LogWarning(ex, "Failed to delete feedback for activation {ActivationId}", LogSanitizer.Sanitize(activation.Id));
         }
 
-        // Health checks, their run history and their schedules. Handles its own failures; the
-        // reconciler removes anything left behind.
+        // Delete the health checks, their runs and their schedules. The reconciler cleans up anything left.
         await _healthCheckHooks.OnActivationDeletedAsync(activation);
     }
 }

@@ -13,13 +13,13 @@ public interface IHealthCheckReconciler
 }
 
 /// <summary>
-/// Closes the gaps left by partial failures, since Mongo writes and Temporal calls are not atomic:
+/// Fixes differences between the saved checks and their Temporal schedules:
 /// <list type="bullet">
-/// <item>a check whose schedule is pending, missing, or in the wrong paused state is re-synced;</item>
-/// <item>a check whose activation no longer exists is deleted (activation delete cleanup failed);</item>
-/// <item>a <c>healthcheck:</c> schedule with no matching check is deleted.</item>
+/// <item>creates or updates schedules that are pending, missing or wrongly paused;</item>
+/// <item>deletes checks whose activation no longer exists;</item>
+/// <item>deletes health-check schedules that have no check.</item>
 /// </list>
-/// Every step is idempotent, so concurrent runs from several server instances are harmless.
+/// It is safe to run on several servers at the same time.
 /// </summary>
 public class HealthCheckReconciler : IHealthCheckReconciler
 {
@@ -62,7 +62,7 @@ public class HealthCheckReconciler : IHealthCheckReconciler
 
                 if (activation == null || activation.TenantId != check.TenantId)
                 {
-                    // The schedule, if any, is not added to expectedScheduleIds and goes in the orphan sweep.
+                    // Its schedule, if any, is deleted below with the other leftover schedules.
                     await _repository.DeleteRunsByCheckAsync(check.TenantId, check.Id);
                     await _repository.DeleteAsync(check.TenantId, check.Id);
                     orphanChecks++;
@@ -119,7 +119,7 @@ public class HealthCheckReconciler : IHealthCheckReconciler
         return result;
     }
 
-    /// <summary>Splits <c>healthcheck:{tenantId}:{checkId}</c>; the check id is the last segment (an ObjectId).</summary>
+    /// <summary>Reads the tenant id and check id from <c>healthcheck:{tenantId}:{checkId}</c>.</summary>
     public static (string? TenantId, string? CheckId) ParseScheduleId(string scheduleId)
     {
         if (!scheduleId.StartsWith(HealthCheckScheduler.ScheduleIdPrefix, StringComparison.Ordinal))

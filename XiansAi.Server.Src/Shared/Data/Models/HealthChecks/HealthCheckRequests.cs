@@ -1,9 +1,8 @@
 namespace Shared.Data.Models.HealthChecks;
 
 /// <summary>
-/// Create/replace body for a health check. Exactly one of <see cref="Chat"/>, <see cref="Webhook"/>,
-/// <see cref="Schedule"/> must be set, matching <see cref="Type"/>. Members are nullable so missing
-/// values surface as validation messages rather than JSON binding failures.
+/// The request body to create or replace a health check. Set only one of Chat, Webhook or Schedule,
+/// based on Type. Fields can be null so that a missing value gives a clear validation message.
 /// </summary>
 public class HealthCheckRequest
 {
@@ -12,7 +11,7 @@ public class HealthCheckRequest
     public bool Enabled { get; set; } = true;
     public int? IntervalMinutes { get; set; }
 
-    /// <summary>Chat and webhook checks only. Defaults to <see cref="HealthCheckLimits.DefaultTimeoutSeconds"/>.</summary>
+    /// <summary>Chat and webhook checks only. Defaults to 60 seconds.</summary>
     public int? TimeoutSeconds { get; set; }
 
     public ChatHealthCheckRequest? Chat { get; set; }
@@ -20,8 +19,8 @@ public class HealthCheckRequest
     public ScheduleHealthCheckRequest? Schedule { get; set; }
 
     /// <summary>
-    /// Tenant contact ids to email when the check starts failing and when it recovers. Omit or send an
-    /// empty list for no notifications.
+    /// Ids of the tenant contacts to email when the check starts failing and when it passes again.
+    /// Leave it out or send an empty list to email no one.
     /// </summary>
     public List<string>? NotifyContactIds { get; set; }
 }
@@ -30,7 +29,7 @@ public class HealthCheckAssertionRequest
 {
     public HealthCheckAssertionOp? Op { get; set; }
 
-    /// <summary>JSON path (<c>$.data.status</c>) for JSON ops, header name for header ops.</summary>
+    /// <summary>The JSON path (like <c>$.data.status</c>) or the header name.</summary>
     public string? Path { get; set; }
 
     public string? Value { get; set; }
@@ -38,7 +37,7 @@ public class HealthCheckAssertionRequest
 
 public class ChatHealthCheckRequest
 {
-    /// <summary>Flow name without the agent prefix. Omit to use the activation's conversational workflow.</summary>
+    /// <summary>The flow name, without the agent name. Leave it out to use the activation's chat workflow.</summary>
     public string? WorkflowType { get; set; }
     public string? Message { get; set; }
     public List<HealthCheckAssertionRequest>? Assertions { get; set; }
@@ -49,16 +48,16 @@ public class WebhookHealthCheckRequest
     /// <summary><c>update</c> (default) or <c>builtin</c>.</summary>
     public WebhookHealthCheckMode? Mode { get; set; }
 
-    /// <summary>Flow name without the agent prefix.</summary>
+    /// <summary>The flow name, without the agent name.</summary>
     public string? WorkflowType { get; set; }
 
-    /// <summary>Update mode: the workflow's Temporal update method, as in <c>POST /api/user/webhooks/{workflow}/{methodName}</c>.</summary>
+    /// <summary>Update mode: the update method name.</summary>
     public string? MethodName { get; set; }
 
-    /// <summary>Builtin mode: the webhook name, as in <c>POST /api/user/webhooks/builtin?webhookName=…</c>.</summary>
+    /// <summary>Built-in mode: the webhook name.</summary>
     public string? WebhookName { get; set; }
 
-    /// <summary>Optional: fail when the agent takes longer than this to respond.</summary>
+    /// <summary>Optional. The check fails if the agent takes longer than this to answer.</summary>
     public int? MaxResponseMs { get; set; }
 
     public Dictionary<string, string>? QueryParams { get; set; }
@@ -95,20 +94,20 @@ public static class HealthCheckLimits
     public const int MaxNotifyContacts = 10;
 }
 
-/// <summary>Overall health of an activation, derived from its checks' latest results.</summary>
+/// <summary>The overall health of an activation, based on the latest result of each check.</summary>
 [System.Text.Json.Serialization.JsonConverter(typeof(System.Text.Json.Serialization.JsonStringEnumConverter<ActivationHealthStatus>))]
 public enum ActivationHealthStatus
 {
     /// <summary>No enabled check has run yet.</summary>
     [System.Text.Json.Serialization.JsonStringEnumMemberName("unknown")] Unknown,
 
-    /// <summary>Every enabled check that has run last passed.</summary>
+    /// <summary>All checks that have run passed last time.</summary>
     [System.Text.Json.Serialization.JsonStringEnumMemberName("healthy")] Healthy,
 
-    /// <summary>Some enabled checks last passed and some did not.</summary>
+    /// <summary>Some checks passed last time and some did not.</summary>
     [System.Text.Json.Serialization.JsonStringEnumMemberName("degraded")] Degraded,
 
-    /// <summary>No enabled check that has run last passed.</summary>
+    /// <summary>None of the checks that have run passed last time.</summary>
     [System.Text.Json.Serialization.JsonStringEnumMemberName("unhealthy")] Unhealthy
 }
 

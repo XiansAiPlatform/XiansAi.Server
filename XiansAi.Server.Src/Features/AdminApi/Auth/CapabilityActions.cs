@@ -102,7 +102,7 @@ public static class CapabilityActions
     public const string TenantSchedulesDeleteByActivation = "tenant.schedules.deleteByActivation";
 
     // AdminHealthCheckEndpoints: /tenants/{tenantId}/agentActivations/{activationId}/health-checks,
-    // /tenants/{tenantId}/health-checks. One shared action gates configure and view alike.
+    // /tenants/{tenantId}/health-checks. One capability covers both managing and viewing checks.
     public const string TenantHealthChecksManage = "tenant.healthChecks.manage";
 
     // AdminStatsEndpoints: /tenants/{tenantId}/stats
