@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Authorization;
 using Shared.Auth;
-using Shared.Exceptions;
 using Shared.Services;
 using System.Security.Claims;
 using Shared.Utils;
@@ -55,7 +54,9 @@ namespace Features.AdminApi.Auth
 
             if (string.IsNullOrEmpty(loggedInUser))
             {
-                _logger.LogWarning("No Logged In User");
+                // Authentication failed, and it already logged why. RequireAuthenticatedUser fails the
+                // policy on its own, so a warning here would only repeat that once per rejected request.
+                _logger.LogDebug("No Logged In User");
                 context.Fail();
                 return;
             }
@@ -150,10 +151,6 @@ namespace Features.AdminApi.Auth
                 _logger.LogInformation("Successfully authorized AdminApi Endpoint Connection: User={UserId}, Tenant={TenantId}, Roles={Roles}",
                     LogSanitizer.RedactUserId(resolvedUserId), LogSanitizer.Sanitize(finalTenantId), LogSanitizer.Sanitize(string.Join(", ", userRoles)));
                 context.Succeed(requirement);
-            }
-            catch (TenantNotFoundException)
-            {
-                throw;
             }
             catch (Exception ex)
             {

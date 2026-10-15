@@ -19,6 +19,11 @@ public interface IKnowledgeRepository
     Task<bool> DeleteAsync<T>(string id) where T : IKnowledge;
     Task<bool> UpdateAsync<T>(string id, T knowledge) where T : IKnowledge;
     Task<T?> GetByNameVersionAsync<T>(string name, string version, string agent, string tenantId) where T : IKnowledge;
+    /// <summary>
+    /// Exact lookup on the knowledge collection's unique index
+    /// (name, version, agent, tenant_id, activation_name, system_scoped). Null means "must be null".
+    /// </summary>
+    Task<T?> GetByUniqueKeyAsync<T>(string name, string version, string? agent, string? tenantId, string? activationName, bool systemScoped) where T : IKnowledge;
     Task<List<T>> SearchAsync<T>(string searchTerm, string tenantId) where T : IKnowledge;
     Task<List<T>> GetUniqueLatestAsync<T>(string? tenantId, List<string> agentNames) where T : IKnowledge;
     Task<List<T>> GetUniqueLatestSystemScopedAsync<T>(List<string> agentNames) where T : IKnowledge;
@@ -248,6 +253,31 @@ public class KnowledgeRepository : IKnowledgeRepository
             .OrderByDescending(x => x.TenantId != null)
             .ThenByDescending(x => x.Agent == agent) // Prioritize exact agent match
             .FirstOrDefault();
+    }
+
+    public async Task<T?> GetByUniqueKeyAsync<T>(string name, string version, string? agent, string? tenantId, string? activationName, bool systemScoped) where T : IKnowledge
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var collection = GetTypedCollection<T>();
+
+            // Legacy documents may lack system_scoped entirely; treat a missing field as false.
+            var systemScopedFilter = systemScoped
+                ? Builders<T>.Filter.Eq("system_scoped", true)
+                : Builders<T>.Filter.Or(
+                    Builders<T>.Filter.Eq("system_scoped", false),
+                    Builders<T>.Filter.Exists("system_scoped", false));
+
+            var filter = Builders<T>.Filter.And(
+                Builders<T>.Filter.Eq(x => x.Name, name),
+                Builders<T>.Filter.Eq(x => x.Version, version),
+                Builders<T>.Filter.Eq(x => x.Agent, agent),
+                Builders<T>.Filter.Eq(x => x.TenantId, tenantId),
+                Builders<T>.Filter.Eq(x => x.ActivationName, activationName),
+                systemScopedFilter);
+
+            return await collection.Find(filter).FirstOrDefaultAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetKnowledgeByUniqueKey");
     }
 
     public async Task<List<T>> SearchAsync<T>(string searchTerm, string tenantId) where T : IKnowledge

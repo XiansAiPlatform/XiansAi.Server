@@ -121,8 +121,8 @@ public class AdminCapabilityMigratedRoutesTests : AdminApiIntegrationTestBase
     /// widens a privilege boundary, so every route is exercised rather than a sample.
     ///
     /// <c>tenants.delete</c> is deliberately last: it is the one call in this list that removes the
-    /// shared test tenant every other entry targets, so anything after it would see 404s from
-    /// <c>TenantNotFoundException</c> rather than genuinely reaching its handler (still not 403 —
+    /// shared test tenant every other entry targets, so anything after it would see the auth layer's
+    /// tenant-not-found 404 rather than genuinely reaching its handler (still not 403 —
     /// the assertion would still hold — but the check would be weaker).
     /// </summary>
     private List<(string Description, Func<string, Task<HttpResponseMessage>> Call)> SysAdminOnlyRoutes() =>

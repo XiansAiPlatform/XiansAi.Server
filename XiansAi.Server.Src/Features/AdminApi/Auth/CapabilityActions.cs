@@ -28,6 +28,13 @@ public static class CapabilityActions
     public const string TenantUsersDelete = "tenant.users.delete";
     public const string TenantUsersRolesRemove = "tenant.users.roles.remove";
 
+    // AdminContactEndpoints: /tenants/{tenantId}/contacts
+    public const string TenantContactsList = "tenant.contacts.list";
+    public const string TenantContactsGet = "tenant.contacts.get";
+    public const string TenantContactsCreate = "tenant.contacts.create";
+    public const string TenantContactsUpdate = "tenant.contacts.update";
+    public const string TenantContactsDelete = "tenant.contacts.delete";
+
     // AdminGlobalUserEndpoints: /users
     public const string GlobalUsersList = "global.users.list";
     public const string GlobalUsersGet = "global.users.get";
@@ -263,6 +270,17 @@ public static class CapabilityActions
             "Remove a user's membership of a tenant entirely."),
         new(TenantUsersRolesRemove, [SystemRoles.TenantAdmin],
             "Remove one role from a user's tenant membership."),
+
+        new(TenantContactsList, [SystemRoles.TenantAdmin],
+            "List the notification contacts of a tenant."),
+        new(TenantContactsGet, [SystemRoles.TenantAdmin],
+            "Read a single notification contact of a tenant."),
+        new(TenantContactsCreate, [SystemRoles.TenantAdmin],
+            "Add a notification contact to a tenant."),
+        new(TenantContactsUpdate, [SystemRoles.TenantAdmin],
+            "Update a notification contact of a tenant."),
+        new(TenantContactsDelete, [SystemRoles.TenantAdmin],
+            "Delete a notification contact of a tenant."),
 
         new(GlobalUsersList, [],
             "List user accounts across every tenant.",

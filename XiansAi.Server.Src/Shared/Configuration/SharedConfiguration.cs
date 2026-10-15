@@ -227,6 +227,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IActivationRepository, ActivationRepository>();
         builder.Services.AddScoped<IWebhookDeliveryRepository, WebhookDeliveryRepository>();
         builder.Services.AddScoped<IAppIntegrationRepository, AppIntegrationRepository>();
+        builder.Services.AddScoped<IContactRepository, ContactRepository>();
         builder.Services.AddSingleton<IAsyncResultCache, AsyncResultCache>();
         builder.Services.AddScoped<IActivationValidationService, ActivationValidationService>();
 
@@ -257,6 +258,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IUserManagementService, UserManagementService>();
         builder.Services.AddScoped<IGlobalUserAdminService, GlobalUserAdminService>();
         builder.Services.AddScoped<ITenantParticipantUserService, TenantParticipantUserService>();
+        builder.Services.AddScoped<IContactService, ContactService>();
         builder.Services.AddScoped<ITenantOidcConfigService, TenantOidcConfigService>();
         builder.Services.AddScoped<ITenantTemporalConfigService, TenantTemporalConfigService>();
         builder.Services.AddScoped<ISecretVaultService, SecretVaultService>();
