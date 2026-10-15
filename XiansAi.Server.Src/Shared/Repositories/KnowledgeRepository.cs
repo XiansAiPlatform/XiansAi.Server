@@ -18,8 +18,6 @@ public interface IKnowledgeRepository
     Task CreateAsync<T>(T knowledge) where T : IKnowledge;
     /// <summary>Sets updated_at on an existing knowledge row (used when an identical record is re-posted).</summary>
     Task TouchUpdatedAtAsync(string id, DateTime updatedAt);
-    /// <summary>Sets updated_at = created_at on legacy rows lacking updated_at. Idempotent; returns modified count.</summary>
-    Task<long> BackfillUpdatedAtAsync();
     Task<bool> DeleteAsync<T>(string id) where T : IKnowledge;
     Task<bool> UpdateAsync<T>(string id, T knowledge) where T : IKnowledge;
     Task<T?> GetByNameVersionAsync<T>(string name, string version, string agent, string tenantId) where T : IKnowledge;
@@ -70,7 +68,7 @@ public class KnowledgeRepository : IKnowledgeRepository
             var filter = Builders<T>.Filter.And(nameFilter, agentFilter, tenantFilter, activationFilter);
             
             return await collection.Find(filter)
-                .SortByDescending(x => x.UpdatedAt)
+                .SortByDescending(x => x.UpdatedAt).ThenByDescending(x => x.CreatedAt)
                 .FirstOrDefaultAsync();
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLatestKnowledgeByNameAndTenant");
     }
@@ -89,7 +87,7 @@ public class KnowledgeRepository : IKnowledgeRepository
             var filter = Builders<T>.Filter.And(nameFilter, agentFilter, tenantFilter, activationFilter);
             
             return await collection.Find(filter)
-                .SortByDescending(x => x.UpdatedAt)
+                .SortByDescending(x => x.UpdatedAt).ThenByDescending(x => x.CreatedAt)
                 .FirstOrDefaultAsync();
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLatestKnowledgeByNameAndActivation");
     }
@@ -115,7 +113,8 @@ public class KnowledgeRepository : IKnowledgeRepository
 
             return results
                 .OrderByDescending(x => x.Agent == agent)
-                .ThenByDescending(x => x.UpdatedAt)
+                .ThenByDescending(x => x.UpdatedAt.HasValue)
+                .ThenByDescending(x => x.UpdatedAt ?? x.CreatedAt)
                 .FirstOrDefault();
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetLatestSystemKnowledgeByName");
     }
@@ -163,7 +162,7 @@ public class KnowledgeRepository : IKnowledgeRepository
         
         // Get all results
         var results = await collection.Find(filter)
-            .SortByDescending(x => x.UpdatedAt)
+            .SortByDescending(x => x.UpdatedAt).ThenByDescending(x => x.CreatedAt)
             .ToListAsync();
             
         // Client-side sort to prioritize:
@@ -173,7 +172,8 @@ public class KnowledgeRepository : IKnowledgeRepository
         return results
             .OrderByDescending(x => x.TenantId != null)
             .ThenByDescending(x => x.Agent == agent) // Prioritize exact agent match
-            .ThenByDescending(x => x.UpdatedAt)
+            .ThenByDescending(x => x.UpdatedAt.HasValue)
+            .ThenByDescending(x => x.UpdatedAt ?? x.CreatedAt)
             .ToList();
     }
 
@@ -212,19 +212,6 @@ public class KnowledgeRepository : IKnowledgeRepository
             var update = Builders<BsonDocument>.Update.Set("updated_at", updatedAt);
             await _knowledge.UpdateOneAsync(filter, update);
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "TouchKnowledgeUpdatedAt");
-    }
-
-    public async Task<long> BackfillUpdatedAtAsync()
-    {
-        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
-        {
-            var filter = Builders<BsonDocument>.Filter.Exists("updated_at", false);
-            var pipeline = new EmptyPipelineDefinition<BsonDocument>()
-                .AppendStage<BsonDocument, BsonDocument, BsonDocument>(
-                    new BsonDocument("$set", new BsonDocument("updated_at", "$created_at")));
-            var result = await _knowledge.UpdateManyAsync(filter, Builders<BsonDocument>.Update.Pipeline(pipeline));
-            return result.ModifiedCount;
-        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "BackfillKnowledgeUpdatedAt");
     }
 
     public async Task<bool> DeleteAsync<T>(string id) where T : IKnowledge
@@ -326,7 +313,7 @@ public class KnowledgeRepository : IKnowledgeRepository
         );
 
         return await collection.Find(filter)
-            .SortByDescending(x => x.UpdatedAt)
+            .SortByDescending(x => x.UpdatedAt).ThenByDescending(x => x.CreatedAt)
             .ToListAsync();
     }
 
@@ -358,14 +345,14 @@ public class KnowledgeRepository : IKnowledgeRepository
         // Get all items sorted by creation date
         var allItems = await collection.Find(filter)
             .Project<T>(projection)
-            .SortByDescending(x => x.UpdatedAt)
+            .SortByDescending(x => x.UpdatedAt).ThenByDescending(x => x.CreatedAt)
             .ToListAsync();
             
         // Process in memory to get the latest for each name/agent combination
         return allItems
             .GroupBy(x => new { x.Name, x.Agent })
             .Select(group => group
-                .OrderByDescending(x => x.UpdatedAt)
+                .OrderByDescending(x => x.UpdatedAt.HasValue).ThenByDescending(x => x.UpdatedAt ?? x.CreatedAt)
                 .First())
             .ToList();
     }
@@ -398,14 +385,14 @@ public class KnowledgeRepository : IKnowledgeRepository
         // Get all items sorted by creation date
         var allItems = await collection.Find(filter)
             .Project<T>(projection)
-            .SortByDescending(x => x.UpdatedAt)
+            .SortByDescending(x => x.UpdatedAt).ThenByDescending(x => x.CreatedAt)
             .ToListAsync();
             
         // Process in memory to get the latest for each name/agent combination
         return allItems
             .GroupBy(x => new { x.Name, x.Agent })
             .Select(group => group
-                .OrderByDescending(x => x.UpdatedAt)
+                .OrderByDescending(x => x.UpdatedAt.HasValue).ThenByDescending(x => x.UpdatedAt ?? x.CreatedAt)
                 .First())
             .ToList();
     }
@@ -442,14 +429,14 @@ public class KnowledgeRepository : IKnowledgeRepository
         // Get all items sorted by creation date
         var allItems = await collection.Find(filter)
             .Project<T>(projection)
-            .SortByDescending(x => x.UpdatedAt)
+            .SortByDescending(x => x.UpdatedAt).ThenByDescending(x => x.CreatedAt)
             .ToListAsync();
             
         // Process in memory to get the latest for each name/agent combination
         return allItems
             .GroupBy(x => new { x.Name, x.Agent })
             .Select(group => group
-                .OrderByDescending(x => x.UpdatedAt)
+                .OrderByDescending(x => x.UpdatedAt.HasValue).ThenByDescending(x => x.UpdatedAt ?? x.CreatedAt)
                 .First())
             .ToList();
     }
@@ -486,14 +473,14 @@ public class KnowledgeRepository : IKnowledgeRepository
         // Get all items sorted by creation date
         var allItems = await collection.Find(filter)
             .Project<T>(projection)
-            .SortByDescending(x => x.UpdatedAt)
+            .SortByDescending(x => x.UpdatedAt).ThenByDescending(x => x.CreatedAt)
             .ToListAsync();
             
         // Process in memory to get the latest for each name/agent/activation combination
         return allItems
             .GroupBy(x => new { x.Name, x.Agent, x.ActivationName })
             .Select(group => group
-                .OrderByDescending(x => x.UpdatedAt)
+                .OrderByDescending(x => x.UpdatedAt.HasValue).ThenByDescending(x => x.UpdatedAt ?? x.CreatedAt)
                 .First())
             .ToList();
     }
@@ -538,14 +525,14 @@ public class KnowledgeRepository : IKnowledgeRepository
             
             // Get all system-scoped knowledge for this agent
             var allKnowledge = await collection.Find(filter)
-                .SortByDescending(x => x.UpdatedAt)
+                .SortByDescending(x => x.UpdatedAt).ThenByDescending(x => x.CreatedAt)
                 .ToListAsync();
             
             // Get the latest version of each unique knowledge name
             return allKnowledge
                 .GroupBy(x => x.Name)
                 .Select(group => group
-                    .OrderByDescending(x => x.UpdatedAt)
+                    .OrderByDescending(x => x.UpdatedAt.HasValue).ThenByDescending(x => x.UpdatedAt ?? x.CreatedAt)
                     .First())
                 .ToList();
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetSystemScopedByAgent");
@@ -565,7 +552,7 @@ public class KnowledgeRepository : IKnowledgeRepository
             
             // Get all knowledge for this agent and tenant
             return await collection.Find(filter)
-                .SortByDescending(x => x.UpdatedAt)
+                .SortByDescending(x => x.UpdatedAt).ThenByDescending(x => x.CreatedAt)
                 .ToListAsync();
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByAgentAndTenant");
     }

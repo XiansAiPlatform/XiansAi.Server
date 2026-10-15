@@ -11,7 +11,7 @@ public interface IKnowledge
     string Name { get; set; }
     string Version { get; set; }
     DateTime CreatedAt { get; set; }
-    DateTime UpdatedAt { get; set; }
+    DateTime? UpdatedAt { get; set; }
     string CreatedBy { get; set; }
     string? ActivationName { get; set; }
 } 
@@ -46,7 +46,7 @@ public class Knowledge : IKnowledge
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
     [BsonElement("updated_at")]
-    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? UpdatedAt { get; set; }
 
     [BsonElement("system_scoped")]
     public bool SystemScoped { get; set; } = false;

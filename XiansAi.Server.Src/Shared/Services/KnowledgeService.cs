@@ -402,7 +402,7 @@ public class KnowledgeService : IKnowledgeService
             // 1. System-scoped: Latest where TenantId is null AND SystemScoped is true
             var systemItem = systemScopedKnowledge
                 .Where(k => k.Name == name)
-                .OrderByDescending(k => k.UpdatedAt)
+                .OrderByDescending(k => k.UpdatedAt.HasValue).ThenByDescending(k => k.UpdatedAt ?? k.CreatedAt)
                 .FirstOrDefault();
             
             if (systemItem != null)
@@ -419,7 +419,7 @@ public class KnowledgeService : IKnowledgeService
             // 2. Tenant default: Latest where ActivationName is null
             var tenantDefault = tenantItems
                 .Where(k => string.IsNullOrEmpty(k.ActivationName))
-                .OrderByDescending(k => k.UpdatedAt)
+                .OrderByDescending(k => k.UpdatedAt.HasValue).ThenByDescending(k => k.UpdatedAt ?? k.CreatedAt)
                 .FirstOrDefault();
             
             if (tenantDefault != null)

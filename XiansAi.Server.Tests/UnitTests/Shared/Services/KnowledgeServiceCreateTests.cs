@@ -29,6 +29,7 @@ public class KnowledgeServiceCreateTests
 
     private readonly Mock<IKnowledgeRepository> _repo = new();
     private readonly Mock<ITenantContext> _tenantContext = new();
+    private readonly Mock<IAgentRepository> _agentRepo = new();
     private readonly KnowledgeService _sut;
 
     public KnowledgeServiceCreateTests()
@@ -41,7 +42,7 @@ public class KnowledgeServiceCreateTests
             _repo.Object,
             NullLogger<KnowledgeService>.Instance,
             _tenantContext.Object,
-            new Mock<IAgentRepository>().Object,
+            _agentRepo.Object,
             new Mock<IWebhookEventPublisher>().Object,
             new Mock<IAuditLogService>().Object);
     }
@@ -198,7 +199,69 @@ public class KnowledgeServiceCreateTests
 
         Assert.Null(knowledge);
         Assert.False(created);
-        Assert.NotNull(error);
+        AssertStatus(StatusCodes.Status400BadRequest, error);
+        AssertNoWrites();
+    }
+
+    [Fact]
+    public async Task CreateWithStatus_SystemScopedByNonSysAdmin_Returns403()
+    {
+        _tenantContext.SetupGet(t => t.UserRoles).Returns(Array.Empty<string>());
+
+        var (knowledge, created, error) = await _sut.CreateWithStatus(Request(systemScoped: true));
+
+        Assert.Null(knowledge);
+        Assert.False(created);
+        AssertStatus(StatusCodes.Status403Forbidden, error);
+        AssertNoWrites();
+    }
+
+    [Fact]
+    public async Task CreateWithStatus_NonSysAdminWithoutAgentAccess_Returns403()
+    {
+        _tenantContext.SetupGet(t => t.UserRoles).Returns(Array.Empty<string>());
+        _agentRepo.Setup(r => r.GetAgentsWithPermissionAsync(It.IsAny<string>(), It.IsAny<string?>()))
+            .ReturnsAsync(new List<Agent> { TestAgent("Some Other Agent") });
+
+        var (knowledge, created, error) = await _sut.CreateWithStatus(Request());
+
+        Assert.Null(knowledge);
+        Assert.False(created);
+        AssertStatus(StatusCodes.Status403Forbidden, error);
+        AssertNoWrites();
+    }
+
+    [Fact]
+    public async Task CreateWithStatus_NonSysAdminWithAgentAccess_Creates()
+    {
+        _tenantContext.SetupGet(t => t.UserRoles).Returns(Array.Empty<string>());
+        _agentRepo.Setup(r => r.GetAgentsWithPermissionAsync(It.IsAny<string>(), It.IsAny<string?>()))
+            .ReturnsAsync(new List<Agent> { TestAgent(AgentName) });
+        SetupExactLookup(null);
+
+        var (knowledge, created, error) = await _sut.CreateWithStatus(Request());
+
+        Assert.NotNull(knowledge);
+        Assert.True(created);
+        Assert.Null(error);
+    }
+
+    private static Agent TestAgent(string name) => new()
+    {
+        Id = ObjectId.GenerateNewId().ToString(),
+        Name = name,
+        Tenant = Tenant,
+        CreatedBy = "seed"
+    };
+
+    private static void AssertStatus(int expected, IResult? error)
+    {
+        var result = Assert.IsAssignableFrom<IStatusCodeHttpResult>(error);
+        Assert.Equal(expected, result.StatusCode);
+    }
+
+    private void AssertNoWrites()
+    {
         _repo.Verify(r => r.CreateAsync(It.IsAny<Knowledge>()), Times.Never);
         _repo.Verify(r => r.TouchUpdatedAtAsync(It.IsAny<string>(), It.IsAny<DateTime>()), Times.Never);
     }
