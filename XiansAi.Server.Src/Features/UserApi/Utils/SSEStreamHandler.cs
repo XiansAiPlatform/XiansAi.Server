@@ -80,6 +80,11 @@ public class SSEStreamHandler
 
             return Results.Empty;
         }
+        catch (OperationCanceledException) when (_cancellationToken.IsCancellationRequested)
+        {
+            // Client left or server is shutting down - not an error.
+            return Results.Empty;
+        }
         finally
         {
             Cleanup();

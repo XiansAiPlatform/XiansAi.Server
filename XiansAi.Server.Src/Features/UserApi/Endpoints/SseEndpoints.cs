@@ -24,6 +24,7 @@ public static class SseEndpoints
             [FromServices] IMessageEventPublisher messageEventPublisher,
             [FromServices] ITenantContext tenantContext,
             [FromServices] ILoggerFactory loggerFactory,
+            [FromServices] IHostApplicationLifetime applicationLifetime,
             HttpContext context,
             CancellationToken cancellationToken,
             [FromQuery] string? scope = null,
@@ -45,6 +46,11 @@ public static class SseEndpoints
 
             var resolvedParticipantId = participant.ParticipantId;
 
+            // Close the stream when the client leaves or the server shuts down.
+            // Browsers reconnect on their own.
+            using var streamCts = CancellationTokenSource.CreateLinkedTokenSource(
+                cancellationToken, applicationLifetime.ApplicationStopping);
+
             // Use the SSE stream handler to manage the entire connection lifecycle
             var streamHandler = new SSEStreamHandler(
                 messageEventPublisher, 
@@ -54,7 +60,7 @@ public static class SseEndpoints
                 resolvedParticipantId, 
                 tenantContext, 
                 scope,
-                cancellationToken,
+                streamCts.Token,
                 TimeSpan.FromSeconds(Math.Max(1, Math.Min(heartbeatSeconds, 300)))); // Between 1-300 seconds
 
             return await streamHandler.HandleStreamAsync();
