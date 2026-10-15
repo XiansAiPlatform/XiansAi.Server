@@ -8,9 +8,13 @@ using Features.AgentApi.Repositories;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.Extensions.Options;
+using Shared.Configuration;
 using Shared.Repositories;
 using Shared.Services;
+using Shared.Services.HealthChecks;
 using Features.Mcp.Configuration;
+using Features.UserApi.Services;
 
 namespace Features.AdminApi.Configuration;
 
@@ -57,10 +61,41 @@ public static class AdminApiConfiguration
         
         // PendingRequestService for heartbeat sync flow (TryAdd: UserApi may already register it)
         builder.Services.TryAddSingleton<IPendingRequestService, PendingRequestService>();
-        
+
+        AddHealthCheckServices(builder);
+
         // Note: IAdminTaskService is registered in SharedServices as it's shared with WebApi
         // AdminApi reuses existing services from WebApi
         return builder;
+    }
+
+    /// <summary>
+    /// Registers the health check services, the check runners, and the Temporal worker and reconciler.
+    /// </summary>
+    private static void AddHealthCheckServices(WebApplicationBuilder builder)
+    {
+        builder.Services.Configure<HealthChecksOptions>(builder.Configuration.GetSection(HealthChecksOptions.SectionName));
+        builder.Services.AddSingleton(sp => sp.GetRequiredService<IOptions<HealthChecksOptions>>().Value);
+
+        builder.Services.AddScoped<IAgentHealthCheckRepository, AgentHealthCheckRepository>();
+        builder.Services.AddScoped<AgentHealthCheckService>();
+        builder.Services.AddScoped<IAgentHealthCheckService>(sp => sp.GetRequiredService<AgentHealthCheckService>());
+        builder.Services.AddScoped<IHealthCheckActivationHooks>(sp => sp.GetRequiredService<AgentHealthCheckService>());
+        builder.Services.AddScoped<IHealthCheckRunner, HealthCheckRunner>();
+        builder.Services.AddScoped<IHealthCheckNotifier, HealthCheckNotifier>();
+        builder.Services.AddScoped<IHealthCheckReconciler, HealthCheckReconciler>();
+        builder.Services.AddScoped<IWebhookTargetDiscovery, WebhookTargetDiscovery>();
+        builder.Services.AddScoped<IHealthCheckExecutor, ChatHealthCheckExecutor>();
+        builder.Services.AddScoped<IHealthCheckExecutor, WebhookHealthCheckExecutor>();
+        builder.Services.AddScoped<IHealthCheckExecutor, ScheduleHealthCheckExecutor>();
+
+        // The webhook check needs this service. UserApi may register it too, so use TryAdd.
+        builder.Services.TryAddScoped<IWebhookReceiverService, WebhookReceiverService>();
+
+        // TryAdd lets tests use fakes that don't need Temporal.
+        builder.Services.TryAddSingleton<IHealthCheckTemporalClientProvider, HealthCheckTemporalClientProvider>();
+        builder.Services.TryAddSingleton<IHealthCheckScheduler, HealthCheckScheduler>();
+        builder.Services.AddHostedService<HealthCheckWorkerService>();
     }
 
     /// <summary>
@@ -143,6 +178,7 @@ public static class AdminApiConfiguration
         
         AdminBootstrapEndpoints.MapAdminBootstrapEndpoints(adminApiGroup);
         AdminHeartbeatEndpoints.MapAdminHeartbeatEndpoints(adminApiGroup);
+        AdminHealthCheckEndpoints.MapAdminHealthCheckEndpoints(adminApiGroup);
         AdminTenantEndpoints.MapAdminTenantEndpoints(adminApiGroup);
         AdminConsoleOidcEndpoints.MapAdminConsoleOidcEndpoints(adminApiGroup);
         AdminCapabilityMatrixEndpoints.MapAdminCapabilityMatrixEndpoints(adminApiGroup);
