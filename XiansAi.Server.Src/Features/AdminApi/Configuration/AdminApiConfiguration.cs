@@ -83,6 +83,7 @@ public static class AdminApiConfiguration
         builder.Services.AddScoped<IAgentHealthCheckService>(sp => sp.GetRequiredService<AgentHealthCheckService>());
         builder.Services.AddScoped<IHealthCheckActivationHooks>(sp => sp.GetRequiredService<AgentHealthCheckService>());
         builder.Services.AddScoped<IHealthCheckRunner, HealthCheckRunner>();
+        builder.Services.AddScoped<IHealthCheckNotifier, HealthCheckNotifier>();
         builder.Services.AddScoped<IHealthCheckReconciler, HealthCheckReconciler>();
         builder.Services.AddScoped<IWebhookTargetDiscovery, WebhookTargetDiscovery>();
         builder.Services.AddScoped<IHealthCheckExecutor, ChatHealthCheckExecutor>();

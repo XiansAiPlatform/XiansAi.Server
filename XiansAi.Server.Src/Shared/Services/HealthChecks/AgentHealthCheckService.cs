@@ -46,6 +46,7 @@ public class AgentHealthCheckService : IAgentHealthCheckService, IHealthCheckAct
     private readonly IActivationValidationService _activationValidationService;
     private readonly IScheduleService _scheduleService;
     private readonly IWebhookTargetDiscovery _webhookTargetDiscovery;
+    private readonly IContactRepository _contactRepository;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
     private readonly IAuditLogService _auditLogService;
     private readonly HealthChecksOptions _options;
@@ -58,12 +59,14 @@ public class AgentHealthCheckService : IAgentHealthCheckService, IHealthCheckAct
         IActivationValidationService activationValidationService,
         IScheduleService scheduleService,
         IWebhookTargetDiscovery webhookTargetDiscovery,
+        IContactRepository contactRepository,
         IWebhookEventPublisher webhookEventPublisher,
         IAuditLogService auditLogService,
         HealthChecksOptions options,
         ILogger<AgentHealthCheckService> logger)
     {
         _webhookTargetDiscovery = webhookTargetDiscovery;
+        _contactRepository = contactRepository;
         _repository = repository;
         _activationRepository = activationRepository;
         _scheduler = scheduler;
@@ -309,6 +312,7 @@ public class AgentHealthCheckService : IAgentHealthCheckService, IHealthCheckAct
         check.Chat = definition.Chat;
         check.Webhook = definition.Webhook;
         check.Schedule = definition.Schedule;
+        check.NotifyContactIds = definition.NotifyContactIds;
     }
 
     /// <summary>
@@ -331,6 +335,14 @@ public class AgentHealthCheckService : IAgentHealthCheckService, IHealthCheckAct
             if (!schedule.IsSuccess
                 || !string.Equals(schedule.Data?.AgentName, activation.AgentName, StringComparison.OrdinalIgnoreCase))
                 return $"schedule.scheduleId '{definition.Schedule.ScheduleId}' was not found for agent '{activation.AgentName}'";
+        }
+
+        if (definition.NotifyContactIds.Count > 0)
+        {
+            var tenantContactIds = (await _contactRepository.ListAsync(activation.TenantId)).Select(c => c.Id).ToHashSet();
+            var unknown = definition.NotifyContactIds.FirstOrDefault(id => !tenantContactIds.Contains(id));
+            if (unknown != null)
+                return $"notifyContactIds: contact '{unknown}' was not found in this tenant";
         }
 
         return null;

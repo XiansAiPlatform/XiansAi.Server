@@ -199,6 +199,13 @@ public class AgentHealthCheck
     [BsonIgnoreIfNull]
     public ScheduleHealthCheckConfig? Schedule { get; set; }
 
+    /// <summary>
+    /// Tenant contacts (<see cref="Contact"/> ids) emailed when the check starts failing and when it
+    /// recovers. Ids of contacts deleted since are skipped at send time.
+    /// </summary>
+    [BsonElement("notify_contact_ids")]
+    public List<string> NotifyContactIds { get; set; } = new();
+
     // ----- Denormalized health, written after every run -----
 
     [BsonElement("last_run_at")]

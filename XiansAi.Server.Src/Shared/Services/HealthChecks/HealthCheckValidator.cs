@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using MongoDB.Bson;
 using Shared.Configuration;
 using Shared.Data.Models.HealthChecks;
 using Shared.Data.Models.Validation;
@@ -14,7 +15,8 @@ public sealed record HealthCheckDefinition(
     int TimeoutSeconds,
     ChatHealthCheckConfig? Chat,
     WebhookHealthCheckConfig? Webhook,
-    ScheduleHealthCheckConfig? Schedule);
+    ScheduleHealthCheckConfig? Schedule,
+    List<string> NotifyContactIds);
 
 /// <summary>
 /// Synchronous validation of a <see cref="HealthCheckRequest"/>: shape, limits, interval floor (R7),
@@ -80,7 +82,30 @@ public static class HealthCheckValidator
         if (error != null)
             return Invalid(error);
 
-        return (new HealthCheckDefinition(name, type, request.Enabled, request.IntervalMinutes.Value, timeout, chat, webhook, schedule), null);
+        var (notifyContactIds, contactsError) = ValidateNotifyContactIds(request.NotifyContactIds);
+        if (contactsError != null)
+            return Invalid(contactsError);
+
+        return (new HealthCheckDefinition(
+            name, type, request.Enabled, request.IntervalMinutes.Value, timeout, chat, webhook, schedule, notifyContactIds!), null);
+    }
+
+    /// <summary>
+    /// Shape only (ObjectId format, count, duplicates dropped); the service checks the contacts exist in the tenant.
+    /// </summary>
+    private static (List<string>?, string?) ValidateNotifyContactIds(List<string>? contactIds)
+    {
+        var ids = (contactIds ?? new())
+            .Select(id => id?.Trim() ?? string.Empty)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (ids.Count > HealthCheckLimits.MaxNotifyContacts)
+            return (null, $"notifyContactIds can have at most {HealthCheckLimits.MaxNotifyContacts} contacts");
+        if (ids.Any(id => !ObjectId.TryParse(id, out _)))
+            return (null, "notifyContactIds must contain contact ids");
+
+        return (ids, null);
     }
 
     private static (ChatHealthCheckConfig?, string?) ValidateChat(ChatHealthCheckRequest chat)

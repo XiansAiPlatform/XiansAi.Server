@@ -191,6 +191,36 @@ public class AdminHealthCheckEndpointsTests : AdminApiIntegrationTestBase
     }
 
     [Fact]
+    public async Task NotifyContacts_RoundTripAndMustBelongToTheTenant()
+    {
+        var (tenantId, activation) = await SeedAsync();
+        var contactResponse = await PostAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/contacts",
+            new { name = "Ops", email = $"ops-{Guid.NewGuid():N}@acme.com" });
+        Assert.Equal(HttpStatusCode.Created, contactResponse.StatusCode);
+        var contact = (await ReadAsJsonAsync<Contact>(contactResponse))!;
+
+        var body = JsonSerializer.SerializeToNode(ChatCheck())!.AsObject();
+        body["notifyContactIds"] = new System.Text.Json.Nodes.JsonArray(contact.Id);
+        var check = await CreateCheckAsync(tenantId, activation.Id, body);
+        Assert.Equal([contact.Id], check.NotifyContactIds);
+
+        var fetched = await ReadAsJsonAsync<AgentHealthCheck>(await GetAsync($"{ChecksRoute(tenantId, activation.Id)}/{check.Id}"));
+        Assert.Equal([contact.Id], fetched!.NotifyContactIds);
+
+        // A well-formed id that isn't a contact of this tenant is rejected.
+        body["name"] = "unknown contact";
+        body["notifyContactIds"] = new System.Text.Json.Nodes.JsonArray(ObjectId.GenerateNewId().ToString());
+        var rejected = await PostAsJsonAsync(ChecksRoute(tenantId, activation.Id), body);
+        Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
+        Assert.Contains("notifyContactIds", await rejected.Content.ReadAsStringAsync());
+
+        // Replacing without the field clears the contacts.
+        var cleared = await PutAsJsonAsync($"{ChecksRoute(tenantId, activation.Id)}/{check.Id}", ChatCheck());
+        Assert.Equal(HttpStatusCode.OK, cleared.StatusCode);
+        Assert.Empty((await ReadAsJsonAsync<AgentHealthCheck>(cleared))!.NotifyContactIds);
+    }
+
+    [Fact]
     public async Task CreateScheduleCheck_ForUnknownSchedule_ReturnsBadRequest()
     {
         var (tenantId, activation) = await SeedAsync();

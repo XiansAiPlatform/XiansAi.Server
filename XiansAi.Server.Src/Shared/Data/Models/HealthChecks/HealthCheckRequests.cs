@@ -18,6 +18,12 @@ public class HealthCheckRequest
     public ChatHealthCheckRequest? Chat { get; set; }
     public WebhookHealthCheckRequest? Webhook { get; set; }
     public ScheduleHealthCheckRequest? Schedule { get; set; }
+
+    /// <summary>
+    /// Tenant contact ids to email when the check starts failing and when it recovers. Omit or send an
+    /// empty list for no notifications.
+    /// </summary>
+    public List<string>? NotifyContactIds { get; set; }
 }
 
 public class HealthCheckAssertionRequest
@@ -86,6 +92,7 @@ public static class HealthCheckLimits
     public const int MaxBodyLength = 32 * 1024;
     public const int MaxScheduleIdLength = 500;
     public const int MaxRunsPageSize = 100;
+    public const int MaxNotifyContacts = 10;
 }
 
 /// <summary>Overall health of an activation, derived from its checks' latest results.</summary>

@@ -324,4 +324,36 @@ public class HealthCheckValidatorTests
         var (_, error) = HealthCheckValidator.Validate(Chat(r => r.Name = "<script>"), Options);
         Assert.Contains("invalid characters", error);
     }
+
+    [Fact]
+    public void NotifyContactIds_AreTrimmedAndDeduplicated()
+    {
+        var (definition, error) = HealthCheckValidator.Validate(
+            Chat(r => r.NotifyContactIds = [" 66f000000000000000000010 ", "66f000000000000000000010", "66f000000000000000000011"]), Options);
+
+        Assert.Null(error);
+        Assert.Equal(["66f000000000000000000010", "66f000000000000000000011"], definition!.NotifyContactIds);
+    }
+
+    [Fact]
+    public void MissingNotifyContactIds_MeansNoNotifications()
+    {
+        var (definition, _) = HealthCheckValidator.Validate(Chat(), Options);
+        Assert.Empty(definition!.NotifyContactIds);
+    }
+
+    [Fact]
+    public void NotifyContactIds_MustBeIds()
+    {
+        var (_, error) = HealthCheckValidator.Validate(Chat(r => r.NotifyContactIds = ["ops@acme.com"]), Options);
+        Assert.Contains("notifyContactIds", error);
+    }
+
+    [Fact]
+    public void TooManyNotifyContacts_AreRejected()
+    {
+        var ids = Enumerable.Range(0, HealthCheckLimits.MaxNotifyContacts + 1).Select(i => $"66f0000000000000000000{i:D2}").ToList();
+        var (_, error) = HealthCheckValidator.Validate(Chat(r => r.NotifyContactIds = ids), Options);
+        Assert.Contains($"at most {HealthCheckLimits.MaxNotifyContacts}", error);
+    }
 }

@@ -17,6 +17,7 @@ public class HealthCheckRunnerTests
     private readonly Mock<IAgentHealthCheckRepository> _repository = new();
     private readonly Mock<IActivationRepository> _activations = new();
     private readonly Mock<IHealthCheckExecutor> _executor = new();
+    private readonly Mock<IHealthCheckNotifier> _notifier = new();
 
     public HealthCheckRunnerTests()
     {
@@ -24,7 +25,7 @@ public class HealthCheckRunnerTests
     }
 
     private HealthCheckRunner Runner() =>
-        new(_repository.Object, _activations.Object, [_executor.Object], NullLogger<HealthCheckRunner>.Instance);
+        new(_repository.Object, _activations.Object, [_executor.Object], _notifier.Object, NullLogger<HealthCheckRunner>.Instance);
 
     private static AgentHealthCheck Check(bool enabled = true, int timeoutSeconds = 10) => new()
     {
@@ -63,6 +64,7 @@ public class HealthCheckRunnerTests
         _repository.Verify(r => r.InsertRunAsync(It.IsAny<AgentHealthCheckRun>()), Times.Never);
         _repository.Verify(r => r.RecordRunResultAsync(It.IsAny<string>(), It.IsAny<HealthCheckStatus>(), It.IsAny<DateTime>(), It.IsAny<string?>()), Times.Never);
         _executor.Verify(e => e.ExecuteAsync(It.IsAny<AgentHealthCheck>(), It.IsAny<CancellationToken>()), Times.Never);
+        _notifier.Verify(n => n.NotifyAsync(It.IsAny<AgentHealthCheck>(), It.IsAny<AgentHealthCheckRun>()), Times.Never);
     }
 
     [Fact]
@@ -129,6 +131,23 @@ public class HealthCheckRunnerTests
         Assert.Equal("run-1", saved.WorkflowRunId);
         Assert.Single(saved.AssertionResults);
         _repository.Verify(r => r.RecordRunResultAsync(CheckId, HealthCheckStatus.Fail, saved.StartedAt, "Assertion failed"), Times.Once);
+    }
+
+    [Fact]
+    public async Task CompletedRun_HandsThePreRunCheckAndTheRunToTheNotifier()
+    {
+        var check = Check();
+        check.LastStatus = HealthCheckStatus.Pass;
+        Given(check, Activation());
+        _executor
+            .Setup(e => e.ExecuteAsync(It.IsAny<AgentHealthCheck>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(HealthCheckExecutionResult.Error("no worker"));
+
+        await Runner().RunAsync(TenantId, CheckId, null, CancellationToken.None);
+
+        _notifier.Verify(n => n.NotifyAsync(
+            It.Is<AgentHealthCheck>(c => c.Id == CheckId && c.LastStatus == HealthCheckStatus.Pass),
+            It.Is<AgentHealthCheckRun>(r => r.Status == HealthCheckStatus.Error && r.Detail == "no worker")), Times.Once);
     }
 
     [Fact]

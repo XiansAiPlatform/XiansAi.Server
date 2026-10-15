@@ -56,17 +56,20 @@ public class HealthCheckRunner : IHealthCheckRunner
     private readonly IAgentHealthCheckRepository _repository;
     private readonly IActivationRepository _activationRepository;
     private readonly IEnumerable<IHealthCheckExecutor> _executors;
+    private readonly IHealthCheckNotifier _notifier;
     private readonly ILogger<HealthCheckRunner> _logger;
 
     public HealthCheckRunner(
         IAgentHealthCheckRepository repository,
         IActivationRepository activationRepository,
         IEnumerable<IHealthCheckExecutor> executors,
+        IHealthCheckNotifier notifier,
         ILogger<HealthCheckRunner> logger)
     {
         _repository = repository;
         _activationRepository = activationRepository;
         _executors = executors;
+        _notifier = notifier;
         _logger = logger;
     }
 
@@ -96,7 +99,7 @@ public class HealthCheckRunner : IHealthCheckRunner
         stopwatch.Stop();
 
         var detail = Truncate(result.Detail, AgentHealthCheckRun.MaxDetailLength);
-        await _repository.InsertRunAsync(new AgentHealthCheckRun
+        var run = new AgentHealthCheckRun
         {
             TenantId = tenantId,
             CheckId = check.Id,
@@ -109,8 +112,12 @@ public class HealthCheckRunner : IHealthCheckRunner
             ResponseSnippet = result.ResponseSnippet,
             AssertionResults = result.AssertionResults?.ToList() ?? new(),
             WorkflowRunId = workflowRunId
-        });
+        };
+        await _repository.InsertRunAsync(run);
         await _repository.RecordRunResultAsync(check.Id, result.Status, startedAt, detail);
+
+        // `check` still holds the status from before this run, which is what the notifier compares against.
+        await _notifier.NotifyAsync(check, run);
 
         _logger.LogInformation("Health check {CheckId} ({Type}) for {Agent}/{Activation}: {Status} in {DurationMs}ms",
             LogSanitizer.Sanitize(check.Id), check.Type, LogSanitizer.Sanitize(check.AgentName),

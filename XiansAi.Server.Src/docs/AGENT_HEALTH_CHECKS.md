@@ -18,7 +18,7 @@ recording a pass/fail history that can be queried through the AdminApi.
 - Gating by a single new capability (R6)
 
 ### Out of scope
-- Alerting/notifications (Q1, follow-up issue). The design leaves a hook point for it (§9).
+- Alerting beyond email (Slack, Teams, webhooks). Email notifications to tenant contacts were added later (§9).
 - AgentStudio UI (Q5)
 - On-demand/synchronous triggering, regex or non-deterministic (LLM-judged) assertions
 
@@ -26,7 +26,7 @@ recording a pass/fail history that can be queried through the AdminApi.
 
 | # | Decision | Effect on design |
 |---|---|---|
-| Q1 | Health status and history only, no alerts | Results are stored and summarized; nothing is emitted |
+| Q1 | Health status and history only, no alerts | Results are stored and summarized; nothing is emitted. Later extended with email notifications to tenant contacts (§9) |
 | Q2 | Webhook test uses the inbound trigger path | Runs `IWebhookReceiverService.ProcessWebhook` (Temporal update-with-start), not `WebhookDispatcherService` |
 | Q3 | Schedule test is a metadata check | Reads `IScheduleService`; never triggers a run |
 | Q4 | Tests attach to an `AgentActivation` | Definitions are keyed by `activationId` and inherit tenant/agent/activation name from it |
@@ -168,6 +168,7 @@ gets `scheduleState = "pending"`, and the reconciler fixes it. We don't need a d
                                 { "op": "headerExists", "path": "X-Request-Id" } ] },
   "schedule": { "schedule_id": "acme:Support Agent:…",
                 "require_last_run_success": true },
+  "notify_contact_ids": ["66f…"],   // tenant contacts emailed on failing/recovered (§9); <= 10
 
   // denormalized health (written by the activity)
   "last_run_at": ISODate, "last_status": "pass" | "fail" | "error" | null,
@@ -305,7 +306,7 @@ Tenant-wide monitor view (same capability):
 Other rules:
 - An activation that belongs to a different tenant returns `404`, not `403`, matching `ActivationService`.
 - Mutations emit audit and domain events through `DomainEventEmitter`: `HealthCheckCreated`, `HealthCheckUpdated`,
-  `HealthCheckDeleted`. **Run results do not emit events.** That's the alerting follow-up's job (Q1).
+  `HealthCheckDeleted`. **Run results do not emit events.** Contacts are emailed instead (§9).
 - With `HealthChecks:Enabled=false`, `POST` and `PUT` return `503`. Reads and deletes keep working.
 - API docs come from the endpoint metadata (summaries, descriptions, response types) through Swashbuckle. The
   hand-written `wwwroot/api-docs/*.yaml` files are not served and don't cover activations, so they weren't extended.
@@ -350,12 +351,30 @@ Run-history retention is not in this section. It uses the TTL index override des
 | Tenant on a dedicated cluster that's unreachable | Executor records `error` with the connection message. Doesn't affect other tenants |
 | Platform Temporal unavailable at create time | Check saved as `schedule_state = pending`, reconciler creates the schedule later |
 
-## 9. Hook for the alerting follow-up
+## 9. Email notifications
 
-The runner's last step (`HealthCheckRunner` → `RecordRunResultAsync`) is where the previous status (`lastStatus` on the
-check, read at the start of the run) meets the new one, together with `consecutiveFailures`. This feature only stores
-them. The follow-up can detect transitions there (`pass → fail/error`, `fail → pass`, or N consecutive failures) and
-publish a `HealthCheckStatusChanged` domain event through `WebhookEventPublisher` / notifications, with no schema change.
+Each check can name up to 10 of the tenant's contacts (Tenant Settings → Contacts, `contacts` collection) in
+`notifyContactIds`. The service rejects ids that aren't contacts of the check's tenant (`400`). Omitting the field, or
+sending `[]`, means nobody is notified.
+
+After the runner records a run, `HealthCheckNotifier` compares the check's status from **before** the run with the new
+one (`HealthCheckNotificationPolicy`):
+
+| Before | This run | Email |
+|---|---|---|
+| `pass` or never run | `fail` / `error` | **Eval failing**: result, type, time, detail, response snippet |
+| `fail` / `error` | `pass` | **Eval recovered**: how many runs failed in a row |
+| `fail` / `error` | `fail` / `error` | None (still broken; fail ↔ error is not a change) |
+| `pass` or never run | `pass` | None |
+
+- Only state changes are emailed, so a check that stays broken doesn't send an email every interval.
+- Mail goes through `IEmailService` (tenant SMTP, else the server default). With email off, nothing is sent and it's
+  logged.
+- Each contact gets their own email, so recipients don't see each other's addresses.
+- Contacts deleted after the check was saved are skipped. AgentStudio also drops them from the form on the next save.
+- Notification problems (contact lookup, SMTP) are logged and never affect the recorded run.
+
+Other channels (Slack, Teams, outbound webhooks) could hook in at the same point.
 
 ## 10. Where the code lives
 
@@ -370,15 +389,16 @@ publish a `HealthCheckStatusChanged` domain event through `WebhookEventPublisher
 | CRUD service and activation hooks | `Shared/Services/HealthChecks/AgentHealthCheckService.cs`, called from `ActivationService` |
 | Endpoints and registration | `Features/AdminApi/Endpoints/AdminHealthCheckEndpoints.cs`, `AdminApiConfiguration.AddHealthCheckServices` |
 | Capability and domain events | `CapabilityActions.TenantHealthChecksManage`, `DomainEventTypes.HealthCheck*` |
+| Email notifications | `Shared/Services/HealthChecks/HealthCheckNotifier.cs` (policy + notifier), called from `HealthCheckRunner` |
 | Webhook timeout pass-through | `IWebhookReceiverService.ProcessWebhook(..., timeout, cancellationToken)` (optional parameters, non-breaking) |
 
 Tests (`XiansAi.Server.Tests`):
 - Unit (`UnitTests/Shared/Services/HealthChecks/`): validator, assertion evaluator, each executor's pass/fail/error
   mapping, runner skip/record/timeout/exception paths, the system principal, summary derivation, schedule ids and
-  jitter, reconciler.
+  jitter, reconciler, notification policy and notifier.
 - Integration (`AdminHealthCheckEndpointsTests`, Mongo with an in-memory fake scheduler): CRUD, validation, duplicate
   name, `403` without the capability, cross-tenant `404`, deactivate pauses, activation delete removes checks, runs
-  paging/filtering, summary, tenant-wide filter.
+  paging/filtering, summary, tenant-wide filter, notify contacts (round trip, other-tenant id rejected).
 - Temporal (`AdminApiTemporalHealthCheckSchedulerTests`, local Temporal dev server): the real scheduler (create, update,
   pause, list, idempotent delete), plus end to end: a schedule check created over the API is triggered in Temporal, run by
   the server's own worker, and recorded as `pass`.
