@@ -26,7 +26,7 @@ public interface IAuditLogRepository
     Task<(IEnumerable<AuditLogEntry> entries, long totalCount)> GetFilteredAsync(
         string tenantId,
         string? performedBy = null,
-        string? action = null,
+        IReadOnlyCollection<string>? actions = null,
         string? activationName = null,
         bool onlyWithoutActivation = false,
         DateTime? startTime = null,
@@ -101,7 +101,7 @@ public class AuditLogRepository : IAuditLogRepository
     public async Task<(IEnumerable<AuditLogEntry> entries, long totalCount)> GetFilteredAsync(
         string tenantId,
         string? performedBy = null,
-        string? action = null,
+        IReadOnlyCollection<string>? actions = null,
         string? activationName = null,
         bool onlyWithoutActivation = false,
         DateTime? startTime = null,
@@ -116,9 +116,11 @@ public class AuditLogRepository : IAuditLogRepository
             filter &= Builders<AuditLogEntry>.Filter.Eq(x => x.ParticipantId, performedBy);
         }
 
-        if (!string.IsNullOrWhiteSpace(action))
+        if (actions is { Count: > 0 })
         {
-            filter &= Builders<AuditLogEntry>.Filter.Eq(x => x.Action, action);
+            filter &= actions.Count == 1
+                ? Builders<AuditLogEntry>.Filter.Eq(x => x.Action, actions.First())
+                : Builders<AuditLogEntry>.Filter.In(x => x.Action, actions);
         }
 
         if (onlyWithoutActivation)
