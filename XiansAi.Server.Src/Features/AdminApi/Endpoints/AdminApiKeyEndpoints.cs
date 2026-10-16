@@ -351,52 +351,56 @@ public static class AdminApiKeyEndpoints
         if (!TenantRouteMatchesContext(ctx, tenantId, loggerFactory, out var forbid))
             return (null, forbid);
 
-        var owner = await service.ResolveOwnerAsync(userId);
+        if (IsSysAdmin(ctx))
+            return (await service.ResolveOwnerAsync(userId), null);
 
-        // Matched against the resolved id too, so callers that name themselves by email are not refused.
-        if (!CanActOnBehalfOf(ctx, new[] { owner.UserId, userId }, loggerFactory, out forbid))
-            return (null, forbid);
+        // Other callers may only name themselves, so the lookup is of the caller and never of the
+        // supplied value: resolving that would let them probe, by timing, which accounts exist.
+        var callerUserId = ctx.LoggedInUser;
+        if (!string.IsNullOrEmpty(callerUserId))
+        {
+            var self = await service.ResolveOwnerAsync(callerUserId);
+            if (self.IsNamedBy(userId))
+                return (self, null);
+        }
 
-        return (owner, null);
+        return (null, DenyActingOnBehalfOf(ctx, userId, loggerFactory));
     }
 
+    private static bool IsSysAdmin(ITenantContext ctx) =>
+        ctx.UserRoles?.Contains(SystemRoles.SysAdmin) == true;
+
+    /// <summary>
+    /// Verifies that the caller is allowed to act on behalf of <paramref name="targetUserId"/>.
+    /// SysAdmins may target any user. All other callers may only target themselves.
+    /// Returns false with a 403 result via <paramref name="forbid"/> when access is denied.
+    /// </summary>
     private static bool CanActOnBehalfOf(
         ITenantContext ctx,
         string targetUserId,
         ILoggerFactory loggerFactory,
-        out IResult forbid) =>
-        CanActOnBehalfOf(ctx, new[] { targetUserId }, loggerFactory, out forbid);
-
-    /// <summary>
-    /// Verifies that the caller is allowed to act on behalf of the target user, named by any of
-    /// <paramref name="targetUserIds"/>. SysAdmins may target any user. All other callers may only
-    /// target themselves. Returns false with a 403 result via <paramref name="forbid"/> when access is denied.
-    /// </summary>
-    private static bool CanActOnBehalfOf(
-        ITenantContext ctx,
-        IReadOnlyList<string> targetUserIds,
-        ILoggerFactory loggerFactory,
         out IResult forbid)
     {
-        var isSysAdmin = ctx.UserRoles?.Contains(SystemRoles.SysAdmin) == true;
-        var callerUserId = ctx.LoggedInUser ?? string.Empty;
-        var targetsSelf = !string.IsNullOrEmpty(callerUserId) && targetUserIds.Any(target =>
-            string.Equals(callerUserId, target, StringComparison.OrdinalIgnoreCase));
-
-        if (isSysAdmin || targetsSelf)
+        if (IsSysAdmin(ctx) ||
+            string.Equals(ctx.LoggedInUser ?? string.Empty, targetUserId, StringComparison.OrdinalIgnoreCase))
         {
             forbid = Results.Empty;
             return true;
         }
 
+        forbid = DenyActingOnBehalfOf(ctx, targetUserId, loggerFactory);
+        return false;
+    }
+
+    private static IResult DenyActingOnBehalfOf(ITenantContext ctx, string targetUserId, ILoggerFactory loggerFactory)
+    {
         loggerFactory.CreateLogger("AdminApiKeyEndpoints").LogWarning(
             "Caller {CallerUserId} attempted to act on behalf of {TargetUserId} without SysAdmin role",
-            LogSanitizer.Sanitize(callerUserId),
-            LogSanitizer.Sanitize(targetUserIds[0]));
+            LogSanitizer.Sanitize(ctx.LoggedInUser ?? string.Empty),
+            LogSanitizer.Sanitize(targetUserId));
 
-        forbid = Results.Json(
+        return Results.Json(
             new { message = "Access denied: only SysAdmins can manage keys for other users." },
             statusCode: StatusCodes.Status403Forbidden);
-        return false;
     }
 }

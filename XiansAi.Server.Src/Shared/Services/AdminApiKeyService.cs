@@ -17,10 +17,22 @@ namespace Shared.Services;
 /// Every <c>created_by</c> value that counts as this account: the user id, plus the account's email when
 /// no other account holds it, since keys created before <c>created_by</c> stored the user id hold the email.
 /// </param>
-public sealed record ApiKeyOwner(string UserId, IReadOnlyList<string> OwnedKeyCreators)
+/// <param name="Email">The account's email, or null when no account matched.</param>
+public sealed record ApiKeyOwner(string UserId, IReadOnlyList<string> OwnedKeyCreators, string? Email = null)
 {
     public bool Owns(ApiKey key) =>
         OwnedKeyCreators.Any(creator => string.Equals(creator, key.CreatedBy, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Whether <paramref name="userIdOrEmail"/> names this account, by user id or email.</summary>
+    public bool IsNamedBy(string? userIdOrEmail)
+    {
+        var value = userIdOrEmail?.Trim();
+        if (string.IsNullOrEmpty(value))
+            return false;
+
+        return string.Equals(value, UserId, StringComparison.OrdinalIgnoreCase) ||
+               (!string.IsNullOrWhiteSpace(Email) && string.Equals(value, Email, StringComparison.OrdinalIgnoreCase));
+    }
 }
 
 /// <summary>
@@ -83,7 +95,7 @@ public class AdminApiKeyService : IAdminApiKeyService
             creators.Add(user.Email);
         }
 
-        return new ApiKeyOwner(user.UserId, creators);
+        return new ApiKeyOwner(user.UserId, creators, user.Email);
     }
 
     /// <summary>

@@ -79,6 +79,20 @@ public class AdminApiKeyServiceOwnerTests
         Assert.Equal(new[] { "removed-user" }, owner.OwnedKeyCreators);
     }
 
+    [Theory]
+    [InlineData(UserId, true)]
+    [InlineData("ADMIN@example.com", true)]
+    [InlineData("someone-else@example.com", false)]
+    [InlineData("", false)]
+    public async Task IsNamedBy_MatchesTheUserIdOrEmail_CaseInsensitively(string value, bool expected)
+    {
+        AccountExists(UserId, Email);
+
+        var owner = await BuildService().ResolveOwnerAsync(UserId);
+
+        Assert.Equal(expected, owner.IsNamedBy(value));
+    }
+
     [Fact]
     public async Task CreateApiKeyAsync_StoresTheResolvedUserId_NotTheEmail()
     {
