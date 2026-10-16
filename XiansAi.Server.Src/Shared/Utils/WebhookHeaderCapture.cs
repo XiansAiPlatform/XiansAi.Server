@@ -8,15 +8,29 @@ namespace Shared.Utils;
 /// </summary>
 public static class WebhookHeaderCapture
 {
+    private static readonly HashSet<string> SensitiveHeaders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "Authorization",
+        "Cookie",
+        "Proxy-Authorization",
+        "Set-Cookie",
+        "X-Api-Key"
+    };
+
     /// <summary>
     /// Returns captured headers, or null if none captured.
     /// </summary>
-    public static Dictionary<string, string>? Capture(IHeaderDictionary requestHeaders)
+    public static Dictionary<string, string>? Capture(
+        IHeaderDictionary requestHeaders,
+        bool excludeSensitive = false)
     {
         var result = new Dictionary<string, string>(StringComparer.Ordinal);
 
         foreach (var header in requestHeaders)
         {
+            if (excludeSensitive && IsSensitive(header.Key))
+                continue;
+
             var value = GetFirstNonEmpty(header.Value);
             if (value is null)
                 continue;
@@ -37,4 +51,15 @@ public static class WebhookHeaderCapture
 
         return null;
     }
+
+    private static bool IsSensitive(string name) =>
+        SensitiveHeaders.Contains(name) ||
+        name.Contains("token", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("secret", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("password", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("signature", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("credential", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("apikey", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("api-key", StringComparison.OrdinalIgnoreCase) ||
+        name.Contains("api_key", StringComparison.OrdinalIgnoreCase);
 }
