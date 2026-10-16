@@ -36,6 +36,7 @@ public static class AdminLogsEndpoints
             [FromQuery] string? logLevel,
             [FromQuery] DateTime? startDate,
             [FromQuery] DateTime? endDate,
+            [FromQuery] string? search,
             [FromQuery] int? pageSize,
             [FromQuery] int? page,
             [FromServices] IAdminLogsService logsService) =>
@@ -52,6 +53,7 @@ public static class AdminLogsEndpoints
                 logLevels,
                 startDate,
                 endDate,
+                search,
                 page ?? DefaultPage,
                 pageSize ?? DefaultPageSize);
 
@@ -77,6 +79,7 @@ public static class AdminLogsEndpoints
             [FromQuery] string? logLevel,
             [FromQuery] DateTime? startDate,
             [FromQuery] DateTime? endDate,
+            [FromQuery] string? search,
             [FromQuery] int? pageSize,
             [FromQuery] int? page,
             [FromServices] IAdminLogsService logsService) =>
@@ -95,6 +98,7 @@ public static class AdminLogsEndpoints
                 logLevels,
                 startDate,
                 endDate,
+                search,
                 page ?? DefaultPage,
                 pageSize ?? DefaultPageSize);
 

@@ -445,7 +445,9 @@ public abstract class AdminApiIntegrationTestBase : WebApiIntegrationTestBase
         string agentName,
         string activationName,
         string workflowId,
-        string message = "admin integration log")
+        string message = "admin integration log",
+        Dictionary<string, object>? properties = null,
+        LogLevel level = LogLevel.Information)
     {
         using var scope = _factory.Services.CreateScope();
         var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
@@ -457,8 +459,9 @@ public abstract class AdminApiIntegrationTestBase : WebApiIntegrationTestBase
             Id = ObjectId.GenerateNewId().ToString(),
             TenantId = tenantId,
             CreatedAt = DateTime.UtcNow,
-            Level = LogLevel.Information,
+            Level = level,
             Message = message,
+            Properties = properties,
             WorkflowId = workflowId,
             WorkflowRunId = ObjectId.GenerateNewId().ToString(),
             WorkflowType = $"{agentName}:Chat",
