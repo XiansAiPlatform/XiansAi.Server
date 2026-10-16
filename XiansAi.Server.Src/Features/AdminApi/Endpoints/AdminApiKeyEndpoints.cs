@@ -18,9 +18,11 @@ namespace Features.AdminApi.Endpoints;
 ///
 ///   Admin API Keys      — Named, revocable/rotatable tokens for programmatic API access.
 ///                         Managed at: /tenants/{tenantId}/admin-apikeys
-///                         Scoped by:  <c>api_keys.created_by</c>
+///                         Scoped by:  <c>api_keys.created_by</c>, which new keys set to the owner's
+///                                     user id; older keys may hold the owner's email instead.
 ///
 /// Every endpoint accepts a <c>userId</c> query parameter that identifies the target user.
+/// Admin API key endpoints accept either the user id or the email.
 /// SysAdmins may supply any userId; other callers may only supply their own.
 /// </summary>
 public static class AdminApiKeyEndpoints
@@ -159,12 +161,11 @@ public static class AdminApiKeyEndpoints
             [FromServices] IAdminApiKeyService service,
             [FromServices] ILoggerFactory loggerFactory) =>
         {
-            if (!TenantRouteMatchesContext(tenantContext, tenantId, loggerFactory, out var forbid))
-                return forbid;
-            if (!CanActOnBehalfOf(tenantContext, userId, loggerFactory, out forbid))
-                return forbid;
+            var (owner, forbid) = await AuthorizeKeyOwnerAsync(tenantContext, tenantId, userId, service, loggerFactory);
+            if (owner == null)
+                return forbid!;
 
-            var result = await service.CreateApiKeyAsync(tenantId, body.Name, userId);
+            var result = await service.CreateApiKeyAsync(tenantId, body.Name, owner);
             if (result.IsSuccess)
             {
                 var (apiKey, meta) = result.Data;
@@ -196,12 +197,11 @@ public static class AdminApiKeyEndpoints
             [FromServices] IAdminApiKeyService service,
             [FromServices] ILoggerFactory loggerFactory) =>
         {
-            if (!TenantRouteMatchesContext(tenantContext, tenantId, loggerFactory, out var forbid))
-                return forbid;
-            if (!CanActOnBehalfOf(tenantContext, userId, loggerFactory, out forbid))
-                return forbid;
+            var (owner, forbid) = await AuthorizeKeyOwnerAsync(tenantContext, tenantId, userId, service, loggerFactory);
+            if (owner == null)
+                return forbid!;
 
-            var result = await service.ListApiKeysAsync(tenantId, userId);
+            var result = await service.ListApiKeysAsync(tenantId, owner);
             if (!result.IsSuccess)
                 return result.ToHttpResult();
 
@@ -231,12 +231,11 @@ public static class AdminApiKeyEndpoints
             [FromServices] IAdminApiKeyService service,
             [FromServices] ILoggerFactory loggerFactory) =>
         {
-            if (!TenantRouteMatchesContext(tenantContext, tenantId, loggerFactory, out var forbid))
-                return forbid;
-            if (!CanActOnBehalfOf(tenantContext, userId, loggerFactory, out forbid))
-                return forbid;
+            var (owner, forbid) = await AuthorizeKeyOwnerAsync(tenantContext, tenantId, userId, service, loggerFactory);
+            if (owner == null)
+                return forbid!;
 
-            var result = await service.GetApiKeyAsync(id, tenantId, userId);
+            var result = await service.GetApiKeyAsync(id, tenantId, owner);
             if (!result.IsSuccess || result.Data == null)
                 return result.ToHttpResult();
 
@@ -257,12 +256,11 @@ public static class AdminApiKeyEndpoints
             [FromServices] IAdminApiKeyService service,
             [FromServices] ILoggerFactory loggerFactory) =>
         {
-            if (!TenantRouteMatchesContext(tenantContext, tenantId, loggerFactory, out var forbid))
-                return forbid;
-            if (!CanActOnBehalfOf(tenantContext, userId, loggerFactory, out forbid))
-                return forbid;
+            var (owner, forbid) = await AuthorizeKeyOwnerAsync(tenantContext, tenantId, userId, service, loggerFactory);
+            if (owner == null)
+                return forbid!;
 
-            var result = await service.RevokeApiKeyAsync(id, tenantId, userId);
+            var result = await service.RevokeApiKeyAsync(id, tenantId, owner);
             return result.IsSuccess ? Results.Ok() : result.ToHttpResult();
         })
         .WithName("AdminApiKey_Revoke")
@@ -279,12 +277,11 @@ public static class AdminApiKeyEndpoints
             [FromServices] IAdminApiKeyService service,
             [FromServices] ILoggerFactory loggerFactory) =>
         {
-            if (!TenantRouteMatchesContext(tenantContext, tenantId, loggerFactory, out var forbid))
-                return forbid;
-            if (!CanActOnBehalfOf(tenantContext, userId, loggerFactory, out forbid))
-                return forbid;
+            var (owner, forbid) = await AuthorizeKeyOwnerAsync(tenantContext, tenantId, userId, service, loggerFactory);
+            if (owner == null)
+                return forbid!;
 
-            var result = await service.RotateApiKeyAsync(id, tenantId, userId);
+            var result = await service.RotateApiKeyAsync(id, tenantId, owner);
             if (result.IsSuccess && result.Data != null)
             {
                 var (apiKey, meta) = result.Data.Value;
@@ -340,20 +337,53 @@ public static class AdminApiKeyEndpoints
     }
 
     /// <summary>
-    /// Verifies that the caller is allowed to act on behalf of <paramref name="targetUserId"/>.
-    /// SysAdmins may target any user. All other callers may only target themselves.
-    /// Returns false with a 403 result via <paramref name="forbid"/> when access is denied.
+    /// Checks the tenant route, resolves <paramref name="userId"/> (a user id or email) to the key
+    /// owner, and verifies the caller may manage that owner's keys. Returns the owner, or null with
+    /// the 403 to return.
     /// </summary>
+    private static async Task<(ApiKeyOwner? owner, IResult? forbid)> AuthorizeKeyOwnerAsync(
+        ITenantContext ctx,
+        string tenantId,
+        string userId,
+        IAdminApiKeyService service,
+        ILoggerFactory loggerFactory)
+    {
+        if (!TenantRouteMatchesContext(ctx, tenantId, loggerFactory, out var forbid))
+            return (null, forbid);
+
+        var owner = await service.ResolveOwnerAsync(userId);
+
+        // Matched against the resolved id too, so callers that name themselves by email are not refused.
+        if (!CanActOnBehalfOf(ctx, new[] { owner.UserId, userId }, loggerFactory, out forbid))
+            return (null, forbid);
+
+        return (owner, null);
+    }
+
     private static bool CanActOnBehalfOf(
         ITenantContext ctx,
         string targetUserId,
+        ILoggerFactory loggerFactory,
+        out IResult forbid) =>
+        CanActOnBehalfOf(ctx, new[] { targetUserId }, loggerFactory, out forbid);
+
+    /// <summary>
+    /// Verifies that the caller is allowed to act on behalf of the target user, named by any of
+    /// <paramref name="targetUserIds"/>. SysAdmins may target any user. All other callers may only
+    /// target themselves. Returns false with a 403 result via <paramref name="forbid"/> when access is denied.
+    /// </summary>
+    private static bool CanActOnBehalfOf(
+        ITenantContext ctx,
+        IReadOnlyList<string> targetUserIds,
         ILoggerFactory loggerFactory,
         out IResult forbid)
     {
         var isSysAdmin = ctx.UserRoles?.Contains(SystemRoles.SysAdmin) == true;
         var callerUserId = ctx.LoggedInUser ?? string.Empty;
+        var targetsSelf = !string.IsNullOrEmpty(callerUserId) && targetUserIds.Any(target =>
+            string.Equals(callerUserId, target, StringComparison.OrdinalIgnoreCase));
 
-        if (isSysAdmin || string.Equals(callerUserId, targetUserId, StringComparison.OrdinalIgnoreCase))
+        if (isSysAdmin || targetsSelf)
         {
             forbid = Results.Empty;
             return true;
@@ -362,7 +392,7 @@ public static class AdminApiKeyEndpoints
         loggerFactory.CreateLogger("AdminApiKeyEndpoints").LogWarning(
             "Caller {CallerUserId} attempted to act on behalf of {TargetUserId} without SysAdmin role",
             LogSanitizer.Sanitize(callerUserId),
-            LogSanitizer.Sanitize(targetUserId));
+            LogSanitizer.Sanitize(targetUserIds[0]));
 
         forbid = Results.Json(
             new { message = "Access denied: only SysAdmins can manage keys for other users." },
