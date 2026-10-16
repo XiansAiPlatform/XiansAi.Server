@@ -1,4 +1,6 @@
+using System.Text.RegularExpressions;
 using Features.WebApi.Models;
+using MongoDB.Bson;
 using MongoDB.Driver;
 using Shared.Data;
 
@@ -42,6 +44,7 @@ public interface ILogRepository
         LogLevel[]? logLevels,
         DateTime? startDate,
         DateTime? endDate,
+        string? search,
         int page = 1,
         int pageSize = 20);
 
@@ -54,6 +57,7 @@ public interface ILogRepository
         LogLevel[]? logLevels,
         DateTime? startDate,
         DateTime? endDate,
+        string? search,
         int page = 1,
         int pageSize = 20);
 
@@ -354,6 +358,7 @@ public class LogRepository : ILogRepository
         LogLevel[]? logLevels,
         DateTime? startDate,
         DateTime? endDate,
+        string? search,
         int page = 1,
         int pageSize = 20)
     {
@@ -366,7 +371,8 @@ public class LogRepository : ILogRepository
             workflowType,
             logLevels,
             startDate,
-            endDate);
+            endDate,
+            search);
 
         var totalCount = await _logs.CountDocumentsAsync(filter);
         var logs = await _logs.Find(filter)
@@ -393,6 +399,7 @@ public class LogRepository : ILogRepository
         LogLevel[]? logLevels,
         DateTime? startDate,
         DateTime? endDate,
+        string? search,
         int page = 1,
         int pageSize = 20)
     {
@@ -405,7 +412,8 @@ public class LogRepository : ILogRepository
             workflowType,
             logLevels,
             startDate,
-            endDate);
+            endDate,
+            search);
 
         // Exclude logs without a workflow_id - they cannot form a stream.
         filter &= Builders<Log>.Filter.Ne(x => x.WorkflowId, null) &
@@ -458,7 +466,8 @@ public class LogRepository : ILogRepository
         string? workflowType,
         LogLevel[]? logLevels,
         DateTime? startDate,
-        DateTime? endDate)
+        DateTime? endDate,
+        string? search)
     {
         var filter = Builders<Log>.Filter.Eq(x => x.TenantId, tenantId);
 
@@ -504,7 +513,50 @@ public class LogRepository : ILogRepository
             filter &= Builders<Log>.Filter.Lte(x => x.CreatedAt, endDate.Value);
         }
 
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            filter &= BuildSearchFilter(search.Trim());
+        }
+
         return filter;
+    }
+
+    /// <summary>
+    /// Case-insensitive "contains" match on the log message or any top-level property value
+    /// (e.g. an invoice number). The term is escaped so it is always matched as plain text.
+    /// </summary>
+    private static FilterDefinition<Log> BuildSearchFilter(string search)
+    {
+        var pattern = Regex.Escape(search);
+
+        var messageMatch = Builders<Log>.Filter.Regex(x => x.Message, new BsonRegularExpression(pattern, "i"));
+
+        // Properties have arbitrary keys, so check every value. Values that can't be converted
+        // to a string (nested objects, arrays) are skipped.
+        var propertyValueAsString = new BsonDocument("$convert", new BsonDocument
+        {
+            { "input", "$$this.v" },
+            { "to", "string" },
+            { "onError", "" },
+            { "onNull", "" }
+        });
+
+        var propertiesMatch = new BsonDocument("$expr", new BsonDocument("$anyElementTrue", new BsonArray
+        {
+            new BsonDocument("$map", new BsonDocument
+            {
+                { "input", new BsonDocument("$objectToArray", new BsonDocument("$ifNull", new BsonArray { "$properties", new BsonDocument() })) },
+                { "in", new BsonDocument("$regexMatch", new BsonDocument
+                    {
+                        { "input", propertyValueAsString },
+                        { "regex", pattern },
+                        { "options", "i" }
+                    })
+                }
+            })
+        }));
+
+        return messageMatch | propertiesMatch;
     }
 
     public async Task<long> DeleteByAgentAndActivationAsync(string tenantId, string agentName, string activationName)
@@ -518,7 +570,8 @@ public class LogRepository : ILogRepository
             workflowType: null,
             logLevels: null,
             startDate: null,
-            endDate: null);
+            endDate: null,
+            search: null);
 
         var result = await _logs.DeleteManyAsync(filter);
         return result.DeletedCount;
