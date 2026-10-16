@@ -328,7 +328,7 @@ public static class AdminApiKeyEndpoints
             "Tenant route {RouteTenant} does not match resolved tenant context {CtxTenant}. Caller: {UserId}",
             LogSanitizer.Sanitize(tenantIdFromRoute),
             LogSanitizer.Sanitize(ctx.TenantId),
-            LogSanitizer.Sanitize(ctx.LoggedInUser));
+            LogSanitizer.RedactUserId(ctx.LoggedInUser));
 
         forbid = Results.Json(
             new { message = "Tenant scope mismatch" },
@@ -396,8 +396,8 @@ public static class AdminApiKeyEndpoints
     {
         loggerFactory.CreateLogger("AdminApiKeyEndpoints").LogWarning(
             "Caller {CallerUserId} attempted to act on behalf of {TargetUserId} without SysAdmin role",
-            LogSanitizer.Sanitize(ctx.LoggedInUser ?? string.Empty),
-            LogSanitizer.Sanitize(targetUserId));
+            LogSanitizer.RedactUserId(ctx.LoggedInUser),
+            LogSanitizer.RedactUserId(targetUserId));
 
         return Results.Json(
             new { message = "Access denied: only SysAdmins can manage keys for other users." },
