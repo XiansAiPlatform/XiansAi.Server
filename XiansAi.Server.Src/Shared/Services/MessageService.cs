@@ -836,7 +836,7 @@ public class MessageService : IMessageService
             }
             else
             {
-                cutoff = timestamp.Value;
+                cutoff = timestamp!.Value;
             }
 
             // Two separate queries, so the count is a snapshot taken after the update, not atomic with it.
