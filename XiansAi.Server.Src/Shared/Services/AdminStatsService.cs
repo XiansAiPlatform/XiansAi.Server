@@ -212,6 +212,12 @@ public class AdminStatsService : IAdminStatsService
         {
             return ServiceResult<UserUsageStatsResponse>.BadRequest("EndDate is out of range");
         }
+
+        // Bounds the Temporal task scan, which lists every task in the range.
+        if (to > from.AddYears(1))
+        {
+            return ServiceResult<UserUsageStatsResponse>.BadRequest("Date range cannot exceed 1 year");
+        }
         var toExclusive = to.AddDays(1);
 
         try
