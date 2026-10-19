@@ -26,7 +26,7 @@ public static class TenantLogoHelper
     /// base64 data is removed. Use this when the tenant itself is sent back in the response. If the
     /// tenant comes from a cache or is shared, pass a copy so the original is not changed.
     /// </summary>
-    public static void ApplyLogoUrl(Tenant? tenant, HttpContext httpContext, LinkGenerator linkGenerator)
+    public static void ApplyImageUrls(Tenant? tenant, HttpContext httpContext, LinkGenerator linkGenerator)
     {
         if (tenant == null)
         {

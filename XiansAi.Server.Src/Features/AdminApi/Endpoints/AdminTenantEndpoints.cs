@@ -47,7 +47,7 @@ public static class AdminTenantEndpoints
             {
                 foreach (var tenant in result.Data.Tenants)
                 {
-                    TenantLogoHelper.ApplyLogoUrl(tenant, httpContext, linkGenerator);
+                    TenantLogoHelper.ApplyImageUrls(tenant, httpContext, linkGenerator);
                 }
             }
             return result.ToHttpResult();
@@ -72,7 +72,7 @@ public static class AdminTenantEndpoints
             var result = await tenantService.GetTenantByTenantId(tenantId, httpContext.RequestAborted, bypassCache);
             if (result.IsSuccess)
             {
-                TenantLogoHelper.ApplyLogoUrl(result.Data, httpContext, linkGenerator);
+                TenantLogoHelper.ApplyImageUrls(result.Data, httpContext, linkGenerator);
             }
             return result.ToHttpResult();
         })
@@ -278,7 +278,7 @@ public static class AdminTenantEndpoints
             var result = await tenantService.UpdateTenantLogo(tenantResult.Data.Id, request);
             if (result.IsSuccess)
             {
-                TenantLogoHelper.ApplyLogoUrl(result.Data, httpContext, linkGenerator);
+                TenantLogoHelper.ApplyImageUrls(result.Data, httpContext, linkGenerator);
             }
             return result.ToHttpResult();
         })
@@ -325,7 +325,7 @@ public static class AdminTenantEndpoints
             var result = await tenantService.UpdateTenantFavicon(tenantResult.Data.Id, request);
             if (result.IsSuccess)
             {
-                TenantLogoHelper.ApplyLogoUrl(result.Data, httpContext, linkGenerator);
+                TenantLogoHelper.ApplyImageUrls(result.Data, httpContext, linkGenerator);
             }
             return result.ToHttpResult();
         })
@@ -350,7 +350,7 @@ public static class AdminTenantEndpoints
             var result = await tenantService.UpdateTenantFavicon(tenantResult.Data.Id, null);
             if (result.IsSuccess)
             {
-                TenantLogoHelper.ApplyLogoUrl(result.Data, httpContext, linkGenerator);
+                TenantLogoHelper.ApplyImageUrls(result.Data, httpContext, linkGenerator);
             }
             return result.ToHttpResult();
         })
@@ -372,7 +372,7 @@ public static class AdminTenantEndpoints
             var result = await tenantService.CreateTenant(request, createdBy);
             if (result.IsSuccess && result.Data != null)
             {
-                TenantLogoHelper.ApplyLogoUrl(result.Data.Tenant, httpContext, linkGenerator);
+                TenantLogoHelper.ApplyImageUrls(result.Data.Tenant, httpContext, linkGenerator);
             }
             return result.ToHttpResult();
         })
@@ -402,7 +402,7 @@ public static class AdminTenantEndpoints
             var result = await tenantService.UpdateTenant(tenantResult.Data.Id, request);
             if (result.IsSuccess)
             {
-                TenantLogoHelper.ApplyLogoUrl(result.Data, httpContext, linkGenerator);
+                TenantLogoHelper.ApplyImageUrls(result.Data, httpContext, linkGenerator);
             }
             return result.ToHttpResult();
         })
