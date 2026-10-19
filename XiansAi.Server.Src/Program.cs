@@ -1,9 +1,12 @@
+using System.Net.Sockets;
 using DotNetEnv;
 using Features.AgentApi.Configuration;
+using MongoDB.Driver;
 using Features.Shared.Configuration;
 using Features.WebApi.Configuration;
 using Features.WebApi.Auth;
 using Shared.Data;
+using Shared.Repositories;
 using Features.WebApi.Scripts;
 using Features.UserApi.Configuration;
 using Features.AdminApi.Configuration;
@@ -279,10 +282,36 @@ public class Program
         var indexSynchronizer = scope.ServiceProvider.GetRequiredService<IMongoIndexSynchronizer>();
         await indexSynchronizer.EnsureIndexesAsync();
 
+        // One-time rewrite of Incoming and other non-chat/file rows that were stored as Unread
+        // or with no status. Later startups skip the collection scan. A failed attempt is logged
+        // and startup continues; the claim is released so the next start can retry.
+        var conversationRepository = scope.ServiceProvider.GetRequiredService<IConversationRepository>();
+        try
+        {
+            await conversationRepository.BackfillMessagesThatCannotBeUnreadOnceAsync();
+        }
+        catch (MongoException ex)
+        {
+            LogReadStatusBackfillStartupFailure(ex);
+        }
+        catch (TimeoutException ex)
+        {
+            LogReadStatusBackfillStartupFailure(ex);
+        }
+        catch (SocketException ex)
+        {
+            LogReadStatusBackfillStartupFailure(ex);
+        }
+
         // Seed default data 
         await SeedData.SeedDefaultDataAsync(app.Services, _logger);
 
         return app;
+    }
+
+    private static void LogReadStatusBackfillStartupFailure(Exception ex)
+    {
+        _logger.LogError(ex, "Conversation message read-status backfill failed during startup; continuing");
     }
     
     /// <summary>
