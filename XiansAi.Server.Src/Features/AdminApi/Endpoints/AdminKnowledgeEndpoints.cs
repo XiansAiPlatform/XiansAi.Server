@@ -640,7 +640,7 @@ Same as the original knowledge item. User must have permission to modify the age
                 string? actualTenantId = systemScoped ? null : tenantId;
 
                 // Use service to create knowledge
-                var knowledge = await knowledgeService.CreateForTenantAsync(
+                var (knowledge, created) = await knowledgeService.CreateOrGetForTenantAsync(
                     request.Name,
                     request.Content,
                     request.Type,
@@ -654,9 +654,21 @@ Same as the original knowledge item. User must have permission to modify the age
                     request.Visible
                 );
 
+                // Identical content already exists in this scope: idempotent no-op.
+                if (!created)
+                {
+                    return Results.Ok(knowledge);
+                }
+
                 return Results.Created(
                     AdminApiConstants.BuildVersionedPath($"tenants/{tenantId}/knowledge/{knowledge.Id}"),
                     knowledge);
+            }
+            catch (KnowledgeConflictException ex)
+            {
+                return Results.Json(
+                    new { error = "Conflict", message = ex.Message },
+                    statusCode: 409);
             }
             catch (Exception ex)
             {
@@ -667,6 +679,8 @@ Same as the original knowledge item. User must have permission to modify the age
         })
         .WithName("Create Knowledge")
         .Produces<Knowledge>(StatusCodes.Status201Created)
+        .Produces<Knowledge>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status409Conflict)
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status403Forbidden)
         .Produces(StatusCodes.Status404NotFound)
@@ -828,7 +842,7 @@ Returns the created knowledge object with all properties including auto-generate
                     }
                 }
 
-                // Always creates a new document with a new id and CreatedAt so "latest" resolution
+                // Always creates a new document with a new id and CreatedAt/UpdatedAt so "latest" resolution
                 // (by timestamp) stays correct even when content matches an older revision.
                 var updatedKnowledge = await knowledgeService.UpdateForTenantAsync(
                     knowledgeId,
@@ -864,11 +878,11 @@ Returns the created knowledge object with all properties including auto-generate
         .Produces(StatusCodes.Status500InternalServerError)
         
         .WithSummary("Update knowledge (always creates a new version)")
-        .WithDescription(@"Patches knowledge by **always** inserting a new row: new id, new `CreatedAt`, and a `version` value of the form `contentHash:objectId` (hash of content + type, plus a unique suffix for the DB unique index). Prior revisions remain for history.
+        .WithDescription(@"Patches knowledge by **always** inserting a new row: new id, new `CreatedAt`/`UpdatedAt`, and a `version` value of the form `contentHash:objectId` (hash of content + type, plus a unique suffix for the DB unique index). Prior revisions remain for history.
 
             **Behavior:**
             - Content hash is derived from content + type (request `version` is ignored)
-            - Same content as an older revision still inserts a new row; latest is by `CreatedAt`");
+            - Same content as an older revision still inserts a new row; latest is by `UpdatedAt`");
 
         // Delete knowledge by ID
         adminKnowledgeGroup.MapDelete("/{knowledgeId}", async (

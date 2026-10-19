@@ -44,6 +44,15 @@ public static class RateLimitingExtensions
     }
 
     /// <summary>
+    /// Applies the per-tenant SMTP test-email rate limiting policy to an endpoint.
+    /// </summary>
+    public static TBuilder WithSmtpTestRateLimit<TBuilder>(this TBuilder builder) 
+        where TBuilder : IEndpointConventionBuilder
+    {
+        return builder.RequireRateLimiting(RateLimitingConfiguration.SmtpTestPolicy);
+    }
+
+    /// <summary>
     /// Disables rate limiting for an endpoint.
     /// Use sparingly and only for endpoints that have other protection mechanisms.
     /// </summary>

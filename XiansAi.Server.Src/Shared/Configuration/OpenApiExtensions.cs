@@ -39,10 +39,12 @@ public static class OpenApiExtensions
                 Scheme = "Bearer"
             });
 
-            options.AddSecurityRequirement(_ => new OpenApiSecurityRequirement
+            // The reference must be bound to the document, otherwise it serialises as an
+            // empty requirement ("security": [{}]) and Swagger UI never sends the header.
+            options.AddSecurityRequirement(document => new OpenApiSecurityRequirement
             {
                 {
-                    new OpenApiSecuritySchemeReference("Bearer"),
+                    new OpenApiSecuritySchemeReference("Bearer", document),
                     new List<string>()
                 }
             });

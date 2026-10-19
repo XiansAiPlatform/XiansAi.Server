@@ -3,7 +3,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shared.Auth;
 using Shared.Data.Models;
-using Shared.Exceptions;
 using Shared.Repositories;
 using Shared.Services;
 
@@ -278,15 +277,34 @@ public class AdminKeylessUserResolverTests
     }
 
     [Fact]
-    public async Task ResolveAsync_SysAdmin_ThrowsTenantNotFound_ForANonExistentTenant()
+    public async Task ResolveAsync_SysAdmin_FailsWithTenantNotFound_ForANonExistentTenant()
     {
         SetupValidToken();
         _userRepo.Setup(x => x.GetByUserIdAsync(ProviderUserId)).ReturnsAsync(MakeUser(ProviderUserId, isSysAdmin: true));
         _tenantCache.Setup(x => x.GetByTenantIdAsync("ghost-tenant", It.IsAny<CancellationToken>(), false))
             .ReturnsAsync((Tenant?)null);
 
-        await Assert.ThrowsAsync<TenantNotFoundException>(() =>
-            BuildResolver().ResolveAsync("raw-token", tenantIdFromRequest: "ghost-tenant"));
+        var result = await BuildResolver().ResolveAsync("raw-token", tenantIdFromRequest: "ghost-tenant");
+
+        Assert.False(result.Success);
+        Assert.Equal(AdminAuthFailure.TenantNotFound, result.Failure);
+        Assert.Equal("Tenant 'ghost-tenant' was not found", result.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_SysAdmin_FailsWithInvalidTenantId_WithoutConsultingTheTenantCache()
+    {
+        SetupValidToken();
+        _userRepo.Setup(x => x.GetByUserIdAsync(ProviderUserId)).ReturnsAsync(MakeUser(ProviderUserId, isSysAdmin: true));
+
+        var result = await BuildResolver().ResolveAsync("raw-token", tenantIdFromRequest: "bad tenant!");
+
+        Assert.False(result.Success);
+        Assert.Equal(AdminAuthFailure.InvalidTenantId, result.Failure);
+        Assert.Equal("Invalid tenant ID format", result.ErrorMessage);
+        _tenantCache.Verify(
+            x => x.GetByTenantIdAsync(It.IsAny<string>(), It.IsAny<CancellationToken>(), It.IsAny<bool>()),
+            Times.Never);
     }
 
     [Fact]

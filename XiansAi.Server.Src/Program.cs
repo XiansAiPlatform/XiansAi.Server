@@ -169,7 +169,13 @@ public class Program
         
         // Configure shared services and configuration first
         SharedConfiguration.AddSharedServices(builder);
-        
+
+        // Max time the server gets to shut down cleanly (finish requests and queued work).
+        // The container's stop timeout must be longer than this.
+        var shutdownTimeoutSeconds = builder.Configuration.GetValue("Server:ShutdownTimeoutSeconds", 45);
+        builder.Services.Configure<HostOptions>(options =>
+            options.ShutdownTimeout = TimeSpan.FromSeconds(Math.Max(1, shutdownTimeoutSeconds)));
+
         // Add Azure logging for cloud deployments
         builder.Logging.AddAzureWebAppDiagnostics();
 

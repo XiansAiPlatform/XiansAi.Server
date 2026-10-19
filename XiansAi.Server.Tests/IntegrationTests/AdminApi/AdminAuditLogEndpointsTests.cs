@@ -57,6 +57,49 @@ public class AdminAuditLogEndpointsTests : AdminApiIntegrationTestBase
         var body = await response.Content.ReadAsStringAsync();
         Assert.Contains("secret.deleted", body);
         Assert.DoesNotContain("agent.access.changed", body);
+        using var document = JsonDocument.Parse(body);
+        Assert.Equal(1, document.RootElement.GetProperty("totalCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task ListTenantAuditLogs_FilteredByMultipleActions_ReturnsUnion()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+        await SeedAuditLogAsync(tenantId, "agent.access.changed", _adminUserId!);
+        await SeedAuditLogAsync(tenantId, "secret.deleted", _adminUserId!);
+        await SeedAuditLogAsync(tenantId, "apikey.created", _adminUserId!);
+
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/audit-logs?action=secret.deleted,apikey.created,");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("secret.deleted", body);
+        Assert.Contains("apikey.created", body);
+        Assert.DoesNotContain("agent.access.changed", body);
+        using var document = JsonDocument.Parse(body);
+        Assert.Equal(2, document.RootElement.GetProperty("totalCount").GetInt32());
+    }
+
+    [Fact]
+    public async Task ListTenantAuditLogs_FilteredByActions_WithSpacesAndBlanks_Works()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+        await SeedAuditLogAsync(tenantId, "agent.access.changed", _adminUserId!);
+        await SeedAuditLogAsync(tenantId, "secret.deleted", _adminUserId!);
+        await SeedAuditLogAsync(tenantId, "apikey.created", _adminUserId!);
+
+        var response = await GetAsync(
+            $"/api/v1/admin/tenants/{tenantId}/audit-logs?action=%20secret.deleted%20,,agent.access.changed");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadAsStringAsync();
+        Assert.Contains("secret.deleted", body);
+        Assert.Contains("agent.access.changed", body);
+        Assert.DoesNotContain("apikey.created", body);
     }
 
     [Fact]
