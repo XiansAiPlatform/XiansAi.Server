@@ -13,6 +13,8 @@ public sealed record EmailVerificationResult(bool Admitted, string? Email, strin
 /// </summary>
 public static class EmailVerificationEvaluator
 {
+    public const string ConfigErrorPrefix = "invalid emailVerification config: ";
+
     // Only where providers put the sign-in address. upn and preferred_username are left out
     // because the verify claims do not describe them.
     private static readonly string[] VerifiedEmailClaims = ["email", "emails", "signInNames.emailAddress", "emailAddress"];
@@ -41,7 +43,7 @@ public static class EmailVerificationEvaluator
         var configError = DescribeConfigError(verifyClaims, trustedClaim);
         if (configError != null)
         {
-            return new(false, null, "invalid emailVerification config: " + configError);
+            return new(false, null, ConfigErrorPrefix + configError);
         }
 
         if (verifyClaims.Count > 0)

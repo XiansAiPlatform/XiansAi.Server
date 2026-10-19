@@ -146,6 +146,11 @@ public sealed class AdminKeylessUserResolver : IAdminKeylessUserResolver
                 _logger.LogWarning(
                     "X-User-Token validated but the email fallback was refused for {UserId}: {Reason}",
                     LogSanitizer.RedactUserId(providerUserId), LogSanitizer.Sanitize(emailVerification.Reason));
+                var reason = emailVerification.Reason.StartsWith(EmailVerificationEvaluator.ConfigErrorPrefix, StringComparison.Ordinal)
+                    ? "email verification is misconfigured"
+                    : emailVerification.Reason;
+                return new AdminKeylessResolutionResult(false, null, null, null,
+                    $"No user is registered for this token's subject, and its email could not be verified: {reason}");
             }
 
             _logger.LogWarning("X-User-Token validated but no platform user exists for {UserId}",

@@ -173,8 +173,25 @@ public class AdminKeylessUserResolverTests
         var result = await BuildResolver().ResolveAsync("raw-token", tenantIdFromRequest: null);
 
         Assert.False(result.Success);
-        Assert.Equal("User is not registered on this platform", result.ErrorMessage);
+        Assert.Equal(
+            "No user is registered for this token's subject, and its email could not be verified: claim check failed: xms_edov",
+            result.ErrorMessage);
         _userRepo.Verify(x => x.GetAllByUserEmailAsync(It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ResolveAsync_HidesConfigDetail_WhenEmailVerificationIsMisconfigured()
+    {
+        SetupValidToken(emailVerification: new EmailVerificationResult(false, null,
+            EmailVerificationEvaluator.ConfigErrorPrefix + "verifyClaims entry 'xms_edov' needs both claim and value"));
+        _userRepo.Setup(x => x.GetByUserIdAsync(ProviderUserId)).ReturnsAsync((User?)null);
+
+        var result = await BuildResolver().ResolveAsync("raw-token", tenantIdFromRequest: null);
+
+        Assert.False(result.Success);
+        Assert.Equal(
+            "No user is registered for this token's subject, and its email could not be verified: email verification is misconfigured",
+            result.ErrorMessage);
     }
 
     [Fact]
