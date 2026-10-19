@@ -103,6 +103,7 @@ public static class CapabilityActions
 
     // AdminStatsEndpoints: /tenants/{tenantId}/stats
     public const string TenantStatsGet = "tenant.stats.get";
+    public const string TenantStatsUsersGet = "tenant.stats.users.get";
 
     // AdminTaskEndpoints: /tenants/{tenantId}/tasks
     public const string TenantTasksList = "tenant.tasks.list";
@@ -401,6 +402,8 @@ public static class CapabilityActions
 
         new(TenantStatsGet, [SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
             "Read aggregated tenant statistics."),
+        new(TenantStatsUsersGet, [SystemRoles.TenantAdmin],
+            "Read per-user agent and task usage for a tenant."),
 
         new(TenantTasksList, [SystemRoles.TenantAdmin],
             "List HITL tasks for a tenant."),
