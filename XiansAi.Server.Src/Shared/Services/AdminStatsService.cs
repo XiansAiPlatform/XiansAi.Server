@@ -207,6 +207,11 @@ public class AdminStatsService : IAdminStatsService
         {
             return ServiceResult<UserUsageStatsResponse>.BadRequest("StartDate cannot be after EndDate");
         }
+
+        if (to >= DateTime.MaxValue.Date)
+        {
+            return ServiceResult<UserUsageStatsResponse>.BadRequest("EndDate is out of range");
+        }
         var toExclusive = to.AddDays(1);
 
         try
