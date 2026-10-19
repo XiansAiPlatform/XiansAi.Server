@@ -67,6 +67,7 @@ public class AdminStatsServiceUserStatsTests
             u =>
             {
                 Assert.Equal("user-2", u.UserId);
+                Assert.Equal("Ann Lee", u.DisplayName);
                 Assert.Equal(0, u.AgentCount);
                 Assert.Equal(7, u.TasksCreated);
             });
@@ -82,7 +83,19 @@ public class AdminStatsServiceUserStatsTests
 
         var user = Assert.Single(result.Data!.Users);
         Assert.Equal(AdminStatsService.UnknownUserId, user.UserId);
+        Assert.Equal("Unknown", user.DisplayName);
         Assert.Equal(3, user.TasksCreated);
+    }
+
+    [Fact]
+    public async Task Task_Count_Failure_Returns_InternalServerError()
+    {
+        _tasks.Setup(t => t.GetTaskCountsByActivation(TenantId, It.IsAny<DateTime>(), It.IsAny<DateTime>()))
+            .ReturnsAsync(ServiceResult<Dictionary<(string AgentName, string ActivationName), int>>.InternalServerError("boom"));
+
+        var result = await _service.GetUserStatsAsync(TenantId, From, To);
+
+        Assert.Equal(StatusCode.InternalServerError, result.StatusCode);
     }
 
     [Fact]
