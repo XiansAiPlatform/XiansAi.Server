@@ -248,18 +248,13 @@ public class AdminStatsService : IAdminStatsService
                 taskCounts[userId] = taskCounts.GetValueOrDefault(userId) + count;
             }
 
-            var users = new List<UserUsage>();
-            foreach (var userId in agentCounts.Keys.Union(taskCounts.Keys))
-            {
-                users.Add(new UserUsage
+            var users = (await Task.WhenAll(agentCounts.Keys.Union(taskCounts.Keys).Select(async userId => new UserUsage
                 {
                     UserId = userId,
                     DisplayName = await GetDisplayNameAsync(userId),
                     AgentCount = agentCounts.GetValueOrDefault(userId),
                     TasksCreated = taskCounts.GetValueOrDefault(userId)
-                });
-            }
-            users = users
+                })))
                 .OrderByDescending(u => u.TasksCreated)
                 .ThenBy(u => u.DisplayName)
                 .ToList();
