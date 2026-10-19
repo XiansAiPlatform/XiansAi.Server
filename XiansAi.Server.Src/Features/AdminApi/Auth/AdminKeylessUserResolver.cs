@@ -1,6 +1,5 @@
 using Microsoft.Extensions.Caching.Memory;
 using Shared.Auth;
-using Shared.Exceptions;
 using Shared.Repositories;
 using Shared.Services;
 using Shared.Utils;
@@ -15,7 +14,8 @@ public sealed record AdminKeylessResolutionResult(
     string? CanonicalUserId,
     string? FinalTenantId,
     string[]? UserRoles,
-    string? ErrorMessage);
+    string? ErrorMessage,
+    AdminAuthFailure Failure = AdminAuthFailure.Unauthorized);
 
 /// <summary>
 /// Resolves identity, tenant, and roles for an AdminApi caller who presents only an
@@ -30,9 +30,10 @@ public interface IAdminKeylessUserResolver
 {
     /// <summary>
     /// Validates <paramref name="userToken"/> and resolves the tenant/roles for the caller.
-    /// Throws <see cref="TenantNotFoundException"/> when a SysAdmin targets a non-existent tenant,
-    /// matching <see cref="AdminRoleTenantResolver"/>'s behavior so the global exception handler
-    /// returns 404 the same way for both auth paths.
+    /// When a SysAdmin targets a tenant that does not exist, or a tenant id that is not in the tenant
+    /// id format, the result fails with <see cref="AdminAuthFailure.TenantNotFound"/> or
+    /// <see cref="AdminAuthFailure.InvalidTenantId"/>, matching <see cref="AdminRoleTenantResolver"/>
+    /// so both auth paths return the same 404 or 400.
     /// </summary>
     /// <param name="userToken">The raw OIDC ID token from the caller's <c>X-User-Token</c> header.</param>
     /// <param name="tenantIdFromRequest">Optional tenant override from query, route, or header.</param>
@@ -174,12 +175,14 @@ public sealed class AdminKeylessUserResolver : IAdminKeylessUserResolver
         {
             if (!string.IsNullOrEmpty(tenantIdFromRequest))
             {
-                var tenant = await _tenantCacheService.GetByTenantIdAsync(tenantIdFromRequest, cancellationToken);
-                if (tenant == null)
+                var failure = await SysAdminTenantCheck.FindFailureAsync(
+                    _tenantCacheService, tenantIdFromRequest, cancellationToken);
+                if (failure != null)
                 {
-                    _logger.LogWarning("SysAdmin user {UserId} requested non-existent tenant: {TenantId}",
-                        LogSanitizer.RedactUserId(providerUserId), LogSanitizer.Sanitize(tenantIdFromRequest));
-                    throw new TenantNotFoundException(tenantIdFromRequest);
+                    _logger.LogWarning("SysAdmin user {UserId} requested a tenant that cannot be used ({Failure}): {TenantId}",
+                        LogSanitizer.RedactUserId(providerUserId), failure, LogSanitizer.Sanitize(tenantIdFromRequest));
+                    return new AdminKeylessResolutionResult(false, null, null, null,
+                        SysAdminTenantCheck.MessageFor(failure.Value, tenantIdFromRequest), failure.Value);
                 }
 
                 finalTenantId = tenantIdFromRequest;

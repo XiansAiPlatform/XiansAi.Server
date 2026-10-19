@@ -52,6 +52,14 @@ public class KnowledgeRequest
     public bool Visible { get; set; } = true;
 }
 
+/// <summary>
+/// Thrown when knowledge cannot be created because the same unique key already holds different content.
+/// </summary>
+public class KnowledgeConflictException : Exception
+{
+    public KnowledgeConflictException(string message) : base(message) { }
+}
+
 public class DeleteAllVersionsRequest
 {
     [JsonPropertyName("name")]
@@ -112,6 +120,7 @@ public interface IKnowledgeService
     Task<IResult> DeleteAllVersions(DeleteAllVersionsRequest request);
     Task<IResult> GetLatestAll(string agent);
     Task<IResult> Create(KnowledgeRequest request);
+    Task<(Knowledge? Knowledge, bool Created, IResult? Error)> CreateWithStatus(KnowledgeRequest request);
     Task<IResult> GetLatestByAgent(string agent);
     
     // Admin methods that accept explicit tenantId
@@ -127,6 +136,13 @@ public interface IKnowledgeService
     /// </summary>
     Task<long> DeleteOrganizationLevelByAgentForTenantAsync(string tenantId, string agentName);
     Task<Knowledge> CreateForTenantAsync(string name, string content, string type, string? tenantId, string createdBy, string? agentName = null, string? version = null, string? activationName = null, bool systemScoped = false, string? description = null, bool visible = true);
+
+    /// <summary>
+    /// Idempotent create. Returns the existing document with <c>Created = false</c> when the same
+    /// unique key already holds identical content; throws <see cref="KnowledgeConflictException"/>
+    /// when it holds different content.
+    /// </summary>
+    Task<(Knowledge Knowledge, bool Created)> CreateOrGetForTenantAsync(string name, string content, string type, string? tenantId, string createdBy, string? agentName = null, string? version = null, string? activationName = null, bool systemScoped = false, string? description = null, bool visible = true);
     Task<Knowledge> UpdateForTenantAsync(string knowledgeId, string content, string type, string tenantId, string updatedBy, string? version = null, string? description = null, bool? visible = null);
 }
 
@@ -386,7 +402,7 @@ public class KnowledgeService : IKnowledgeService
             // 1. System-scoped: Latest where TenantId is null AND SystemScoped is true
             var systemItem = systemScopedKnowledge
                 .Where(k => k.Name == name)
-                .OrderByDescending(k => k.CreatedAt)
+                .OrderByDescending(k => k.UpdatedAt.HasValue).ThenByDescending(k => k.UpdatedAt ?? k.CreatedAt)
                 .FirstOrDefault();
             
             if (systemItem != null)
@@ -403,7 +419,7 @@ public class KnowledgeService : IKnowledgeService
             // 2. Tenant default: Latest where ActivationName is null
             var tenantDefault = tenantItems
                 .Where(k => string.IsNullOrEmpty(k.ActivationName))
-                .OrderByDescending(k => k.CreatedAt)
+                .OrderByDescending(k => k.UpdatedAt.HasValue).ThenByDescending(k => k.UpdatedAt ?? k.CreatedAt)
                 .FirstOrDefault();
             
             if (tenantDefault != null)
@@ -517,14 +533,31 @@ public class KnowledgeService : IKnowledgeService
 
     public async Task<IResult> Create(KnowledgeRequest request)
     {
+        var (knowledge, _, error) = await CreateWithStatus(request);
+        return error ?? Results.Ok(knowledge);
+    }
+
+    /// <summary>
+    /// Re-posting an identical record: bump updated_at and return the existing row.
+    /// </summary>
+    private async Task<Knowledge> TouchExistingAsync(Knowledge existing)
+    {
+        var now = DateTime.UtcNow;
+        await _knowledgeRepository.TouchUpdatedAtAsync(existing.Id, now);
+        existing.UpdatedAt = now;
+        return existing;
+    }
+
+    public async Task<(Knowledge? Knowledge, bool Created, IResult? Error)> CreateWithStatus(KnowledgeRequest request)
+    {
         // Validate that non-system knowledge has a tenant ID
         if (!request.SystemScoped && string.IsNullOrWhiteSpace(_tenantContext.TenantId))
         {
-            _logger.LogError("Cannot create non-system knowledge without a tenant ID. User: {UserId}", 
+            _logger.LogError("Cannot create non-system knowledge without a tenant ID. User: {UserId}",
                 LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
-            return Results.Json(
+            return (null, false, Results.Json(
                 new { error = "BadRequest", message = "Non-system knowledge must be associated with a tenant" },
-                statusCode: StatusCodes.Status400BadRequest);
+                statusCode: StatusCodes.Status400BadRequest));
         }
 
         // Check system admin permission for system-scoped knowledge
@@ -532,9 +565,9 @@ public class KnowledgeService : IKnowledgeService
         {
             _logger.LogWarning("Unauthorized access attempt to create system-scoped knowledge by user {UserId}",
                 LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
-            return Results.Json(
+            return (null, false, Results.Json(
                 new { error = "Forbidden", message = "Only system administrators can create system-scoped knowledge" },
-                statusCode: StatusCodes.Status403Forbidden);
+                statusCode: StatusCodes.Status403Forbidden));
         }
 
         // System admins have access to all agents
@@ -546,30 +579,26 @@ public class KnowledgeService : IKnowledgeService
             {
                 _logger.LogWarning("Unauthorized access attempt to create knowledge for agent {Agent} by user {UserId}",
                     LogSanitizer.Sanitize(request.Agent), LogSanitizer.Sanitize(_tenantContext.LoggedInUser));
-                return Results.Json(
+                return (null, false, Results.Json(
                     new { error = "Forbidden", message = "You do not have permission to create knowledge for this agent" },
-                    statusCode: StatusCodes.Status403Forbidden);
+                    statusCode: StatusCodes.Status403Forbidden));
             }
         }
 
-        // Check if the knowledge already exists with the same content hash, scope, and activation
+        // Look up the exact unique-index key (name, version, agent, tenant, activation, system scope),
+        // NOT the "latest" row: a tenant edit adds a newer row (version "hash:objectId"), after which
+        // "latest" no longer matches the bundled content even though the original row still exists.
+        // System knowledge (tenant_id=null) and tenant knowledge can coexist with identical content
+        // because tenant_id differs.
         var newContentHash = HashGenerator.GenerateContentHash(request.Content + request.Type);
-        var currentLatestKnowledge = await GetLatestByNameAsync(request.Name, request.Agent);
+        var targetTenantId = request.SystemScoped ? null : _tenantContext.TenantId;
 
-        // If knowledge exists with the same content hash (compare from stored content+type, not Version
-        // string — PATCH revisions may use "contentHash:objectId" for unique index compliance)
-        // Note: System knowledge (tenant_id=null) and tenant knowledge (tenant_id set) can coexist
-        // with the same content because tenant_id differs. The system_scoped field in the unique index
-        // provides additional clarity and defense-in-depth data integrity.
-        var latest = currentLatestKnowledge.Data;
-        if (currentLatestKnowledge.IsSuccess &&
-            latest != null &&
-            HashGenerator.GenerateContentHash(latest.Content + latest.Type) == newContentHash &&
-            latest.SystemScoped == request.SystemScoped &&
-            latest.ActivationName == request.ActivationName)
+        var existing = await GetByExactKeyAsync(
+            request.Name, newContentHash, request.Agent, targetTenantId, request.ActivationName, request.SystemScoped);
+        if (existing != null)
         {
             _logger.LogInformation("Knowledge {Name} already exists with the same content hash, scope, and activation", LogSanitizer.Sanitize(request.Name));
-            return Results.Ok(latest);
+            return (await TouchExistingAsync(existing), false, null);
         }
 
         // Create the knowledge
@@ -583,7 +612,7 @@ public class KnowledgeService : IKnowledgeService
             Version = newContentHash,
             CreatedAt = DateTime.UtcNow,
             CreatedBy = _tenantContext.LoggedInUser,
-            TenantId = request.SystemScoped ? null : _tenantContext.TenantId,
+            TenantId = targetTenantId,
             Agent = request.Agent,
             SystemScoped = request.SystemScoped,
             ActivationName = request.ActivationName,
@@ -607,19 +636,20 @@ public class KnowledgeService : IKnowledgeService
                     ? $"System-scoped knowledge '{knowledge.Name}' ({knowledge.Type}) for agent '{knowledge.Agent}' was created by '{knowledge.CreatedBy}'."
                     : $"Knowledge '{knowledge.Name}' ({knowledge.Type}) for agent '{knowledge.Agent}' was created by '{knowledge.CreatedBy}'{(string.IsNullOrWhiteSpace(knowledge.ActivationName) ? "" : $" for activation '{knowledge.ActivationName}'")}.");
 
-            return Results.Ok(knowledge);
+            return (knowledge, true, null);
         }
         catch (MongoWriteException ex) when (ex.WriteError?.Category == ServerErrorCategory.DuplicateKey)
         {
             // Handle race condition where knowledge was created between our check and insert
             _logger.LogWarning(ex, "Duplicate key error creating knowledge {Name}. Retrieving existing knowledge.", LogSanitizer.Sanitize(request.Name));
             
-            // Try to get the existing knowledge again
-            var existingKnowledge = await GetLatestByNameAsync(request.Name, request.Agent);
-            if (existingKnowledge.IsSuccess && existingKnowledge.Data != null)
+            // Re-read using the same exact key that collided
+            var existingKnowledge = await GetByExactKeyAsync(
+                request.Name, newContentHash, request.Agent, targetTenantId, request.ActivationName, request.SystemScoped);
+            if (existingKnowledge != null)
             {
                 _logger.LogInformation("Returning existing knowledge {Name} after duplicate key error", LogSanitizer.Sanitize(request.Name));
-                return Results.Ok(existingKnowledge.Data);
+                return (await TouchExistingAsync(existingKnowledge), false, null);
             }
             
             // If we still can't find it, throw the original exception
@@ -763,7 +793,36 @@ public class KnowledgeService : IKnowledgeService
         return await _knowledgeRepository.DeleteOrganizationLevelByAgentAsync<Knowledge>(agentName, tenantId);
     }
 
+    /// <summary>
+    /// Exact lookup on the unique index key. Single place used by both the pre-check and the
+    /// duplicate-key recovery so the two can never look at different scopes.
+    /// </summary>
+    private Task<Knowledge?> GetByExactKeyAsync(
+        string name, string version, string? agent, string? tenantId, string? activationName, bool systemScoped)
+    {
+        return _knowledgeRepository.GetByUniqueKeyAsync<Knowledge>(
+            name, version, agent, tenantId, activationName, systemScoped);
+    }
+
     public async Task<Knowledge> CreateForTenantAsync(
+        string name,
+        string content,
+        string type,
+        string? tenantId,
+        string createdBy,
+        string? agentName = null,
+        string? version = null,
+        string? activationName = null,
+        bool systemScoped = false,
+        string? description = null,
+        bool visible = true)
+    {
+        var (knowledge, _) = await CreateOrGetForTenantAsync(
+            name, content, type, tenantId, createdBy, agentName, version, activationName, systemScoped, description, visible);
+        return knowledge;
+    }
+
+    public async Task<(Knowledge Knowledge, bool Created)> CreateOrGetForTenantAsync(
         string name,
         string content,
         string type,
@@ -780,6 +839,13 @@ public class KnowledgeService : IKnowledgeService
         if (string.IsNullOrWhiteSpace(version))
         {
             version = HashGenerator.GenerateContentHash(content + type);
+        }
+
+        // Idempotent create: same key + same content is a no-op; same key + different content is a conflict.
+        var existing = await GetByExactKeyAsync(name, version, agentName, tenantId, activationName, systemScoped);
+        if (existing != null)
+        {
+            return (await TouchExistingAsync(ResolveExisting(existing, name, content, type, version)), false);
         }
 
         var knowledge = new Knowledge
@@ -799,7 +865,18 @@ public class KnowledgeService : IKnowledgeService
             Visible = visible
         };
 
-        await _knowledgeRepository.CreateAsync(knowledge);
+        try
+        {
+            await _knowledgeRepository.CreateAsync(knowledge);
+        }
+        catch (MongoWriteException ex) when (ex.WriteError?.Category == ServerErrorCategory.DuplicateKey)
+        {
+            // Lost a race between the check above and the insert.
+            _logger.LogWarning(ex, "Duplicate key creating knowledge {Name}; returning existing document", LogSanitizer.Sanitize(name));
+            var raced = await GetByExactKeyAsync(name, version, agentName, tenantId, activationName, systemScoped);
+            if (raced == null) throw;
+            return (await TouchExistingAsync(ResolveExisting(raced, name, content, type, version)), false);
+        }
 
         var metadata = new { tenantId, knowledgeId = knowledge.Id, name = knowledge.Name, type = knowledge.Type, agentName, activationName, systemScoped, version = knowledge.Version, createdBy };
 
@@ -814,7 +891,23 @@ public class KnowledgeService : IKnowledgeService
                 ? $"System-scoped knowledge '{knowledge.Name}' ({knowledge.Type}){(string.IsNullOrWhiteSpace(agentName) ? "" : $" for agent '{agentName}'")} was created by '{createdBy}'."
                 : $"Knowledge '{knowledge.Name}' ({knowledge.Type}){(string.IsNullOrWhiteSpace(agentName) ? "" : $" for agent '{agentName}'")} was created by '{createdBy}'{(string.IsNullOrWhiteSpace(activationName) ? "" : $" for activation '{activationName}'")}.");
 
-        return knowledge;
+        return (knowledge, true);
+    }
+
+    /// <summary>
+    /// A document already holds this unique key. Identical content is a no-op; different content
+    /// under the same explicit version cannot be created and is reported as a conflict.
+    /// </summary>
+    private static Knowledge ResolveExisting(Knowledge existing, string name, string content, string type, string version)
+    {
+        var sameContent = HashGenerator.GenerateContentHash(existing.Content + existing.Type)
+                          == HashGenerator.GenerateContentHash(content + type);
+        if (!sameContent)
+        {
+            throw new KnowledgeConflictException(
+                $"Knowledge '{name}' version '{version}' already exists in this scope with different content.");
+        }
+        return existing;
     }
 
     public async Task<Knowledge> UpdateForTenantAsync(

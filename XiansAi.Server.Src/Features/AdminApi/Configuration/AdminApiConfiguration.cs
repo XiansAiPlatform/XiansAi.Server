@@ -160,6 +160,7 @@ public static class AdminApiConfiguration
         AdminWorkerDeploymentEndpoints.MapAdminWorkerDeploymentEndpoints(adminApiGroup);
         AdminParticipantsEndpoints.MapAdminParticipantsEndpoints(adminApiGroup);
         AdminUserEndpoints.MapAdminUserEndpoints(adminApiGroup);
+        AdminContactEndpoints.MapAdminContactEndpoints(adminApiGroup);
         AdminGlobalUserEndpoints.MapAdminGlobalUserEndpoints(adminApiGroup);
         AdminStatsEndpoints.MapAdminStatsEndpoints(adminApiGroup);
         AdminLogsEndpoints.MapAdminLogsEndpoints(adminApiGroup);

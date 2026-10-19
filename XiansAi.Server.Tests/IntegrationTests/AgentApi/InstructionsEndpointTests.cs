@@ -29,6 +29,7 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
                 Type = "text",
                 Version = "v1",
                 CreatedAt = DateTime.UtcNow.AddHours(-2),
+                UpdatedAt = DateTime.UtcNow.AddHours(-2),
                 CreatedBy = "test-agent",
                 Agent = "test-agent",
                 TenantId = TestTenantId
@@ -41,6 +42,7 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
                 Type = "text",
                 Version = "v2",
                 CreatedAt = DateTime.UtcNow.AddHours(-1),
+                UpdatedAt = DateTime.UtcNow.AddHours(-1),
                 CreatedBy = "test-agent",
                 Agent = "test-agent",
                 TenantId = TestTenantId
@@ -53,6 +55,7 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
                 Type = "text",
                 Version = "v3",
                 CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow,
                 CreatedBy = "test-agent",
                 Agent = "test-agent",
                 TenantId = TestTenantId
@@ -74,6 +77,82 @@ public class InstructionsEndpointTests : IntegrationTestBase, IClassFixture<Mong
         Assert.Equal(testInstructionName, result.Name);
         Assert.Equal("Latest instruction content", result.Content);
         Assert.Equal("v3", result.Version);
+    }
+
+    private static Knowledge Row(string name, string content, string version, DateTime createdAt, DateTime? updatedAt) => new()
+    {
+        Id = ObjectId.GenerateNewId().ToString(),
+        Name = name,
+        Content = content,
+        Type = "text",
+        Version = version,
+        CreatedAt = createdAt,
+        UpdatedAt = updatedAt,
+        CreatedBy = "test-agent",
+        Agent = "test-agent",
+        TenantId = TestTenantId
+    };
+
+    private async Task<Knowledge?> GetLatestAsync(string name)
+    {
+        var response = await _client.GetAsync($"/api/agent/knowledge/latest?name={name}&agent=test-agent");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        return await response.Content.ReadFromJsonAsync<Knowledge>();
+    }
+
+    [Fact]
+    public async Task GetLatest_MixedRows_PrefersRowsWithUpdatedAtOverNewerLegacyRow()
+    {
+        var name = $"mixed-{Guid.NewGuid()}";
+        var now = DateTime.UtcNow;
+        await _database.GetCollection<Knowledge>("knowledge").InsertManyAsync(new[]
+        {
+            // legacy row (no updated_at) with the newest created_at
+            Row(name, "legacy newest", "v-legacy", now, null),
+            // rows with updated_at, created earlier
+            Row(name, "has updated_at old", "v-old", now.AddHours(-5), now.AddHours(-3)),
+            Row(name, "has updated_at new", "v-new", now.AddHours(-4), now.AddHours(-2)),
+        });
+
+        var latest = await GetLatestAsync(name);
+
+        Assert.Equal("has updated_at new", latest!.Content);
+    }
+
+    [Fact]
+    public async Task GetLatest_OnlyLegacyRows_FallsBackToCreatedAt()
+    {
+        var name = $"legacy-{Guid.NewGuid()}";
+        var now = DateTime.UtcNow;
+        await _database.GetCollection<Knowledge>("knowledge").InsertManyAsync(new[]
+        {
+            Row(name, "legacy older", "v1", now.AddHours(-3), null),
+            Row(name, "legacy newest", "v2", now.AddHours(-1), null),
+            Row(name, "legacy middle", "v3", now.AddHours(-2), null),
+        });
+
+        var latest = await GetLatestAsync(name);
+
+        Assert.Equal("legacy newest", latest!.Content);
+        Assert.Null(latest.UpdatedAt);
+    }
+
+    [Fact]
+    public async Task GetLatest_AllRowsHaveUpdatedAt_UsesUpdatedAtNotCreatedAt()
+    {
+        var name = $"updated-{Guid.NewGuid()}";
+        var now = DateTime.UtcNow;
+        await _database.GetCollection<Knowledge>("knowledge").InsertManyAsync(new[]
+        {
+            // newest created_at but oldest updated_at
+            Row(name, "created newest", "v1", now.AddHours(-1), now.AddHours(-5)),
+            // older created_at but most recently updated
+            Row(name, "updated newest", "v2", now.AddHours(-4), now.AddHours(-2)),
+        });
+
+        var latest = await GetLatestAsync(name);
+
+        Assert.Equal("updated newest", latest!.Content);
     }
 
     [Fact]
