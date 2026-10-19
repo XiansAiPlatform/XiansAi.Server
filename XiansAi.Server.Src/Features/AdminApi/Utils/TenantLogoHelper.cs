@@ -3,9 +3,9 @@ using Shared.Data.Models;
 namespace Features.AdminApi.Utils;
 
 /// <summary>
-/// Shared logic for converting a tenant's base64-stored logo into a URL pointing to the
-/// dedicated tenant logo endpoint, so the (potentially large) base64 payload is never embedded
-/// in admin API responses. Logos stored as external URLs are left untouched.
+/// Replaces a tenant's base64 logo and favicon with links to the endpoints that serve them. This
+/// keeps large base64 images out of admin API responses. Images stored as outside URLs are not
+/// changed.
 /// </summary>
 public static class TenantLogoHelper
 {
@@ -16,26 +16,25 @@ public static class TenantLogoHelper
     public const string LogoRouteName = "AdminGetTenantLogo";
 
     /// <summary>
-    /// Mutates the supplied tenant in place: a base64-stored logo is replaced with a URL and its
-    /// base64 payload is cleared. Use this when the tenant instance itself is the response payload.
-    /// Callers should pass a copy if the tenant is shared/cached to avoid mutating the original.
+    /// Name of the endpoint that serves a tenant's favicon.
+    /// Must be the same as the name used in <c>AdminTenantEndpoints</c>.
+    /// </summary>
+    public const string FaviconRouteName = "AdminGetTenantFavicon";
+
+    /// <summary>
+    /// Changes the given tenant directly: a base64 logo or favicon is replaced with a link, and the
+    /// base64 data is removed. Use this when the tenant itself is sent back in the response. If the
+    /// tenant comes from a cache or is shared, pass a copy so the original is not changed.
     /// </summary>
     public static void ApplyLogoUrl(Tenant? tenant, HttpContext httpContext, LinkGenerator linkGenerator)
     {
-        var logo = tenant?.Logo;
-        if (logo == null || string.IsNullOrEmpty(logo.ImgBase64))
+        if (tenant == null)
         {
             return;
         }
 
-        var logoUrl = GenerateLogoUrl(tenant!.TenantId, httpContext, linkGenerator);
-        if (!string.IsNullOrEmpty(logoUrl))
-        {
-            logo.Url = logoUrl;
-        }
-
-        // Never expose the base64 payload, regardless of URL generation.
-        logo.ImgBase64 = null;
+        ApplyImageUrl(tenant.Logo, tenant.TenantId, LogoRouteName, httpContext, linkGenerator);
+        ApplyImageUrl(tenant.Favicon, tenant.TenantId, FaviconRouteName, httpContext, linkGenerator);
     }
 
     /// <summary>
@@ -50,7 +49,7 @@ public static class TenantLogoHelper
             return logo;
         }
 
-        var logoUrl = GenerateLogoUrl(tenant.TenantId, httpContext, linkGenerator);
+        var logoUrl = GenerateUrl(LogoRouteName, tenant.TenantId, httpContext, linkGenerator);
 
         return new Logo
         {
@@ -61,11 +60,33 @@ public static class TenantLogoHelper
         };
     }
 
-    private static string? GenerateLogoUrl(string tenantId, HttpContext httpContext, LinkGenerator linkGenerator)
+    private static void ApplyImageUrl(
+        Logo? image,
+        string tenantId,
+        string routeName,
+        HttpContext httpContext,
+        LinkGenerator linkGenerator)
+    {
+        if (image == null || string.IsNullOrEmpty(image.ImgBase64))
+        {
+            return;
+        }
+
+        var url = GenerateUrl(routeName, tenantId, httpContext, linkGenerator);
+        if (!string.IsNullOrEmpty(url))
+        {
+            image.Url = url;
+        }
+
+        // Never send the base64 data, even if the link could not be built.
+        image.ImgBase64 = null;
+    }
+
+    private static string? GenerateUrl(string routeName, string tenantId, HttpContext httpContext, LinkGenerator linkGenerator)
     {
         return linkGenerator.GetUriByName(
             httpContext,
-            LogoRouteName,
+            routeName,
             new { tenantId });
     }
 }
