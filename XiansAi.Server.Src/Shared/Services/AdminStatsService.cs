@@ -222,6 +222,10 @@ public class AdminStatsService : IAdminStatsService
 
         try
         {
+            _logger.LogInformation(
+                "Retrieving user stats - TenantId: {TenantId}, StartDate: {StartDate}, EndDate: {EndDate}",
+                LogSanitizer.Sanitize(tenantId), from, to);
+
             var taskCountsResult = await _taskService.GetTaskCountsByActivation(tenantId, from, toExclusive);
             if (!taskCountsResult.IsSuccess)
             {
