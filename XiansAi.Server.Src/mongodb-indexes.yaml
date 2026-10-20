@@ -172,6 +172,12 @@ conversation_thread:
     keys:
       tenant_id: asc
       agent: asc
+  # Finds a person's threads by participant ID, for GDPR export and erasure.
+  - name: thread_participant_lookup
+    keys:
+      participant_id: asc
+      tenant_id: asc
+    background: true
 
 certificates:
   - name: Thumbprint_1
