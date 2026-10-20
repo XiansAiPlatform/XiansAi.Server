@@ -15,7 +15,7 @@ public class AppMessageRouterService : BackgroundService
 {
     /// <summary>Platforms that outbound routing supports; single source of truth for validation and dispatch.</summary>
     private static readonly HashSet<string> SupportedPlatforms =
-        new(StringComparer.OrdinalIgnoreCase) { "slack", "msteams", "outlook" };
+        new(StringComparer.OrdinalIgnoreCase) { "slack", "msteams" };
 
     private readonly ILogger<AppMessageRouterService> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
@@ -181,11 +181,6 @@ public class AppMessageRouterService : BackgroundService
             case "msteams":
                 var teamsHandler = scope.ServiceProvider.GetRequiredService<ITeamsWebhookHandler>();
                 await teamsHandler.SendMessageToTeamsAsync(integration, message, cancellationToken);
-                break;
-
-            case "outlook":
-                _logger.LogInformation("Outlook outbound routing not yet implemented");
-                // TODO: Implement Outlook handler
                 break;
 
             default:

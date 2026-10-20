@@ -71,6 +71,7 @@ public class AppMessageRouterServiceTests
     [InlineData("")]
     [InlineData("Acme AS")]
     [InlineData("Acme: Nordic")]
+    [InlineData("outlook:inbox")]
     [InlineData("slack:")]
     [InlineData(":general")]
     public async Task AgentInitiated_NonAppScope_IsSkippedSilently(string? scope)
@@ -85,7 +86,6 @@ public class AppMessageRouterServiceTests
     [InlineData("slack:general")]
     [InlineData("Slack:general")]
     [InlineData("msteams:team:channel")]
-    [InlineData("outlook:inbox")]
     public async Task AgentInitiated_SupportedPlatformScope_IsRouted(string scope)
     {
         var serviceProvider = new Mock<IServiceProvider>();
