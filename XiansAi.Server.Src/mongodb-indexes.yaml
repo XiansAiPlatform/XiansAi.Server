@@ -634,3 +634,26 @@ tenant_smtp_config:
     keys:
       tenant_id: asc
     unique: true
+
+privacy_requests:
+  - name: privacy_request_claim
+    keys:
+      status: asc
+      run_after: asc
+    background: true
+  - name: privacy_request_tenant
+    keys:
+      scope.tenant_ids: asc
+      status: asc
+      created_at: desc
+    background: true
+  - name: privacy_request_requester
+    keys:
+      requested_by.user_hash: asc
+      created_at: desc
+    background: true
+  - name: privacy_request_ttl
+    keys:
+      closed_at: asc
+    expire_after: 1095d
+    background: true
