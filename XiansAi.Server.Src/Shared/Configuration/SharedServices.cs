@@ -6,6 +6,7 @@ using Shared.Utils.Temporal;
 using Shared.Data;
 using Shared.Repositories;
 using Shared.Services;
+using Shared.Services.Privacy;
 using Shared.Configuration;
 
 namespace Features.Shared.Configuration;
@@ -20,6 +21,8 @@ public static class SharedServices
 
         // Bind outbound webhook options and register the delivery infrastructure
         RegisterWebhookServices(services, configuration);
+
+        services.AddPrivacyServices(configuration);
 
         // Register cache services using the combined factory
         RegisterCacheProviders(services, configuration);
@@ -134,6 +137,28 @@ public static class SharedServices
         {
             services.AddHostedService<WebhookDispatcherService>();
         }
+    }
+
+    /// <summary>
+    /// Registers the GDPR request services. The options are always registered so callers can check the flag.
+    /// Everything else is registered only when <see cref="PrivacyOptions.Enabled"/> is true.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">Privacy is enabled and the options are invalid.</exception>
+    public static IServiceCollection AddPrivacyServices(this IServiceCollection services, IConfiguration configuration)
+    {
+        var options = PrivacyOptions.FromConfiguration(configuration);
+        options.Validate();
+        services.AddSingleton(options);
+
+        if (!options.Enabled)
+        {
+            return services;
+        }
+
+        services.AddSingleton<IPseudonymiser, HmacPseudonymiser>();
+        services.AddScoped<IPrivacyRequestRepository, PrivacyRequestRepository>();
+        services.AddScoped<IPrivacySubjectResolver, PrivacySubjectResolver>();
+        return services;
     }
 
     /// <summary>
