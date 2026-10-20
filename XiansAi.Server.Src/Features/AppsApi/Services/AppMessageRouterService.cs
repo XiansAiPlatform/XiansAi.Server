@@ -13,6 +13,10 @@ namespace Features.AppsApi.Services;
 /// </summary>
 public class AppMessageRouterService : BackgroundService
 {
+    /// <summary>Platforms that outbound routing supports; single source of truth for validation and dispatch.</summary>
+    private static readonly HashSet<string> SupportedPlatforms =
+        new(StringComparer.OrdinalIgnoreCase) { "slack", "msteams" };
+
     private readonly ILogger<AppMessageRouterService> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IMessageEventPublisher _messageEventPublisher;
@@ -78,25 +82,47 @@ public class AppMessageRouterService : BackgroundService
                 return; // Not an app-routed message
             }
 
-            var originParts = message.Origin.Split(':');
-            if (originParts.Length != 3 && !message.Origin.Equals("agent-initiated"))
-            {
-                _logger.LogWarning("Invalid app origin format: {Origin}", message.Origin);
-                return;
-            }
+            // Validate the format before creating a DI scope or touching the database.
+            var isAgentInitiated = message.Origin.Equals("agent-initiated");
+            string platformId, integrationId;
 
+            if (isAgentInitiated)
+            {
+                // Scope must be "{platformId}:{activationName}" for a supported platform; otherwise
+                // this is a plain web-chat/task/topic message that is not app-routed.
+                var originScopeParts = (message.Scope ?? string.Empty).Split(':', 2);
+                if (originScopeParts.Length != 2 ||
+                    string.IsNullOrWhiteSpace(originScopeParts[0]) ||
+                    string.IsNullOrWhiteSpace(originScopeParts[1]) ||
+                    !SupportedPlatforms.Contains(originScopeParts[0].Trim()))
+                {
+                    _logger.LogDebug("Skipping app-channel routing for agent-initiated message {MessageId}: scope is not an app target", message.Id);
+                    return;
+                }
+
+                platformId = originScopeParts[0].Trim();
+                integrationId = originScopeParts[1].Trim();
+            }
+            else
+            {
+                var originParts = message.Origin.Split(':');
+                if (originParts.Length != 3)
+                {
+                    _logger.LogWarning("Invalid app origin format: {Origin}", message.Origin);
+                    return;
+                }
+
+                platformId = originParts[1];
+                integrationId = originParts[2];
+            }
 
             // Create a scope to resolve scoped services
             using var scope = _scopeFactory.CreateScope();
             var tenantContext = scope.ServiceProvider.GetRequiredService<ITenantContext>();
             var appIntegrationRepository = scope.ServiceProvider.GetRequiredService<IAppIntegrationRepository>();
-            string platformId, integrationId;
 
-            if (message.Origin.StartsWith("agent-initiated") && !string.IsNullOrEmpty(message.Scope))
+            if (isAgentInitiated)
             {
-                var originScopeParts = message.Scope.Split(':');
-                platformId = originScopeParts[0];
-                integrationId = originScopeParts[1];
                 List<AppIntegration> appIntegrations = await appIntegrationRepository.GetByActivationAsync(message.TenantId, integrationId);
                 if (
                     appIntegrations != null &&
@@ -105,11 +131,6 @@ public class AppMessageRouterService : BackgroundService
                 {
                     integrationId = appIntegrations.First(x => x.PlatformId.Equals(platformId, StringComparison.OrdinalIgnoreCase) && x.IsEnabled).Id;
                 }
-            }
-            else
-            {
-                platformId = originParts[1];
-                integrationId = originParts[2];
             }
 
             _logger.LogInformation("Routing outgoing message to {Platform} integration {IntegrationId}",
@@ -160,11 +181,6 @@ public class AppMessageRouterService : BackgroundService
             case "msteams":
                 var teamsHandler = scope.ServiceProvider.GetRequiredService<ITeamsWebhookHandler>();
                 await teamsHandler.SendMessageToTeamsAsync(integration, message, cancellationToken);
-                break;
-
-            case "outlook":
-                _logger.LogInformation("Outlook outbound routing not yet implemented");
-                // TODO: Implement Outlook handler
                 break;
 
             default:
