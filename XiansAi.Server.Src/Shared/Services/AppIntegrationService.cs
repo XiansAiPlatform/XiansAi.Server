@@ -170,6 +170,20 @@ public class AppIntegrationService : IAppIntegrationService
         return converted;
     }
 
+    private static bool HasPrompt(object? workflowInputs)
+    {
+        try
+        {
+            var json = workflowInputs is string text ? text : JsonSerializer.Serialize(workflowInputs);
+            var inputs = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+            return inputs?.TryGetValue("Prompt", out var prompt) == true && !string.IsNullOrWhiteSpace(prompt);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
+    }
+
 
     private string GenerateWebhookPath(string platformId, string integrationId, string webhookSecret)
     {
@@ -425,20 +439,25 @@ public class AppIntegrationService : IAppIntegrationService
             {
                 // Convert and merge configuration - allow partial updates
                 var convertedConfig = ConvertConfiguration(request.Configuration);
-                foreach (var kvp in convertedConfig)
-                {
-                    existing.Configuration[kvp.Key] = kvp.Value;
-                }
+                var mergedConfig = new Dictionary<string, object>(existing.Configuration);
+                foreach (var kvp in convertedConfig) mergedConfig[kvp.Key] = kvp.Value;
+                if (existing.PlatformId == "builtin_webhook" &&
+                    mergedConfig.TryGetValue("workflowName", out var workflowName) &&
+                    workflowName?.ToString() == "Webhook Prompt Workflow" &&
+                    (!mergedConfig.TryGetValue("workflowInputs", out var workflowInputs) || !HasPrompt(workflowInputs)))
+                    return ServiceResult<AppIntegrationResponse>.BadRequest("Prompt is required for Webhook Prompt Workflow");
 
                 // Validate the merged configuration
                 try
                 {
-                    PlatformConfigurationRequirements.ValidateConfiguration(existing.PlatformId, existing.Configuration);
+                    PlatformConfigurationRequirements.ValidateConfiguration(existing.PlatformId, mergedConfig);
                 }
                 catch (ValidationException ex)
                 {
                     return ServiceResult<AppIntegrationResponse>.BadRequest(ex.Message);
                 }
+
+                existing.Configuration = mergedConfig;
 
                 changedFields.Add("configuration");
             }
@@ -603,6 +622,10 @@ public class AppIntegrationService : IAppIntegrationService
 
             if (timeoutInSeconds <= 0 || timeoutInSeconds > 300)
                 return ServiceResult<AppIntegrationResponse>.BadRequest("timeoutInSeconds must be between 1 and 300");
+
+            if (workflowName == "Webhook Prompt Workflow" &&
+                (request.WorkflowInputs is null || !request.WorkflowInputs.TryGetValue("Prompt", out var prompt) || string.IsNullOrWhiteSpace(prompt)))
+                return ServiceResult<AppIntegrationResponse>.BadRequest("Prompt is required for Webhook Prompt Workflow");
 
             var validationResult = await _activationValidationService.ValidateActivationAsync(tenantId, request.AgentName, request.ActivationName, workflowName);
             if (!validationResult.IsSuccess)

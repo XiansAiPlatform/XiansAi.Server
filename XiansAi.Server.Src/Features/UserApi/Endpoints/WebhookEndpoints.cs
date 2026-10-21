@@ -99,10 +99,11 @@ public static class WebhookEndpoints
                     }
                 }
 
-                var workflowInputs = await GetWorkflowInputsAsync(
+                var webhookConfiguration = await GetWebhookConfigurationAsync(
                     appIntegrationService, webhookId, tenantId, agentName, activationName, workflowName, webhookName);
-                if (workflowInputs is null && !string.IsNullOrWhiteSpace(webhookId))
+                if (webhookConfiguration is null && !string.IsNullOrWhiteSpace(webhookId))
                     return Results.NotFound("Webhook configuration not found");
+                var workflowInputs = webhookConfiguration?.WorkflowInputs;
 
                 // Read the request body
                 using var reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8);
@@ -112,9 +113,8 @@ public static class WebhookEndpoints
                 // Using webhookName as the scope/method identifier
                 var workflowId = $"{tenantId}:{agentName}:{workflowName}{(activationName != null ? $":{activationName}" : string.Empty)}";
 
-                // Use participantId from query or default to "webhook" for identification
-                // Normalize to lowercase for consistency (especially important for emails)
-                var resolvedParticipantId = (participantId ?? "webhook").ToLowerInvariant();
+                // A stored webhook owns its participant; legacy URLs without an ID keep their query value.
+                var resolvedParticipantId = (webhookConfiguration?.ParticipantId ?? participantId ?? "webhook").ToLowerInvariant();
 
                 // Generate unique request ID for correlation
                 var requestId = MessageRequestProcessor.GenerateRequestId(workflowId, resolvedParticipantId);
@@ -420,7 +420,9 @@ The Update method should return a string response.")
         .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError);
     }
 
-    private static async Task<Dictionary<string, string>?> GetWorkflowInputsAsync(
+    private sealed record WebhookConfiguration(Dictionary<string, string> WorkflowInputs, string ParticipantId);
+
+    private static async Task<WebhookConfiguration?> GetWebhookConfigurationAsync(
         IAppIntegrationService integrations,
         string? webhookId,
         string tenantId,
@@ -429,13 +431,19 @@ The Update method should return a string response.")
         string workflowName,
         string webhookName)
     {
-        if (string.IsNullOrWhiteSpace(webhookId)) return [];
+        if (string.IsNullOrWhiteSpace(webhookId)) return null;
         var webhook = await integrations.GetIntegrationEntityByIdAsync(webhookId);
         if (!MatchesWebhook(webhook, tenantId, agentName, activationName, workflowName, webhookName)) return null;
-        if (!webhook!.Configuration.TryGetValue("workflowInputs", out var value) || value is null) return [];
+        var storedWebhook = webhook!;
+        var storedParticipantId = ConfigurationValue(storedWebhook, "participantId");
+        var participantId = string.IsNullOrWhiteSpace(storedParticipantId) ? "webhook" : storedParticipantId.Trim();
+        if (!storedWebhook.Configuration.TryGetValue("workflowInputs", out var value) || value is null)
+            return new WebhookConfiguration([], participantId);
         try
         {
-            return JsonSerializer.Deserialize<Dictionary<string, string>>(JsonSerializer.Serialize(value)) ?? [];
+            var json = value is string text ? text : JsonSerializer.Serialize(value);
+            var inputs = JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? [];
+            return new WebhookConfiguration(inputs, participantId);
         }
         catch (JsonException)
         {
@@ -495,6 +503,8 @@ The Update method should return a string response.")
             !name.Contains("credential", StringComparison.OrdinalIgnoreCase) &&
             !name.Contains("apikey", StringComparison.OrdinalIgnoreCase) &&
             !name.Contains("api-key", StringComparison.OrdinalIgnoreCase) &&
-            !name.Contains("api_key", StringComparison.OrdinalIgnoreCase);
+            !name.Contains("api_key", StringComparison.OrdinalIgnoreCase) &&
+            !name.Equals("auth", StringComparison.OrdinalIgnoreCase) &&
+            !name.EndsWith("-auth", StringComparison.OrdinalIgnoreCase);
     }
 }

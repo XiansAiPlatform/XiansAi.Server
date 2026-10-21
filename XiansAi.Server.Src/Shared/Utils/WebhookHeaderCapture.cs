@@ -54,6 +54,8 @@ public static class WebhookHeaderCapture
 
     private static bool IsSensitive(string name) =>
         SensitiveHeaders.Contains(name) ||
+        name.Equals("Auth", StringComparison.OrdinalIgnoreCase) ||
+        name.EndsWith("-Auth", StringComparison.OrdinalIgnoreCase) ||
         name.Contains("token", StringComparison.OrdinalIgnoreCase) ||
         name.Contains("secret", StringComparison.OrdinalIgnoreCase) ||
         name.Contains("password", StringComparison.OrdinalIgnoreCase) ||

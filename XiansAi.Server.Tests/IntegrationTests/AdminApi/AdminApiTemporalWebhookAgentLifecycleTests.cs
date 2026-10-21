@@ -23,6 +23,85 @@ public class AdminApiTemporalWebhookAgentLifecycleTests : AdminApiTemporalIntegr
     }
 
     [Fact]
+    public async Task PromptWebhook_RequiresPrompt_AndUsesStoredParticipant()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+        BindTenantContext(tenantId, _adminUserId!);
+
+        var agentName = $"Prompt Hooks {Guid.NewGuid():N}";
+        const string activationName = "front-desk";
+        const string workflowName = "Webhook Prompt Workflow";
+        const string webhookName = "TaskReceived";
+        const string prompt = "Summarize the request";
+
+        await using var host = await LibAgentWorkflowHost.StartAsync(
+            _factory.Server, Temporal.TargetHost, Temporal.Namespace, tenantId, _adminUserId!);
+        var agent = host.RegisterTemplate(agentName, "Runs a saved webhook prompt");
+        agent.Workflows.DefineBuiltIn(workflowName).OnWebhook(context =>
+        {
+            var metadata = context.Metadata ?? [];
+            context.Respond(JsonSerializer.Serialize(new
+            {
+                prompt = metadata.GetValueOrDefault("Input:Prompt"),
+                participantId = context.Webhook.ParticipantId,
+                body = context.Webhook.Payload,
+                query = metadata.GetValueOrDefault("Query:source"),
+                code = metadata.GetValueOrDefault("Query:code"),
+                authQueryPresent = metadata.ContainsKey("Query:auth"),
+                authHeaderPresent = metadata.ContainsKey("X-Auth")
+            }));
+        });
+        await host.StartWorkersAsync(agent);
+        await WaitForTemplateAsync(agentName);
+        await DeployLibTemplateAsync(tenantId, agentName);
+        var activationId = await ActivateLibAgentAsync(tenantId, agentName, activationName);
+
+        BindTenantContext(tenantId, _adminUserId!);
+        var createUrl = $"/api/v1/admin/tenants/{tenantId}/webhooks";
+        var invalid = await PostAsJsonAsync(createUrl, new
+        {
+            agentName, activationName, workflowName, webhookName, participantId = "owner"
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, invalid.StatusCode);
+        Assert.Contains("Prompt is required", await invalid.Content.ReadAsStringAsync());
+
+        var created = await PostAsJsonAsync(createUrl, new
+        {
+            agentName, activationName, workflowName, webhookName, participantId = "owner",
+            workflowInputs = new Dictionary<string, string> { ["Prompt"] = prompt }
+        });
+        Assert.Equal(HttpStatusCode.OK, created.StatusCode);
+        using var json = JsonDocument.Parse(await created.Content.ReadAsStringAsync());
+        var url = json.RootElement.GetProperty("webhookUrl").GetString()!;
+        Assert.Contains("participantId=owner", url);
+
+        using var inbound = _factory.CreateClient();
+        inbound.DefaultRequestHeaders.Clear();
+        using var request = new HttpRequestMessage(HttpMethod.Post,
+            url.Replace("participantId=owner", "participantId=other") + "&source=test&code=task&auth=private")
+        {
+            Content = new StringContent("ticket-42", Encoding.UTF8, "text/plain")
+        };
+        request.Headers.TryAddWithoutValidation("X-Auth", "private");
+        var response = await inbound.SendAsync(request);
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        using var result = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        Assert.Equal(prompt, result.RootElement.GetProperty("prompt").GetString());
+        Assert.Equal("owner", result.RootElement.GetProperty("participantId").GetString());
+        Assert.Equal("ticket-42", result.RootElement.GetProperty("body").GetString());
+        Assert.Equal("test", result.RootElement.GetProperty("query").GetString());
+        Assert.Equal("task", result.RootElement.GetProperty("code").GetString());
+        Assert.False(result.RootElement.GetProperty("authQueryPresent").GetBoolean());
+        Assert.False(result.RootElement.GetProperty("authHeaderPresent").GetBoolean());
+
+        await RemoveLibActivationAsync(tenantId, activationId);
+        await RemoveLibDeploymentAsync(tenantId, agentName);
+        await RemoveLibTemplateAsync(agentName);
+    }
+
+    [Fact]
     public async Task WebhookAgent_InboundBuiltin_AdminCrudIsolatesAndRevokes()
     {
         var ownerTenant = $"test-tenant-{Guid.NewGuid()}";

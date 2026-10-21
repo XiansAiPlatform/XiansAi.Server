@@ -22,6 +22,7 @@ public class WebhookHeaderCaptureTests
         {
             ["Content-Type"] = "application/json",
             ["Authorization"] = "Bearer secret",
+            ["X-Auth"] = "secret",
             ["X-Service-Token"] = "secret",
             ["X-Service-Signature"] = "secret"
         };
