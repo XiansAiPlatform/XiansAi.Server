@@ -1,7 +1,5 @@
-using System.Net.Sockets;
 using DotNetEnv;
 using Features.AgentApi.Configuration;
-using MongoDB.Driver;
 using Features.Shared.Configuration;
 using Features.WebApi.Configuration;
 using Features.WebApi.Auth;
@@ -290,15 +288,7 @@ public class Program
         {
             await conversationRepository.BackfillMessagesThatCannotBeUnreadOnceAsync();
         }
-        catch (MongoException ex)
-        {
-            LogReadStatusBackfillStartupFailure(ex);
-        }
-        catch (TimeoutException ex)
-        {
-            LogReadStatusBackfillStartupFailure(ex);
-        }
-        catch (SocketException ex)
+        catch (Exception ex)
         {
             LogReadStatusBackfillStartupFailure(ex);
         }
