@@ -651,11 +651,6 @@ public static class AdminTenantEndpoints
         .WithDescription("Returns a sample OIDC configuration (with the tenantId filled in) to use as a starting point.");
     }
 
-    /// <summary>
-    /// Reads a tenant's OIDC configuration. Internal (not private) so
-    /// <see cref="AdminConsoleOidcEndpoints"/> can reuse it for the "admin-console" pseudo-tenant
-    /// instead of duplicating the body.
-    /// </summary>
     internal static async Task<IResult> GetOidcConfig(
         string tenantId,
         [FromServices] ITenantOidcConfigService service)
@@ -663,10 +658,6 @@ public static class AdminTenantEndpoints
         var result = await service.GetForTenantAsync(tenantId);
         return result.ToHttpResult();
     }
-
-    /// <summary>
-    /// Removes a tenant's OIDC configuration. Internal for the same reason as <see cref="GetOidcConfig"/>.
-    /// </summary>
     internal static async Task<IResult> DeleteOidcConfig(
         string tenantId,
         [FromServices] ITenantOidcConfigService service)
@@ -675,12 +666,6 @@ public static class AdminTenantEndpoints
         return result.ToHttpResult();
     }
 
-    /// <summary>
-    /// Shared handler for POST/PUT: validates the body, forces the tenant id to the given value
-    /// (so callers cannot point a config at another tenant), and upserts via the service. Internal
-    /// for the same reason as <see cref="GetOidcConfig"/> — <see cref="AdminConsoleOidcEndpoints"/>
-    /// calls this directly with the "admin-console" pseudo-tenant instead of duplicating the body.
-    /// </summary>
     internal static async Task<IResult> UpsertOidcConfigCore(
         string tenantId,
         [FromBody] JsonObject? config,
