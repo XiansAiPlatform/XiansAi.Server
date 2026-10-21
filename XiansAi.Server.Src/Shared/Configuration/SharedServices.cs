@@ -22,6 +22,7 @@ public static class SharedServices
         // Bind outbound webhook options and register the delivery infrastructure
         RegisterWebhookServices(services, configuration);
 
+        // Register privacy request services when privacy features are enabled.
         services.AddPrivacyServices(configuration);
 
         // Register cache services using the combined factory
