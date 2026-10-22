@@ -11,8 +11,8 @@ namespace Tests.UnitTests.Shared.Services;
 public class AdminStatsServiceUserStatsTests
 {
     private const string TenantId = "tenant-1";
-    private static readonly DateTime From = new(2026, 12, 1);
-    private static readonly DateTime To = new(2026, 12, 9);
+    private static readonly DateTime From = new(2025, 12, 1);
+    private static readonly DateTime To = new(2025, 12, 9);
 
     private readonly Mock<IAdminTaskService> _tasks = new();
     private readonly Mock<IConversationRepository> _conversations = new();
@@ -28,30 +28,32 @@ public class AdminStatsServiceUserStatsTests
             _activations.Object,
             _users.Object,
             NullLogger<AdminStatsService>.Instance);
+        SetupMembers();
     }
 
     [Fact]
     public async Task Groups_Agents_And_Tasks_By_Activation_Creator()
     {
         SetupActivations(
-            Activation("agent-a", "act-1", "user-1", new DateTime(2026, 12, 2)),
-            Activation("agent-a", "act-2", "user-1", new DateTime(2026, 12, 5)),
-            Activation("agent-b", "act-3", "user-2", new DateTime(2026, 11, 1))); // created before range
+            Activation("agent-a", "act-1", "user-1", new DateTime(2025, 12, 2)),
+            Activation("agent-a", "act-2", "user-1", new DateTime(2025, 12, 5)),
+            Activation("agent-b", "act-3", "user-2", new DateTime(2025, 11, 1))); // created before range
         SetupTaskCounts(new()
         {
             [("agent-a", "act-1")] = 10,
             [("agent-a", "act-2")] = 5,
             [("agent-b", "act-3")] = 7
         });
-        _users.Setup(r => r.GetByUserIdAsync("user-1")).ReturnsAsync(new User { UserId = "user-1", Name = "Erik Eide" });
-        _users.Setup(r => r.GetByUserIdAsync("user-2")).ReturnsAsync(new User { UserId = "user-2", Name = "Ann Lee" });
+        SetupMembers(
+            new User { UserId = "user-1", Name = "Erik Eide" },
+            new User { UserId = "user-2", Name = "Ann Lee" });
 
         var result = await _service.GetUserStatsAsync(TenantId, From, To);
 
         Assert.True(result.IsSuccess);
         var data = result.Data!;
-        Assert.Equal("2026-12-01", data.From);
-        Assert.Equal("2026-12-09", data.To);
+        Assert.Equal("2025-12-01", data.From);
+        Assert.Equal("2025-12-09", data.To);
         Assert.Equal(2, data.Totals.Users);
         Assert.Equal(2, data.Totals.Agents);
         Assert.Equal(22, data.Totals.Tasks);
@@ -74,17 +76,43 @@ public class AdminStatsServiceUserStatsTests
     }
 
     [Fact]
-    public async Task Tasks_From_Unknown_Activation_Go_To_Unknown_User()
+    public async Task Lists_Tenant_Members_Without_Activity()
     {
-        SetupActivations();
-        SetupTaskCounts(new() { [("agent-x", "deleted")] = 3 });
+        SetupActivations(Activation("agent-a", "act-1", "user-1", new DateTime(2025, 12, 2)));
+        SetupTaskCounts(new() { [("agent-a", "act-1")] = 4 });
+        SetupMembers(
+            new User { UserId = "user-1", Name = "Erik Eide" },
+            new User { UserId = "user-2", Name = "Ann Lee" });
 
         var result = await _service.GetUserStatsAsync(TenantId, From, To);
 
-        var user = Assert.Single(result.Data!.Users);
-        Assert.Equal(AdminStatsService.UnknownUserId, user.UserId);
-        Assert.Equal("Unknown", user.DisplayName);
-        Assert.Equal(3, user.TasksCreated);
+        var data = result.Data!;
+        Assert.Equal(2, data.Totals.Users);
+        Assert.Collection(data.Users,
+            u => Assert.Equal(4, u.TasksCreated),
+            u =>
+            {
+                Assert.Equal("user-2", u.UserId);
+                Assert.Equal(0, u.AgentCount);
+                Assert.Equal(0, u.TasksCreated);
+            });
+    }
+
+    [Fact]
+    public async Task Non_Members_Are_Not_Listed_But_Count_In_Totals()
+    {
+        SetupActivations(Activation("agent-a", "act-1", "former-member", new DateTime(2025, 12, 2)));
+        SetupTaskCounts(new() { [("agent-a", "act-1")] = 2, [("agent-x", "deleted")] = 1 });
+        SetupMembers(new User { UserId = "user-1", Name = "Erik Eide" });
+
+        var result = await _service.GetUserStatsAsync(TenantId, From, To);
+
+        var data = result.Data!;
+        var user = Assert.Single(data.Users);
+        Assert.Equal("user-1", user.UserId);
+        Assert.Equal(1, data.Totals.Users);
+        Assert.Equal(1, data.Totals.Agents);
+        Assert.Equal(3, data.Totals.Tasks);
     }
 
     [Fact]
@@ -99,10 +127,11 @@ public class AdminStatsServiceUserStatsTests
     }
 
     [Fact]
-    public async Task Missing_User_Record_Falls_Back_To_UserId()
+    public async Task Member_Without_Name_Falls_Back_To_UserId()
     {
-        SetupActivations(Activation("agent-a", "act-1", "ghost", new DateTime(2026, 12, 3)));
+        SetupActivations();
         SetupTaskCounts(new());
+        SetupMembers(new User { UserId = "ghost", Name = "" });
 
         var result = await _service.GetUserStatsAsync(TenantId, From, To);
 
@@ -113,13 +142,13 @@ public class AdminStatsServiceUserStatsTests
     [Fact]
     public async Task End_Date_Is_Inclusive()
     {
-        SetupActivations(Activation("agent-a", "act-1", "user-1", new DateTime(2026, 12, 9, 23, 59, 0)));
+        SetupActivations(Activation("agent-a", "act-1", "user-1", new DateTime(2025, 12, 9, 23, 59, 0)));
         SetupTaskCounts(new());
 
         var result = await _service.GetUserStatsAsync(TenantId, From, To);
 
         Assert.Equal(1, result.Data!.Totals.Agents);
-        _tasks.Verify(t => t.GetTaskCountsByActivation(TenantId, From, new DateTime(2026, 12, 10)), Times.Once);
+        _tasks.Verify(t => t.GetTaskCountsByActivation(TenantId, From, new DateTime(2025, 12, 10)), Times.Once);
     }
 
     [Fact]
@@ -128,6 +157,29 @@ public class AdminStatsServiceUserStatsTests
         var result = await _service.GetUserStatsAsync(TenantId, null, To);
 
         Assert.Equal(StatusCode.BadRequest, result.StatusCode);
+    }
+
+    [Fact]
+    public async Task Future_End_Date_Returns_BadRequest()
+    {
+        var today = DateTime.UtcNow.Date;
+
+        var result = await _service.GetUserStatsAsync(TenantId, today, today.AddDays(1));
+
+        Assert.Equal(StatusCode.BadRequest, result.StatusCode);
+        _tasks.Verify(t => t.GetTaskCountsByActivation(It.IsAny<string>(), It.IsAny<DateTime>(), It.IsAny<DateTime>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Today_As_End_Date_Is_Allowed()
+    {
+        SetupActivations();
+        SetupTaskCounts(new());
+        var today = DateTime.UtcNow.Date;
+
+        var result = await _service.GetUserStatsAsync(TenantId, today, today);
+
+        Assert.True(result.IsSuccess);
     }
 
     [Fact]
@@ -140,6 +192,9 @@ public class AdminStatsServiceUserStatsTests
 
     private void SetupActivations(params AgentActivation[] activations) =>
         _activations.Setup(r => r.GetByTenantIdAsync(TenantId)).ReturnsAsync(activations.ToList());
+
+    private void SetupMembers(params User[] members) =>
+        _users.Setup(r => r.GetByTenantIdAsync(TenantId)).ReturnsAsync(members.ToList());
 
     private void SetupTaskCounts(Dictionary<(string AgentName, string ActivationName), int> counts) =>
         _tasks.Setup(t => t.GetTaskCountsByActivation(TenantId, It.IsAny<DateTime>(), It.IsAny<DateTime>()))
