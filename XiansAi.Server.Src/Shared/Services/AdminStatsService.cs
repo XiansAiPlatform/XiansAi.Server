@@ -93,8 +93,6 @@ public class AdminStatsService : IAdminStatsService
     private readonly IUserRepository _userRepository;
     private readonly ILogger<AdminStatsService> _logger;
 
-    public const string UnknownUserId = "unknown";
-
     public AdminStatsService(
         IAdminTaskService taskService,
         IConversationRepository conversationRepository,
@@ -249,24 +247,22 @@ public class AdminStatsService : IAdminStatsService
             var taskCounts = new Dictionary<string, int>();
             foreach (var (key, count) in taskCountsResult.Data!)
             {
-                var userId = creatorByActivation.GetValueOrDefault(key) ?? UnknownUserId;
-                taskCounts[userId] = taskCounts.GetValueOrDefault(userId) + count;
+                if (creatorByActivation.TryGetValue(key, out var userId))
+                {
+                    taskCounts[userId] = taskCounts.GetValueOrDefault(userId) + count;
+                }
             }
 
-            // Every tenant member is listed, including those with no activity in the range.
-            var members = (await _userRepository.GetByTenantIdAsync(tenantId))
-                .GroupBy(u => u.UserId)
-                .ToDictionary(g => g.Key, g => g.First());
-
-            var users = (await Task.WhenAll(members.Keys.Union(agentCounts.Keys).Union(taskCounts.Keys).Select(async userId => new UserUsage
+            // Only tenant members are listed, including those with no activity in the range.
+            var users = (await _userRepository.GetByTenantIdAsync(tenantId))
+                .DistinctBy(u => u.UserId)
+                .Select(u => new UserUsage
                 {
-                    UserId = userId,
-                    DisplayName = members.TryGetValue(userId, out var member) && !string.IsNullOrWhiteSpace(member.Name)
-                        ? member.Name
-                        : await GetDisplayNameAsync(userId),
-                    AgentCount = agentCounts.GetValueOrDefault(userId),
-                    TasksCreated = taskCounts.GetValueOrDefault(userId)
-                })))
+                    UserId = u.UserId,
+                    DisplayName = string.IsNullOrWhiteSpace(u.Name) ? u.UserId : u.Name,
+                    AgentCount = agentCounts.GetValueOrDefault(u.UserId),
+                    TasksCreated = taskCounts.GetValueOrDefault(u.UserId)
+                })
                 .OrderByDescending(u => u.TasksCreated)
                 .ThenBy(u => u.DisplayName)
                 .ToList();
@@ -278,10 +274,10 @@ public class AdminStatsService : IAdminStatsService
                 To = to.ToString("yyyy-MM-dd"),
                 Totals = new UsageTotals
                 {
-                    // Tenant members only; creators who are no longer members (or "unknown") are listed but not counted.
-                    Users = members.Count,
-                    Agents = users.Sum(u => u.AgentCount),
-                    Tasks = users.Sum(u => u.TasksCreated)
+                    Users = users.Count,
+                    // Tenant-wide, so they include activity by non-members and deleted activations.
+                    Agents = agentCounts.Values.Sum(),
+                    Tasks = taskCountsResult.Data.Values.Sum()
                 },
                 Users = users
             };
@@ -292,28 +288,6 @@ public class AdminStatsService : IAdminStatsService
         {
             _logger.LogError(ex, "Failed to retrieve user stats. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
             return ServiceResult<UserUsageStatsResponse>.InternalServerError("Failed to retrieve user statistics");
-        }
-    }
-
-    /// <summary>
-    /// Resolves a user's display name, falling back to the userId when the user is unknown.
-    /// </summary>
-    private async Task<string> GetDisplayNameAsync(string userId)
-    {
-        if (userId == UnknownUserId)
-        {
-            return "Unknown";
-        }
-
-        try
-        {
-            var user = await _userRepository.GetByUserIdAsync(userId);
-            return string.IsNullOrWhiteSpace(user?.Name) ? userId : user!.Name;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to look up user {UserId}", LogSanitizer.Sanitize(userId));
-            return userId;
         }
     }
 
