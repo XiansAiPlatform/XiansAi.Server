@@ -241,6 +241,40 @@ public class SecretVaultServiceTests
         Assert.Equal("found-it", result.Data!.Value);
     }
 
+    [Fact]
+    public async Task FetchByTenantsAsync_Returns_Value_Or_Null_Per_Tenant()
+    {
+        var a = NewEntity("tenant-a", "k1");
+        var b = NewEntity("tenant-b", "k1");
+        _repo.Setup(r => r.FindManyForAccessAsync(
+                "k1",
+                It.Is<IReadOnlyCollection<string>>(ids => ids.SequenceEqual(new[] { "tenant-a", "tenant-b", "tenant-c" })),
+                null, null))
+            .ReturnsAsync(new List<SecretVault> { a, b });
+        await _store.SetAsync(a.Id, "sk_live_aaa");
+        await _store.SetAsync(b.Id, "sk_live_bbb");
+
+        var result = await _service.FetchByTenantsAsync("k1", new[] { "tenant-a", "tenant-b", "tenant-c", "tenant-a" }, null, null);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(3, result.Data!.Count);
+        Assert.Equal("sk_live_aaa", result.Data["tenant-a"]);
+        Assert.Equal("sk_live_bbb", result.Data["tenant-b"]);
+        Assert.Null(result.Data["tenant-c"]);
+    }
+
+    [Fact]
+    public async Task FetchByTenantsAsync_Validates_Input()
+    {
+        var tooMany = Enumerable.Range(0, SecretVaultService.MaxBatchTenantIds + 1).Select(i => $"t{i}").ToArray();
+
+        Assert.Equal(StatusCode.BadRequest, (await _service.FetchByTenantsAsync("", new[] { "t" }, null, null)).StatusCode);
+        Assert.Equal(StatusCode.BadRequest, (await _service.FetchByTenantsAsync("k", null, null, null)).StatusCode);
+        Assert.Equal(StatusCode.BadRequest, (await _service.FetchByTenantsAsync("k", Array.Empty<string>(), null, null)).StatusCode);
+        Assert.Equal(StatusCode.BadRequest, (await _service.FetchByTenantsAsync("k", new[] { "t", " " }, null, null)).StatusCode);
+        Assert.Equal(StatusCode.BadRequest, (await _service.FetchByTenantsAsync("k", tooMany, null, null)).StatusCode);
+    }
+
     private static SecretVault NewEntity(string tenantId, string key) => new()
     {
         Id = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
