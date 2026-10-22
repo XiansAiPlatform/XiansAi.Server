@@ -153,6 +153,9 @@ public static class CapabilityActions
     public const string TenantLogoGet = "tenant.logo.get";
     public const string TenantLogoSet = "tenant.logo.set";
     public const string TenantLogoClear = "tenant.logo.clear";
+    public const string TenantFaviconGet = "tenant.favicon.get";
+    public const string TenantFaviconSet = "tenant.favicon.set";
+    public const string TenantFaviconClear = "tenant.favicon.clear";
     public const string TenantThemeGet = "tenant.theme.get";
     public const string TenantThemeSet = "tenant.theme.set";
     public const string TenantThemeClear = "tenant.theme.clear";
@@ -487,6 +490,12 @@ public static class CapabilityActions
             "Set or replace a tenant's logo."),
         new(TenantLogoClear, [SystemRoles.TenantAdmin],
             "Remove a tenant's logo."),
+        new(TenantFaviconGet, [SystemRoles.TenantAdmin],
+            "Read a tenant's favicon image."),
+        new(TenantFaviconSet, [SystemRoles.TenantAdmin],
+            "Set or replace a tenant's favicon."),
+        new(TenantFaviconClear, [SystemRoles.TenantAdmin],
+            "Remove a tenant's favicon."),
         new(TenantThemeGet, [SystemRoles.TenantAdmin],
             "Read a tenant's UI theme."),
         new(TenantThemeSet, [SystemRoles.TenantAdmin],
