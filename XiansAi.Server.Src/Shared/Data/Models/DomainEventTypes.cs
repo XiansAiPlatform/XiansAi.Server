@@ -158,6 +158,18 @@ public static class DomainEventTypes
     /// <summary>An agent activation was deleted.</summary>
     public const string ActivationDeleted = "activation.deleted";
 
+    // ----- Health checks -----
+    // Only for changes to checks. Run results don't create events.
+
+    /// <summary>A health check was added to an activation.</summary>
+    public const string HealthCheckCreated = "healthcheck.created";
+
+    /// <summary>A health check was changed (including enabled or disabled).</summary>
+    public const string HealthCheckUpdated = "healthcheck.updated";
+
+    /// <summary>A health check and its runs were deleted.</summary>
+    public const string HealthCheckDeleted = "healthcheck.deleted";
+
     // ----- Knowledge -----
 
     /// <summary>A knowledge item (or override/version) was created.</summary>
@@ -270,6 +282,9 @@ public static class DomainEventTypes
         ActivationActivated => "An agent activation was activated and its workflows started.",
         ActivationDeactivated => "An agent activation was deactivated.",
         ActivationDeleted => "An agent activation was deleted.",
+        HealthCheckCreated => "An automated health check was attached to an agent activation.",
+        HealthCheckUpdated => "An automated health check was updated.",
+        HealthCheckDeleted => "An automated health check and its run history were deleted.",
         KnowledgeCreated => "A knowledge item was created.",
         KnowledgeUpdated => "A knowledge item was updated.",
         KnowledgeDeleted => "A knowledge item was deleted.",

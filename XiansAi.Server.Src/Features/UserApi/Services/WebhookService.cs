@@ -16,7 +16,9 @@ public interface IWebhookReceiverService
         string workflow,
         string methodName,
         IDictionary<string, string> queryParams,
-        string body);
+        string body,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default);
 }
 
 public class WebhookReceiverService : IWebhookReceiverService
@@ -46,7 +48,9 @@ public class WebhookReceiverService : IWebhookReceiverService
         string workflow,
         string methodName,
         IDictionary<string, string> queryParams,
-        string body)
+        string body,
+        TimeSpan? timeout = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -69,7 +73,9 @@ public class WebhookReceiverService : IWebhookReceiverService
                 body,
                 _tenantContext,
                 _temporalGatewayFactory,
-                _agentService);
+                _agentService,
+                timeout,
+                cancellationToken);
 
             _logger.LogInformation(
                 "Successfully processed webhook for tenant {TenantId}, workflow {Workflow}, method {Method}",
