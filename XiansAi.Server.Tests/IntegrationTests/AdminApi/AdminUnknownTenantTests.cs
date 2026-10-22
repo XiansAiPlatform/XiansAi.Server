@@ -54,7 +54,8 @@ public class AdminUnknownTenantTests : AdminApiIntegrationTestBase
                 .Setup(x => x.ValidateAsync(AdminKeylessUserResolver.AdminConsolePseudoTenant, SysAdminIdToken))
                 .ReturnsAsync(OidcValidationResult.Ok(
                     sysAdminUserId, sysAdminUserId, "https://login.example.com",
-                    $"{sysAdminUserId}@test.com", "SysAdmin", emailVerified: true));
+                    $"{sysAdminUserId}@test.com", "SysAdmin",
+                    emailVerification: new EmailVerificationResult(true, $"{sysAdminUserId}@test.com", "verified email")));
         }
 
         _host = _factory.WithWebHostBuilder(builder => builder.ConfigureTestServices(services =>
