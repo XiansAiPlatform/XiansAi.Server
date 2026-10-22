@@ -53,30 +53,41 @@ public sealed class WebhookTools(
     }
 
     [McpServerTool(Name = "create_webhook")]
-    [Description("Create an inbound builtin webhook for a registered workflow in this activation. First use list_workflows for the exact workflow type and list_webhooks to avoid duplicate names. The returned relative URL contains credentials: disclose it only to the user and intended caller. Creation does not guarantee an agent worker is running.")]
+    [Description("Create an inbound builtin webhook for a registered workflow in this activation. First use list_workflows for the exact workflow type and list_webhooks to avoid duplicate names. workflowInputs stores non-sensitive values consumed by the workflow. The returned relative URL contains credentials: disclose it only to the user and intended caller. Creation does not guarantee an agent worker is running.")]
     public async Task<CreatedWebhook> CreateWebhook(
         McpTarget target,
         [Description("Exact registered workflow type returned by list_workflows.")] string workflowType,
         [Description("Event name delivered to the workflow's webhook handler.")] string webhookName,
         [Description("Optional unique display name; defaults from the webhook and activation names.")] string? name = null,
         [Description("Participant attribution used for webhook messages; defaults to webhook.")] string? participantId = null,
-        [Description("Seconds to wait synchronously for the workflow response, from 1 to 300.")] int timeoutInSeconds = 30)
+        [Description("Seconds to wait synchronously for the workflow response, from 1 to 300.")] int timeoutInSeconds = 30,
+        [Description("Optional non-sensitive string values passed to the workflow with each request.")] Dictionary<string, string>? workflowInputs = null)
     {
         await AuthorizeAsync(target, true);
         if (string.IsNullOrWhiteSpace(workflowType)) throw new McpException("Workflow type is required.");
         if (string.IsNullOrWhiteSpace(webhookName)) throw new McpException("Webhook name is required.");
         if (timeoutInSeconds is < 1 or > 300) throw new McpException("Timeout must be between 1 and 300 seconds.");
+        var workflowName = ToWorkflowName(target.AgentName, workflowType);
         var created = Result(await integrations.CreateBuiltinWebhookAsync(new CreateBuiltinWebhookRequest
         {
             AgentName = target.AgentName,
             ActivationName = target.ActivationName,
-            WorkflowName = workflowType,
+            WorkflowName = workflowName,
             WebhookName = webhookName,
             Name = name,
             ParticipantId = participantId,
-            TimeoutInSeconds = timeoutInSeconds
+            TimeoutInSeconds = timeoutInSeconds,
+            WorkflowInputs = workflowInputs
         }, tenantContext.TenantId, tenantContext.LoggedInUser ?? "system"));
         return new CreatedWebhook(ToSummary(created), created.WebhookUrl);
+    }
+
+    private static string ToWorkflowName(string agentName, string workflowType)
+    {
+        var prefix = agentName + ":";
+        return workflowType.StartsWith(prefix, StringComparison.Ordinal)
+            ? workflowType[prefix.Length..]
+            : workflowType;
     }
 
     [McpServerTool(Name = "delete_webhook", Destructive = true)]
@@ -88,12 +99,38 @@ public sealed class WebhookTools(
     {
         await AuthorizeAsync(target, true);
         if (!confirmed) throw new McpException("Explicit user confirmation is required before permanent deletion.");
+        await RequireWebhookAsync(target, webhookId);
+        return Result(await integrations.DeleteBuiltinWebhookAsync(webhookId, tenantContext.TenantId));
+    }
+
+    [McpServerTool(Name = "update_webhook")]
+    [Description("Replace the non-sensitive workflow inputs for one inbound builtin webhook. Use the exact webhook ID from list_webhooks. Other webhook settings are unchanged.")]
+    public async Task<WebhookSummary> UpdateWebhook(
+        McpTarget target,
+        [Description("Exact webhook ID returned by list_webhooks.")] string webhookId,
+        [Description("Complete set of non-sensitive string values passed to the workflow with each request.")] Dictionary<string, string> workflowInputs)
+    {
+        await AuthorizeAsync(target, true);
+        await RequireWebhookAsync(target, webhookId);
+        var updated = Result(await integrations.UpdateIntegrationAsync(
+            webhookId,
+            new UpdateAppIntegrationRequest
+            {
+                Configuration = new Dictionary<string, object> { ["workflowInputs"] = workflowInputs }
+            },
+            tenantContext.TenantId,
+            tenantContext.LoggedInUser ?? "system"));
+        return ToSummary(updated);
+    }
+
+    private async Task<AppIntegration> RequireWebhookAsync(McpTarget target, string webhookId)
+    {
         var webhook = await integrations.GetIntegrationEntityByIdAsync(webhookId);
         if (webhook is null || webhook.TenantId != tenantContext.TenantId ||
             webhook.AgentName != target.AgentName || webhook.ActivationName != target.ActivationName ||
             !webhook.PlatformId.Equals("builtin_webhook", StringComparison.OrdinalIgnoreCase))
             throw new McpException("Webhook not found in this activation. Use an exact ID from list_webhooks.");
-        return Result(await integrations.DeleteBuiltinWebhookAsync(webhookId, tenantContext.TenantId));
+        return webhook;
     }
 
     private static WebhookSummary ToSummary(AppIntegrationResponse webhook) => new(
@@ -106,6 +143,7 @@ public sealed class WebhookTools(
         Value<string>(webhook, "webhookName"),
         Value<string>(webhook, "participantId"),
         Value<int?>(webhook, "timeoutInSeconds"),
+        Value<Dictionary<string, string>>(webhook, "workflowInputs"),
         webhook.IsEnabled,
         webhook.CreatedAt);
 
@@ -135,6 +173,7 @@ public sealed record WebhookSummary(
     string? WebhookName,
     string? ParticipantId,
     int? TimeoutInSeconds,
+    Dictionary<string, string>? WorkflowInputs,
     bool IsEnabled,
     DateTime CreatedAt);
 

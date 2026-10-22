@@ -357,6 +357,9 @@ public class CreateBuiltinWebhookRequest
 
     [JsonPropertyName("apiKey")]
     public string? ApiKey { get; set; }
+
+    [JsonPropertyName("workflowInputs")]
+    public Dictionary<string, string>? WorkflowInputs { get; set; }
 }
 
 /// <summary>

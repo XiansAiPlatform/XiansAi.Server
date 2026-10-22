@@ -88,6 +88,36 @@ public class AppIntegrationServiceFilteringTests
         apiKeyService.Verify(value => value.RevokeApiKeyAsync("key-id", "tenant"), Times.Once);
     }
 
+    [Fact]
+    public async Task UpdatePromptWebhookRejectsRemovingPrompt()
+    {
+        var repository = new Mock<IAppIntegrationRepository>();
+        var integration = Integration("builtin_webhook");
+        integration.Configuration["workflowName"] = "Webhook Prompt Workflow";
+        integration.Configuration["workflowInputs"] = new Dictionary<string, string> { ["Prompt"] = "Summarize" };
+        repository.Setup(value => value.GetByIdAsync(integration.Id)).ReturnsAsync(integration);
+        var service = new AppIntegrationService(
+            repository.Object,
+            Mock.Of<IApiKeyService>(),
+            Mock.Of<IActivationValidationService>(),
+            Mock.Of<IWebhookEventPublisher>(),
+            Mock.Of<IAuditLogService>(),
+            NullLogger<AppIntegrationService>.Instance);
+
+        var result = await service.UpdateIntegrationAsync(integration.Id,
+            new UpdateAppIntegrationRequest
+            {
+                Configuration = new Dictionary<string, object>
+                {
+                    ["workflowInputs"] = new Dictionary<string, string> { ["Prompt"] = " " }
+                }
+            }, "tenant", "user");
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("Prompt is required", result.ErrorMessage);
+        Assert.Equal("Summarize", ((Dictionary<string, string>)integration.Configuration["workflowInputs"])["Prompt"]);
+    }
+
     private static AppIntegration Integration(string platformId) => new()
     {
         Id = MongoDB.Bson.ObjectId.GenerateNewId().ToString(),
