@@ -44,6 +44,18 @@ public static class ConversationMessageReadRules
     {
         return CanBeUnread(direction, messageType) ? MessageStatus.Unread : MessageStatus.Read;
     }
+
+    /// <summary>
+    /// Legacy rows that cannot be unread may still be stored as Unread or with no status.
+    /// Reports them as Read on the way out instead of rewriting stored data.
+    /// </summary>
+    public static void ApplyReadStatusRule(ConversationMessage message)
+    {
+        if (!CanBeUnread(message.Direction, message.MessageType))
+        {
+            message.Status = MessageStatus.Read;
+        }
+    }
 }
 
 public enum MessageType
@@ -243,7 +255,11 @@ public interface IConversationRepository
     /// </summary>
     Task<List<ConversationThread>> GetByTenantAndActivationAsync(string tenantId, string activationName);
     Task<bool> DeleteThreadAsync(string threadId, string? tenantId = null);
-    Task<string> GetThreadIdAsync(string tenantId, string workflowId, string participantId);
+    /// <summary>
+    /// Looks up the thread id for a tenant/workflow/participant. Returns null when no thread
+    /// exists yet, which is the normal first-message case rather than an error.
+    /// </summary>
+    Task<string?> TryGetThreadIdAsync(string tenantId, string workflowId, string participantId);
 
 
     // Message operations
@@ -276,20 +292,6 @@ public interface IConversationRepository
     /// Missing or null status counts as unread. Incoming, Tool, and Reasoning messages are excluded.
     /// </summary>
     Task<long> GetUnreadMessageCountAsync(string tenantId, string threadId);
-
-    /// <summary>
-    /// Sets status to Read on existing messages that cannot be unread (Incoming, and Outgoing
-    /// messages that are not Chat or File), including rows whose status is missing.
-    /// Outgoing Chat and File rows are left unchanged.
-    /// </summary>
-    Task<long> BackfillMessagesThatCannotBeUnreadAsync();
-
-    /// <summary>
-    /// Runs <see cref="BackfillMessagesThatCannotBeUnreadAsync"/> at most once per database.
-    /// Concurrent callers race to insert one claim; only the winner scans. Later calls, and
-    /// callers that lose the claim, return 0 without scanning conversation messages.
-    /// </summary>
-    Task<long> BackfillMessagesThatCannotBeUnreadOnceAsync();
 
     /// <summary>
     /// Collects GridFS file ids referenced by File-type messages matching the given
@@ -336,9 +338,6 @@ public class ConversationThreadInfo
 
 public class ConversationRepository : IConversationRepository
 {
-    public const string ReadStatusBackfillMigrationId = "conversation-message-non-unread-backfill";
-    private const string DataMigrationsCollection = "data_migrations";
-    private static readonly TimeSpan ReadStatusBackfillClaimStaleAfter = TimeSpan.FromMinutes(15);
     private const string ThreadIdCacheKeyPrefix = "conversation:thread-id:";
     private static readonly TimeSpan ThreadIdCacheDuration = TimeSpan.FromMinutes(10);
 
@@ -674,6 +673,7 @@ public class ConversationRepository : IConversationRepository
 
             ConvertBsonDataToObject(message);
             DecryptMessageText(message);
+            ConversationMessageReadRules.ApplyReadStatusRule(message);
             return message;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetMessageById");
     }
@@ -762,6 +762,7 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
             {
                 ConvertBsonDataToObject(message);
                 DecryptMessageText(message);
+                ConversationMessageReadRules.ApplyReadStatusRule(message);
             }
             
             _logger.LogDebug("Found history of {Count} messages for thread {ThreadId}", messages.Count, LogSanitizer.Sanitize(threadId));
@@ -838,6 +839,7 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
             {
                 ConvertBsonDataToObject(message);
                 DecryptMessageText(message);
+                ConversationMessageReadRules.ApplyReadStatusRule(message);
             }
 
             _logger.LogDebug(
@@ -915,6 +917,7 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
             {
                 ConvertBsonDataToObject(message);
                 DecryptMessageText(message);
+                ConversationMessageReadRules.ApplyReadStatusRule(message);
             }
 
             return messages;
@@ -993,146 +996,6 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetUnreadMessageCount");
     }
 
-    public async Task<long> BackfillMessagesThatCannotBeUnreadAsync()
-    {
-        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
-        {
-            var filter = Builders<ConversationMessage>.Filter;
-            // Anything that is not an Outgoing Chat or File, and is not already Read
-            // (including a missing status), is stored as Read.
-            var cannotBeUnread = filter.And(
-                NotReadFilter(),
-                filter.Not(OutgoingChatOrFileFilter()));
-
-            var update = Builders<ConversationMessage>.Update.Set(x => x.Status, MessageStatus.Read);
-            var result = await _messagesCollection.UpdateManyAsync(cannotBeUnread, update);
-
-            if (result.ModifiedCount > 0)
-            {
-                _logger.LogInformation(
-                    "Backfilled {Count} conversation messages to Read because they cannot be unread",
-                    result.ModifiedCount);
-            }
-            else
-            {
-                _logger.LogDebug("No conversation messages needed a read-status backfill");
-            }
-
-            return result.ModifiedCount;
-        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "BackfillMessagesThatCannotBeUnread");
-    }
-
-    public async Task<long> BackfillMessagesThatCannotBeUnreadOnceAsync()
-    {
-        var migrations = _database.GetCollection<BsonDocument>(DataMigrationsCollection);
-        var idFilter = Builders<BsonDocument>.Filter.Eq("_id", ReadStatusBackfillMigrationId);
-        if (!await TryClaimReadStatusBackfillAsync(migrations, idFilter))
-        {
-            return 0;
-        }
-
-        try
-        {
-            _logger.LogInformation("Running one-time conversation message read-status backfill");
-            var updated = await BackfillMessagesThatCannotBeUnreadAsync();
-            var completion = Builders<BsonDocument>.Update
-                .Set("completed", true)
-                .Set("completed_at", DateTime.UtcNow)
-                .Set("updated_count", updated);
-            await migrations.UpdateOneAsync(idFilter, completion);
-            return updated;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Conversation message read-status backfill failed; releasing the claim");
-            await ReleaseReadStatusBackfillClaimAsync(migrations, idFilter);
-            throw;
-        }
-    }
-
-    private async Task<bool> TryClaimReadStatusBackfillAsync(
-        IMongoCollection<BsonDocument> migrations,
-        FilterDefinition<BsonDocument> idFilter)
-    {
-        if (await InsertReadStatusBackfillClaimAsync(migrations, idFilter))
-        {
-            return true;
-        }
-
-        return await TryTakeOverStaleReadStatusBackfillClaimAsync(migrations, idFilter);
-    }
-
-    private static async Task<bool> InsertReadStatusBackfillClaimAsync(
-        IMongoCollection<BsonDocument> migrations,
-        FilterDefinition<BsonDocument> idFilter)
-    {
-        try
-        {
-            var claim = Builders<BsonDocument>.Update
-                .SetOnInsert("claimed_at", DateTime.UtcNow)
-                .SetOnInsert("completed", false);
-            var inserted = await migrations.UpdateOneAsync(idFilter, claim, new UpdateOptions { IsUpsert = true });
-            return inserted.UpsertedId != null;
-        }
-        catch (MongoWriteException ex) when (IsDuplicateKey(ex))
-        {
-            return false;
-        }
-    }
-
-    private async Task<bool> TryTakeOverStaleReadStatusBackfillClaimAsync(
-        IMongoCollection<BsonDocument> migrations,
-        FilterDefinition<BsonDocument> idFilter)
-    {
-        var existing = await migrations.Find(idFilter).FirstOrDefaultAsync();
-        if (IsMigrationCompleted(existing) || !IsStaleReadStatusBackfillClaim(existing))
-        {
-            _logger.LogDebug("Conversation message read-status backfill is already claimed or completed; skipping");
-            return false;
-        }
-
-        var claimedAt = existing!["claimed_at"];
-        var takeover = await migrations.UpdateOneAsync(
-            Builders<BsonDocument>.Filter.And(
-                idFilter,
-                Builders<BsonDocument>.Filter.Ne("completed", true),
-                Builders<BsonDocument>.Filter.Eq("claimed_at", claimedAt)),
-            Builders<BsonDocument>.Update.Set("claimed_at", DateTime.UtcNow));
-
-        return takeover.ModifiedCount == 1;
-    }
-
-    private static bool IsStaleReadStatusBackfillClaim(BsonDocument? existing)
-    {
-        if (existing == null || !existing.TryGetValue("claimed_at", out var claimedAt) || !claimedAt.IsValidDateTime)
-        {
-            return false;
-        }
-
-        return DateTime.UtcNow - claimedAt.ToUniversalTime() >= ReadStatusBackfillClaimStaleAfter;
-    }
-
-    private async Task ReleaseReadStatusBackfillClaimAsync(
-        IMongoCollection<BsonDocument> migrations,
-        FilterDefinition<BsonDocument> idFilter)
-    {
-        try
-        {
-            await migrations.DeleteOneAsync(Builders<BsonDocument>.Filter.And(
-                idFilter,
-                Builders<BsonDocument>.Filter.Ne("completed", true)));
-        }
-        catch (MongoException ex)
-        {
-            _logger.LogError(ex, "Failed to release the conversation message read-status backfill claim");
-        }
-    }
-
-    private static bool IsDuplicateKey(MongoWriteException ex)
-    {
-        return ex.WriteError?.Category == ServerErrorCategory.DuplicateKey || ex.WriteError?.Code == 11000;
-    }
-
     private async Task<long> UpdateMessagesAsReadAsync(
         FilterDefinition<ConversationMessage> filter,
         UpdateDefinition<ConversationMessage> update,
@@ -1143,14 +1006,6 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
             var result = await _messagesCollection.UpdateManyAsync(filter, update);
             return result.ModifiedCount;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: operationName);
-    }
-
-    private static bool IsMigrationCompleted(BsonDocument? existing)
-    {
-        return existing != null
-            && existing.TryGetValue("completed", out var completed)
-            && completed.IsBoolean
-            && completed.AsBoolean;
     }
 
     private static FilterDefinition<ConversationMessage> OutgoingChatOrFileFilter()
@@ -1175,12 +1030,8 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
     {
         var fileIds = new List<string>();
 
-        string threadId;
-        try
-        {
-            threadId = await GetThreadIdAsync(tenantId, workflowId, participantId);
-        }
-        catch (KeyNotFoundException)
+        var threadId = await TryGetThreadIdAsync(tenantId, workflowId, participantId);
+        if (threadId == null)
         {
             return fileIds;
         }
@@ -1228,12 +1079,8 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
         try
         {
             // First, get the thread ID
-            string threadId;
-            try
-            {
-                threadId = await GetThreadIdAsync(tenantId, workflowId, participantId);
-            }
-            catch (KeyNotFoundException)
+            var threadId = await TryGetThreadIdAsync(tenantId, workflowId, participantId);
+            if (threadId == null)
             {
                 _logger.LogWarning("Thread not found for workflowId {WorkflowId}, participant {ParticipantId}, tenant {TenantId}. No messages to delete.", 
                     LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(tenantId));
@@ -1280,7 +1127,7 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
         }
     }
 
-    public async Task<string> GetThreadIdAsync(string tenantId, string workflowId, string participantId)
+    public async Task<string?> TryGetThreadIdAsync(string tenantId, string workflowId, string participantId)
     {
         var cacheKey = BuildThreadIdCacheKey(tenantId, workflowId, participantId);
         if (_memoryCache.TryGetValue(cacheKey, out string? cachedThreadId) && !string.IsNullOrEmpty(cachedThreadId))
@@ -1293,11 +1140,12 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
             var thread = await GetByCompositeKeyAsync(tenantId, workflowId, participantId);
             if (thread == null)
             {
-                throw new KeyNotFoundException($"No conversation thread found for tenant '{tenantId}', workflow '{workflowId}', and participant '{participantId}'.");
+                // Not cached: the thread may be created moments later.
+                return null;
             }
             CacheThreadId(cacheKey, thread.Id);
             return thread.Id;
-        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetThreadId");
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "TryGetThreadId");
     }
 
     public async Task<TopicsResult> GetTopicsByThreadIdAsync(string tenantId, string threadId, int page, int pageSize)
