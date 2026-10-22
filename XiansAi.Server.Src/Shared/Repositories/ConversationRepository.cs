@@ -255,7 +255,11 @@ public interface IConversationRepository
     /// </summary>
     Task<List<ConversationThread>> GetByTenantAndActivationAsync(string tenantId, string activationName);
     Task<bool> DeleteThreadAsync(string threadId, string? tenantId = null);
-    Task<string> GetThreadIdAsync(string tenantId, string workflowId, string participantId);
+    /// <summary>
+    /// Looks up the thread id for a tenant/workflow/participant. Returns null when no thread
+    /// exists yet, which is the normal first-message case rather than an error.
+    /// </summary>
+    Task<string?> TryGetThreadIdAsync(string tenantId, string workflowId, string participantId);
 
 
     // Message operations
@@ -1026,12 +1030,8 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
     {
         var fileIds = new List<string>();
 
-        string threadId;
-        try
-        {
-            threadId = await GetThreadIdAsync(tenantId, workflowId, participantId);
-        }
-        catch (KeyNotFoundException)
+        var threadId = await TryGetThreadIdAsync(tenantId, workflowId, participantId);
+        if (threadId == null)
         {
             return fileIds;
         }
@@ -1079,12 +1079,8 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
         try
         {
             // First, get the thread ID
-            string threadId;
-            try
-            {
-                threadId = await GetThreadIdAsync(tenantId, workflowId, participantId);
-            }
-            catch (KeyNotFoundException)
+            var threadId = await TryGetThreadIdAsync(tenantId, workflowId, participantId);
+            if (threadId == null)
             {
                 _logger.LogWarning("Thread not found for workflowId {WorkflowId}, participant {ParticipantId}, tenant {TenantId}. No messages to delete.", 
                     LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(tenantId));
@@ -1131,7 +1127,7 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
         }
     }
 
-    public async Task<string> GetThreadIdAsync(string tenantId, string workflowId, string participantId)
+    public async Task<string?> TryGetThreadIdAsync(string tenantId, string workflowId, string participantId)
     {
         var cacheKey = BuildThreadIdCacheKey(tenantId, workflowId, participantId);
         if (_memoryCache.TryGetValue(cacheKey, out string? cachedThreadId) && !string.IsNullOrEmpty(cachedThreadId))
@@ -1144,11 +1140,12 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
             var thread = await GetByCompositeKeyAsync(tenantId, workflowId, participantId);
             if (thread == null)
             {
-                throw new KeyNotFoundException($"No conversation thread found for tenant '{tenantId}', workflow '{workflowId}', and participant '{participantId}'.");
+                // Not cached: the thread may be created moments later.
+                return null;
             }
             CacheThreadId(cacheKey, thread.Id);
             return thread.Id;
-        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetThreadId");
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "TryGetThreadId");
     }
 
     public async Task<TopicsResult> GetTopicsByThreadIdAsync(string tenantId, string threadId, int page, int pageSize)
