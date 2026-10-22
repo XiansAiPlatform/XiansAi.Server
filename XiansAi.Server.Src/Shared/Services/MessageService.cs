@@ -668,14 +668,10 @@ public class MessageService : IMessageService
             }
 
             // First, find the thread ID using workflowId and participantId
-            string threadId;
-            try
+            var threadId = await _conversationRepository.TryGetThreadIdAsync(_tenantContext.TenantId, workflowId, participantId);
+            if (threadId == null)
             {
-                threadId = await _conversationRepository.GetThreadIdAsync(_tenantContext.TenantId, workflowId, participantId);
-            }
-            catch (KeyNotFoundException)
-            {
-                _logger.LogWarning("Thread not found for workflowId {WorkflowId}, participant {ParticipantId}, tenant {TenantId}", 
+                _logger.LogWarning("Thread not found for workflowId {WorkflowId}, participant {ParticipantId}, tenant {TenantId}",
                     LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(_tenantContext.TenantId));
                 return ServiceResult<bool>.NotFound("Thread not found");
             }
@@ -920,12 +916,8 @@ public class MessageService : IMessageService
             }
 
             // Get the thread ID using workflowId and participantId
-            string threadId;
-            try
-            {
-                threadId = await _conversationRepository.GetThreadIdAsync(_tenantContext.TenantId, workflowId, participantId);
-            }
-            catch (KeyNotFoundException)
+            var threadId = await _conversationRepository.TryGetThreadIdAsync(_tenantContext.TenantId, workflowId, participantId);
+            if (threadId == null)
             {
                 _logger.LogInformation("Thread not found for workflowId {WorkflowId}, participant {ParticipantId}, tenant {TenantId}. Returning empty topics list.", 
                     LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(_tenantContext.TenantId));
