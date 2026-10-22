@@ -208,9 +208,10 @@ public class AdminStatsService : IAdminStatsService
             return ServiceResult<UserUsageStatsResponse>.BadRequest("StartDate cannot be after EndDate");
         }
 
-        if (to >= DateTime.MaxValue.Date)
+        // Also rules out a future StartDate, since StartDate cannot be after EndDate.
+        if (to > DateTime.UtcNow.Date)
         {
-            return ServiceResult<UserUsageStatsResponse>.BadRequest("EndDate is out of range");
+            return ServiceResult<UserUsageStatsResponse>.BadRequest("EndDate cannot be in the future");
         }
 
         // Bounds the Temporal task scan, which lists every task in the range.
