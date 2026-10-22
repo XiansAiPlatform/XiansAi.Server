@@ -628,6 +628,19 @@ audit_logs:
     unique: true
     sparse: true
     background: true
+  # Retention limit for audit entries
+  - name: audit_logs_ttl
+    keys:
+      created_at: asc
+    expire_after: 365d
+    background: true
+
+activity_history:
+  - name: activity_history_ttl
+    keys:
+      started_time: asc
+    expire_after: 90d
+    background: true
 
 tenant_smtp_config:
   - name: tenant_id_1
