@@ -215,6 +215,153 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
     }
 
     [Fact]
+    public async Task Startup_DoesNotRunTheReadStatusBackfill()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+
+        using var scope = _factory.Services.CreateScope();
+        var database = await scope.ServiceProvider.GetRequiredService<IDatabaseService>().GetDatabaseAsync();
+        var migrations = database.GetCollection<BsonDocument>("data_migrations");
+        var claimFilter = Builders<BsonDocument>.Filter.Eq("_id", ConversationRepository.ReadStatusBackfillMigrationId);
+        await migrations.DeleteOneAsync(claimFilter);
+
+        var legacy = await CreateTestMessageAsync(
+            tenantId, ObjectId.GenerateNewId().ToString(), DateTime.UtcNow,
+            MessageDirection.Incoming, MessageType.Chat, MessageStatus.Unread);
+
+        using (var freshHost = new XiansAiWebApplicationFactory(_mongoFixture))
+        {
+            using var client = freshHost.CreateClient();
+        }
+
+        Assert.Equal(0, await migrations.CountDocumentsAsync(claimFilter));
+        Assert.Equal(MessageStatus.Unread, (await GetMessageByIdAsync(legacy.Id))!.Status);
+    }
+
+    [Fact]
+    public async Task BackfillOnce_SecondBatchStartsAfterTheSavedLastId()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+
+        using var scope = _factory.Services.CreateScope();
+        var database = await scope.ServiceProvider.GetRequiredService<IDatabaseService>().GetDatabaseAsync();
+        var threadId = ObjectId.GenerateNewId().ToString();
+        var alreadyPassed = await CreateTestMessageAsync(
+            tenantId, threadId, DateTime.UtcNow, MessageDirection.Incoming, MessageType.Chat, MessageStatus.Unread);
+        await ReplaceReadStatusBackfillClaimAsync(database, DateTime.UtcNow.AddHours(-1), alreadyPassed.Id);
+
+        var outgoingChat = await CreateTestMessageAsync(
+            tenantId, threadId, DateTime.UtcNow, MessageDirection.Outgoing, MessageType.Chat, MessageStatus.Unread);
+        var nextLegacy = await CreateTestMessageAsync(
+            tenantId, threadId, DateTime.UtcNow, MessageDirection.Incoming, MessageType.Chat, MessageStatus.Unread);
+
+        var repository = scope.ServiceProvider.GetRequiredService<IConversationRepository>();
+        var updated = await repository.BackfillMessagesThatCannotBeUnreadOnceAsync();
+
+        Assert.True(updated >= 1);
+        Assert.Equal(MessageStatus.Unread, (await GetMessageByIdAsync(alreadyPassed.Id))!.Status);
+        Assert.Equal(MessageStatus.Unread, (await GetMessageByIdAsync(outgoingChat.Id))!.Status);
+        Assert.Equal(MessageStatus.Read, (await GetMessageByIdAsync(nextLegacy.Id))!.Status);
+
+        var checkpoint = await GetReadStatusBackfillClaimAsync(database);
+        Assert.True(checkpoint["completed"].AsBoolean);
+    }
+
+    [Fact]
+    public async Task BackfillOnce_FailedBatchKeepsTheClaimAndLastId()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+
+        using var scope = _factory.Services.CreateScope();
+        var database = await scope.ServiceProvider.GetRequiredService<IDatabaseService>().GetDatabaseAsync();
+        var threadId = ObjectId.GenerateNewId().ToString();
+        var alreadyPassed = await CreateTestMessageAsync(
+            tenantId, threadId, DateTime.UtcNow, MessageDirection.Incoming, MessageType.Chat, MessageStatus.Unread);
+        await ReplaceReadStatusBackfillClaimAsync(database, DateTime.UtcNow.AddHours(-1), alreadyPassed.Id);
+        var nextLegacy = await CreateTestMessageAsync(
+            tenantId, threadId, DateTime.UtcNow, MessageDirection.Incoming, MessageType.Chat, MessageStatus.Unread);
+
+        var repository = (ConversationRepository)scope.ServiceProvider.GetRequiredService<IConversationRepository>();
+        repository.ReadStatusBackfillBatchSizeForTests = 1;
+        repository.ReadStatusBackfillBatchPause = TimeSpan.Zero;
+        repository.AfterReadStatusBackfillBatchAsync = () =>
+            throw new InvalidOperationException("read-status backfill batch failed");
+        var ownerId = Guid.NewGuid().ToString("N");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            repository.BackfillMessagesThatCannotBeUnreadOnceAsync(ownerId: ownerId));
+
+        var checkpoint = await GetReadStatusBackfillClaimAsync(database);
+        var savedLastId = checkpoint["last_id"].AsString;
+        Assert.False(checkpoint["completed"].AsBoolean);
+        Assert.True(ObjectId.Parse(savedLastId) > ObjectId.Parse(alreadyPassed.Id));
+        Assert.Equal(ownerId, checkpoint["owner_id"].AsString);
+        Assert.Equal(MessageStatus.Unread, (await GetMessageByIdAsync(alreadyPassed.Id))!.Status);
+
+        repository.AfterReadStatusBackfillBatchAsync = null;
+        var skipped = await repository.BackfillMessagesThatCannotBeUnreadOnceAsync();
+        Assert.Equal(0, skipped);
+        var stillClaimed = await GetReadStatusBackfillClaimAsync(database);
+        Assert.False(stillClaimed["completed"].AsBoolean);
+        Assert.Equal(savedLastId, stillClaimed["last_id"].AsString);
+
+        var afterFailure = await CreateTestMessageAsync(
+            tenantId, threadId, DateTime.UtcNow, MessageDirection.Incoming, MessageType.Chat, MessageStatus.Unread);
+        var resumed = await repository.BackfillMessagesThatCannotBeUnreadOnceAsync(ownerId: ownerId);
+        Assert.True(resumed >= 1);
+        Assert.Equal(MessageStatus.Unread, (await GetMessageByIdAsync(alreadyPassed.Id))!.Status);
+        Assert.Equal(MessageStatus.Read, (await GetMessageByIdAsync(nextLegacy.Id))!.Status);
+        Assert.Equal(MessageStatus.Read, (await GetMessageByIdAsync(afterFailure.Id))!.Status);
+        Assert.True((await GetReadStatusBackfillClaimAsync(database))["completed"].AsBoolean);
+    }
+
+    [Fact]
+    public async Task BackfillOnce_RefreshedClaimIsNotTakenOver()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+
+        using var scope = _factory.Services.CreateScope();
+        var database = await scope.ServiceProvider.GetRequiredService<IDatabaseService>().GetDatabaseAsync();
+        var threadId = ObjectId.GenerateNewId().ToString();
+        var alreadyPassed = await CreateTestMessageAsync(
+            tenantId, threadId, DateTime.UtcNow, MessageDirection.Incoming, MessageType.Chat, MessageStatus.Unread);
+        var staleClaimedAt = DateTime.UtcNow.AddHours(-1);
+        await ReplaceReadStatusBackfillClaimAsync(database, staleClaimedAt, alreadyPassed.Id);
+        var nextLegacy = await CreateTestMessageAsync(
+            tenantId, threadId, DateTime.UtcNow, MessageDirection.Incoming, MessageType.Chat, MessageStatus.Unread);
+
+        var repository = (ConversationRepository)scope.ServiceProvider.GetRequiredService<IConversationRepository>();
+        repository.ReadStatusBackfillBatchSizeForTests = 1;
+        repository.ReadStatusBackfillBatchPause = TimeSpan.Zero;
+        var otherInstanceSkipped = false;
+        repository.AfterReadStatusBackfillBatchAsync = async () =>
+        {
+            using var otherScope = _factory.Services.CreateScope();
+            var otherRepository = otherScope.ServiceProvider.GetRequiredService<IConversationRepository>();
+            var skipped = await otherRepository.BackfillMessagesThatCannotBeUnreadOnceAsync();
+            Assert.Equal(0, skipped);
+
+            var duringBatch = await GetReadStatusBackfillClaimAsync(database);
+            Assert.False(duringBatch["completed"].AsBoolean);
+            var refreshedAt = duringBatch["claimed_at"].ToUniversalTime();
+            Assert.True(refreshedAt > staleClaimedAt.AddMinutes(30));
+            otherInstanceSkipped = true;
+        };
+
+        var updated = await repository.BackfillMessagesThatCannotBeUnreadOnceAsync();
+
+        Assert.True(otherInstanceSkipped);
+        Assert.True(updated >= 1);
+        Assert.Equal(MessageStatus.Unread, (await GetMessageByIdAsync(alreadyPassed.Id))!.Status);
+        Assert.Equal(MessageStatus.Read, (await GetMessageByIdAsync(nextLegacy.Id))!.Status);
+        Assert.True((await GetReadStatusBackfillClaimAsync(database))["completed"].AsBoolean);
+    }
+
+    [Fact]
     public async Task MarkThreadAsRead_WithMessageId_ResolvesCutoffFromMessageCreatedAt()
     {
         // Arrange
@@ -549,18 +696,37 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
         return await conversationRepository.GetMessageByIdAsync(messageId, _adminTenantId!);
     }
 
-    private static async Task ReplaceReadStatusBackfillClaimAsync(IMongoDatabase database, DateTime claimedAt)
+    private static async Task ReplaceReadStatusBackfillClaimAsync(
+        IMongoDatabase database,
+        DateTime claimedAt,
+        string? lastId = null)
     {
+        var claim = new BsonDocument
+        {
+            { "_id", ConversationRepository.ReadStatusBackfillMigrationId },
+            { "completed", false },
+            { "claimed_at", claimedAt }
+        };
+        if (lastId != null)
+        {
+            claim.Add("last_id", lastId);
+        }
+
         var migrations = database.GetCollection<BsonDocument>("data_migrations");
         await migrations.ReplaceOneAsync(
             Builders<BsonDocument>.Filter.Eq("_id", ConversationRepository.ReadStatusBackfillMigrationId),
-            new BsonDocument
-            {
-                { "_id", ConversationRepository.ReadStatusBackfillMigrationId },
-                { "completed", false },
-                { "claimed_at", claimedAt }
-            },
+            claim,
             new ReplaceOptions { IsUpsert = true });
+    }
+
+    private static async Task<BsonDocument> GetReadStatusBackfillClaimAsync(IMongoDatabase database)
+    {
+        var migrations = database.GetCollection<BsonDocument>("data_migrations");
+        var claim = await migrations.Find(
+            Builders<BsonDocument>.Filter.Eq("_id", ConversationRepository.ReadStatusBackfillMigrationId))
+            .FirstOrDefaultAsync();
+        Assert.NotNull(claim);
+        return claim!;
     }
 }
 

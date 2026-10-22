@@ -92,6 +92,10 @@ public static class SharedServices
         // TTL index on the files collection would orphan the chunk documents.
         services.AddHostedService<ExpiredMessageFileCleanupService>();
 
+        // One-time rewrite of legacy messages that cannot be unread. Runs after startup, in _id
+        // batches, so a large conversation_message collection does not hold the host.
+        services.AddHostedService<ConversationMessageReadStatusBackfillService>();
+
         return services;
     }
 

@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
 using Moq;
 using Shared.Data;
@@ -102,6 +103,10 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
             var mockBackgroundTaskService = new Mock<IBackgroundTaskService>();
             RemoveService<IBackgroundTaskService>(services);
             services.AddSingleton(mockBackgroundTaskService.Object);
+
+            // The read-status backfill rewrites legacy rows in the shared test database.
+            // Tests call the repository directly so a host-started scan cannot race them.
+            RemoveHostedService<ConversationMessageReadStatusBackfillService>(services);
 
             // Default tests mock Temporal. Opt-in Temporal tests keep the real gateway
             // and ActivationCleanupService so deactivate/schedule cleanup hit the local CLI.
@@ -324,6 +329,17 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
     private static void RemoveService<T>(IServiceCollection services)
     {
         var descriptors = services.Where(d => d.ServiceType == typeof(T)).ToList();
+        foreach (var descriptor in descriptors)
+        {
+            services.Remove(descriptor);
+        }
+    }
+
+    private static void RemoveHostedService<TService>(IServiceCollection services)
+    {
+        var descriptors = services.Where(d =>
+            d.ServiceType == typeof(IHostedService) &&
+            d.ImplementationType == typeof(TService)).ToList();
         foreach (var descriptor in descriptors)
         {
             services.Remove(descriptor);

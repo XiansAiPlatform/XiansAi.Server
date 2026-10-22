@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using MongoDB.Driver;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
@@ -280,16 +281,21 @@ public interface IConversationRepository
     /// <summary>
     /// Sets status to Read on existing messages that cannot be unread (Incoming, and Outgoing
     /// messages that are not Chat or File), including rows whose status is missing.
-    /// Outgoing Chat and File rows are left unchanged.
+    /// Outgoing Chat and File rows are left unchanged. The rewrite is done in _id batches and
+    /// does not record the one-time migration claim.
     /// </summary>
     Task<long> BackfillMessagesThatCannotBeUnreadAsync();
 
     /// <summary>
-    /// Runs <see cref="BackfillMessagesThatCannotBeUnreadAsync"/> at most once per database.
-    /// Concurrent callers race to insert one claim; only the winner scans. Later calls, and
-    /// callers that lose the claim, return 0 without scanning conversation messages.
+    /// Runs the read-status backfill at most once per database.
+    /// One claim in data_migrations lets a single owner scan. A fresh claim held by someone else
+    /// returns 0. A claim older than 15 minutes is taken over and continues after the saved last id.
+    /// The same <paramref name="ownerId"/> resumes its own claim. Batch failures leave the claim
+    /// and checkpoint in place.
     /// </summary>
-    Task<long> BackfillMessagesThatCannotBeUnreadOnceAsync();
+    Task<long> BackfillMessagesThatCannotBeUnreadOnceAsync(
+        CancellationToken cancellationToken = default,
+        string? ownerId = null);
 
     /// <summary>
     /// Collects GridFS file ids referenced by File-type messages matching the given
@@ -338,7 +344,31 @@ public class ConversationRepository : IConversationRepository
 {
     public const string ReadStatusBackfillMigrationId = "conversation-message-non-unread-backfill";
     private const string DataMigrationsCollection = "data_migrations";
+    private const int ReadStatusBackfillBatchSize = 2000;
     private static readonly TimeSpan ReadStatusBackfillClaimStaleAfter = TimeSpan.FromMinutes(15);
+
+    /// <summary>
+    /// Server-side limit for one batch's id search. Must stay below the client socket timeout
+    /// (60 s by default) so the server stops the search before the client gives up on it.
+    /// </summary>
+    private static readonly TimeSpan ReadStatusBackfillFindMaxTime = TimeSpan.FromSeconds(30);
+
+    /// <summary>
+    /// Gap between batches so normal application traffic keeps database capacity during the run.
+    /// Tests set this to zero.
+    /// </summary>
+    internal TimeSpan ReadStatusBackfillBatchPause { get; set; } = TimeSpan.FromMilliseconds(250);
+
+    /// <summary>
+    /// Test hook invoked after a batch checkpoint is saved and before the next batch.
+    /// Production leaves this unset.
+    /// </summary>
+    internal Func<Task>? AfterReadStatusBackfillBatchAsync { get; set; }
+
+    /// <summary>
+    /// When set above zero, tests scan this many documents per batch instead of <see cref="ReadStatusBackfillBatchSize"/>.
+    /// </summary>
+    internal int ReadStatusBackfillBatchSizeForTests { get; set; }
     private const string ThreadIdCacheKeyPrefix = "conversation:thread-id:";
     private static readonly TimeSpan ThreadIdCacheDuration = TimeSpan.FromMinutes(10);
 
@@ -995,83 +1025,181 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
 
     public async Task<long> BackfillMessagesThatCannotBeUnreadAsync()
     {
-        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        long total = 0;
+        string? afterId = null;
+        while (true)
         {
-            var filter = Builders<ConversationMessage>.Filter;
-            // Anything that is not an Outgoing Chat or File, and is not already Read
-            // (including a missing status), is stored as Read.
-            var cannotBeUnread = filter.And(
-                NotReadFilter(),
-                filter.Not(OutgoingChatOrFileFilter()));
+            var started = Stopwatch.StartNew();
+            var batch = await UpdateNextReadStatusBatchAsync(afterId, ReadStatusBackfillBatchSize);
+            total += batch.ModifiedCount;
+            afterId = batch.LastId;
+            LogReadStatusBackfillBatch(ReadStatusBackfillBatchSize, batch, total, started.Elapsed);
 
-            var update = Builders<ConversationMessage>.Update.Set(x => x.Status, MessageStatus.Read);
-            var result = await _messagesCollection.UpdateManyAsync(cannotBeUnread, update);
-
-            if (result.ModifiedCount > 0)
+            if (batch.IsLast)
             {
-                _logger.LogInformation(
-                    "Backfilled {Count} conversation messages to Read because they cannot be unread",
-                    result.ModifiedCount);
+                return total;
             }
-            else
-            {
-                _logger.LogDebug("No conversation messages needed a read-status backfill");
-            }
-
-            return result.ModifiedCount;
-        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "BackfillMessagesThatCannotBeUnread");
+        }
     }
 
-    public async Task<long> BackfillMessagesThatCannotBeUnreadOnceAsync()
+    public async Task<long> BackfillMessagesThatCannotBeUnreadOnceAsync(
+        CancellationToken cancellationToken = default,
+        string? ownerId = null)
     {
+        var owner = string.IsNullOrWhiteSpace(ownerId) ? Guid.NewGuid().ToString("N") : ownerId;
         var migrations = _database.GetCollection<BsonDocument>(DataMigrationsCollection);
         var idFilter = Builders<BsonDocument>.Filter.Eq("_id", ReadStatusBackfillMigrationId);
-        if (!await TryClaimReadStatusBackfillAsync(migrations, idFilter))
+        if (!await TryClaimReadStatusBackfillAsync(migrations, idFilter, owner, cancellationToken))
         {
             return 0;
         }
 
         try
         {
-            _logger.LogInformation("Running one-time conversation message read-status backfill");
-            var updated = await BackfillMessagesThatCannotBeUnreadAsync();
-            var completion = Builders<BsonDocument>.Update
-                .Set("completed", true)
-                .Set("completed_at", DateTime.UtcNow)
-                .Set("updated_count", updated);
-            await migrations.UpdateOneAsync(idFilter, completion);
-            return updated;
+            return await RunClaimedReadStatusBackfillAsync(migrations, idFilter, cancellationToken);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogError(ex, "Conversation message read-status backfill failed; releasing the claim");
-            await ReleaseReadStatusBackfillClaimAsync(migrations, idFilter);
+            _logger.LogError(ex, "Conversation message read-status backfill batch failed; keeping the claim and checkpoint");
             throw;
         }
     }
 
+    private async Task<long> RunClaimedReadStatusBackfillAsync(
+        IMongoCollection<BsonDocument> migrations,
+        FilterDefinition<BsonDocument> idFilter,
+        CancellationToken cancellationToken)
+    {
+        var checkpoint = await ReadReadStatusBackfillCheckpointAsync(migrations, idFilter, cancellationToken);
+        _logger.LogInformation(
+            "Running one-time conversation message read-status backfill from checkpoint {LastId}",
+            checkpoint.LastId ?? "(start)");
+
+        var batchSize = ReadStatusBackfillBatchSizeForTests > 0
+            ? ReadStatusBackfillBatchSizeForTests
+            : ReadStatusBackfillBatchSize;
+
+        // Shutdown is only honoured between batches: a started batch finishes its update and
+        // saves its checkpoint, so the next start resumes from last_id.
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var started = Stopwatch.StartNew();
+            var batch = await UpdateNextReadStatusBatchAsync(checkpoint.LastId, batchSize);
+            checkpoint = new ReadStatusCheckpoint(
+                batch.LastId,
+                checkpoint.UpdatedCount + batch.ModifiedCount);
+            LogReadStatusBackfillBatch(batchSize, batch, checkpoint.UpdatedCount, started.Elapsed);
+
+            if (batch.IsLast)
+            {
+                await MarkReadStatusBackfillCompletedAsync(
+                    migrations, idFilter, checkpoint.UpdatedCount, CancellationToken.None);
+                _logger.LogInformation(
+                    "Conversation message read-status backfill completed; updated {UpdatedCount} messages",
+                    checkpoint.UpdatedCount);
+                return checkpoint.UpdatedCount;
+            }
+
+            await SaveReadStatusBackfillCheckpointAsync(migrations, idFilter, checkpoint, CancellationToken.None);
+
+            if (AfterReadStatusBackfillBatchAsync != null)
+            {
+                await AfterReadStatusBackfillBatchAsync();
+            }
+
+            if (ReadStatusBackfillBatchPause > TimeSpan.Zero)
+            {
+                await Task.Delay(ReadStatusBackfillBatchPause, cancellationToken);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Updates one fixed _id range of at most <paramref name="batchSize"/> documents, whether or not
+    /// they match, so each batch examines a bounded number of documents however sparse matches are.
+    /// The range end is found on the _id index alone.
+    /// </summary>
+    private async Task<ReadStatusBatch> UpdateNextReadStatusBatchAsync(string? afterId, int batchSize)
+    {
+        // No retries: a client-side timeout does not cancel the server-side operation, so a resend
+        // would run alongside the first attempt. The caller resumes from the saved checkpoint instead.
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var filter = Builders<ConversationMessage>.Filter;
+            var afterCheckpoint = string.IsNullOrEmpty(afterId)
+                ? filter.Empty
+                : filter.Gt(x => x.Id, afterId);
+
+            var rangeEndId = await _messagesCollection
+                .Find(afterCheckpoint, new FindOptions { MaxTime = ReadStatusBackfillFindMaxTime })
+                .Sort(Builders<ConversationMessage>.Sort.Ascending(x => x.Id))
+                .Skip(batchSize - 1)
+                .Limit(1)
+                .Project(x => x.Id)
+                .FirstOrDefaultAsync();
+
+            var isLast = rangeEndId == null;
+            var range = isLast
+                ? afterCheckpoint
+                : filter.And(afterCheckpoint, filter.Lte(x => x.Id, rangeEndId));
+
+            // Anything that is not an Outgoing Chat or File, and is not already Read
+            // (including a missing status), is stored as Read.
+            var cannotBeUnread = filter.And(
+                range,
+                NotReadFilter(),
+                filter.Not(OutgoingChatOrFileFilter()));
+            var update = Builders<ConversationMessage>.Update.Set(x => x.Status, MessageStatus.Read);
+            var result = await _messagesCollection.UpdateManyAsync(cannotBeUnread, update);
+
+            return new ReadStatusBatch(isLast, result.ModifiedCount, rangeEndId ?? afterId);
+        }, _logger, maxRetries: 0, operationName: "BackfillMessagesThatCannotBeUnreadBatch");
+    }
+
+    private void LogReadStatusBackfillBatch(int batchSize, ReadStatusBatch batch, long runningTotal, TimeSpan elapsed)
+    {
+        _logger.LogInformation(
+            "Conversation message read-status backfill batch of up to {BatchSize} messages updated {ModifiedCount}, running total {RunningTotal}, elapsed {ElapsedMs} ms, last id {LastId}",
+            batchSize,
+            batch.ModifiedCount,
+            runningTotal,
+            elapsed.TotalMilliseconds,
+            batch.LastId ?? "(start)");
+    }
+
     private async Task<bool> TryClaimReadStatusBackfillAsync(
         IMongoCollection<BsonDocument> migrations,
-        FilterDefinition<BsonDocument> idFilter)
+        FilterDefinition<BsonDocument> idFilter,
+        string ownerId,
+        CancellationToken cancellationToken)
     {
-        if (await InsertReadStatusBackfillClaimAsync(migrations, idFilter))
+        if (await InsertReadStatusBackfillClaimAsync(migrations, idFilter, ownerId, cancellationToken))
         {
             return true;
         }
 
-        return await TryTakeOverStaleReadStatusBackfillClaimAsync(migrations, idFilter);
+        return await TryResumeOrTakeOverReadStatusBackfillAsync(migrations, idFilter, ownerId, cancellationToken);
     }
 
     private static async Task<bool> InsertReadStatusBackfillClaimAsync(
         IMongoCollection<BsonDocument> migrations,
-        FilterDefinition<BsonDocument> idFilter)
+        FilterDefinition<BsonDocument> idFilter,
+        string ownerId,
+        CancellationToken cancellationToken)
     {
         try
         {
             var claim = Builders<BsonDocument>.Update
                 .SetOnInsert("claimed_at", DateTime.UtcNow)
-                .SetOnInsert("completed", false);
-            var inserted = await migrations.UpdateOneAsync(idFilter, claim, new UpdateOptions { IsUpsert = true });
+                .SetOnInsert("completed", false)
+                .SetOnInsert("owner_id", ownerId)
+                .SetOnInsert("updated_count", 0L);
+            var inserted = await migrations.UpdateOneAsync(
+                idFilter,
+                claim,
+                new UpdateOptions { IsUpsert = true },
+                cancellationToken);
             return inserted.UpsertedId != null;
         }
         catch (MongoWriteException ex) when (IsDuplicateKey(ex))
@@ -1080,14 +1208,34 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
         }
     }
 
-    private async Task<bool> TryTakeOverStaleReadStatusBackfillClaimAsync(
+    private async Task<bool> TryResumeOrTakeOverReadStatusBackfillAsync(
         IMongoCollection<BsonDocument> migrations,
-        FilterDefinition<BsonDocument> idFilter)
+        FilterDefinition<BsonDocument> idFilter,
+        string ownerId,
+        CancellationToken cancellationToken)
     {
-        var existing = await migrations.Find(idFilter).FirstOrDefaultAsync();
-        if (IsMigrationCompleted(existing) || !IsStaleReadStatusBackfillClaim(existing))
+        var existing = await migrations.Find(idFilter).FirstOrDefaultAsync(cancellationToken);
+        if (IsMigrationCompleted(existing))
         {
-            _logger.LogDebug("Conversation message read-status backfill is already claimed or completed; skipping");
+            _logger.LogDebug("Conversation message read-status backfill is already completed; skipping");
+            return false;
+        }
+
+        if (IsSameReadStatusBackfillOwner(existing, ownerId))
+        {
+            var refreshed = await migrations.UpdateOneAsync(
+                Builders<BsonDocument>.Filter.And(
+                    idFilter,
+                    Builders<BsonDocument>.Filter.Ne("completed", true),
+                    Builders<BsonDocument>.Filter.Eq("owner_id", ownerId)),
+                Builders<BsonDocument>.Update.Set("claimed_at", DateTime.UtcNow),
+                cancellationToken: cancellationToken);
+            return refreshed.ModifiedCount == 1;
+        }
+
+        if (!IsStaleReadStatusBackfillClaim(existing))
+        {
+            _logger.LogDebug("Conversation message read-status backfill is already claimed; skipping");
             return false;
         }
 
@@ -1097,9 +1245,20 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
                 idFilter,
                 Builders<BsonDocument>.Filter.Ne("completed", true),
                 Builders<BsonDocument>.Filter.Eq("claimed_at", claimedAt)),
-            Builders<BsonDocument>.Update.Set("claimed_at", DateTime.UtcNow));
+            Builders<BsonDocument>.Update
+                .Set("claimed_at", DateTime.UtcNow)
+                .Set("owner_id", ownerId),
+            cancellationToken: cancellationToken);
 
         return takeover.ModifiedCount == 1;
+    }
+
+    private static bool IsSameReadStatusBackfillOwner(BsonDocument? existing, string ownerId)
+    {
+        return existing != null
+            && existing.TryGetValue("owner_id", out var owner)
+            && owner.IsString
+            && owner.AsString == ownerId;
     }
 
     private static bool IsStaleReadStatusBackfillClaim(BsonDocument? existing)
@@ -1112,21 +1271,75 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
         return DateTime.UtcNow - claimedAt.ToUniversalTime() >= ReadStatusBackfillClaimStaleAfter;
     }
 
-    private async Task ReleaseReadStatusBackfillClaimAsync(
+    private static async Task<ReadStatusCheckpoint> ReadReadStatusBackfillCheckpointAsync(
         IMongoCollection<BsonDocument> migrations,
-        FilterDefinition<BsonDocument> idFilter)
+        FilterDefinition<BsonDocument> idFilter,
+        CancellationToken cancellationToken)
     {
-        try
+        var existing = await migrations.Find(idFilter).FirstOrDefaultAsync(cancellationToken);
+        if (existing == null)
         {
-            await migrations.DeleteOneAsync(Builders<BsonDocument>.Filter.And(
-                idFilter,
-                Builders<BsonDocument>.Filter.Ne("completed", true)));
+            return new ReadStatusCheckpoint(null, 0);
         }
-        catch (MongoException ex)
-        {
-            _logger.LogError(ex, "Failed to release the conversation message read-status backfill claim");
-        }
+
+        return new ReadStatusCheckpoint(ReadLastId(existing), ReadUpdatedCount(existing));
     }
+
+    private static async Task SaveReadStatusBackfillCheckpointAsync(
+        IMongoCollection<BsonDocument> migrations,
+        FilterDefinition<BsonDocument> idFilter,
+        ReadStatusCheckpoint checkpoint,
+        CancellationToken cancellationToken)
+    {
+        var update = Builders<BsonDocument>.Update
+            .Set("last_id", checkpoint.LastId)
+            .Set("updated_count", checkpoint.UpdatedCount)
+            .Set("claimed_at", DateTime.UtcNow);
+        await migrations.UpdateOneAsync(idFilter, update, cancellationToken: cancellationToken);
+    }
+
+    private static async Task MarkReadStatusBackfillCompletedAsync(
+        IMongoCollection<BsonDocument> migrations,
+        FilterDefinition<BsonDocument> idFilter,
+        long updatedCount,
+        CancellationToken cancellationToken)
+    {
+        var completion = Builders<BsonDocument>.Update
+            .Set("completed", true)
+            .Set("completed_at", DateTime.UtcNow)
+            .Set("updated_count", updatedCount)
+            .Set("claimed_at", DateTime.UtcNow);
+        await migrations.UpdateOneAsync(idFilter, completion, cancellationToken: cancellationToken);
+    }
+
+    private static string? ReadLastId(BsonDocument existing)
+    {
+        if (!existing.TryGetValue("last_id", out var lastId) || lastId.IsBsonNull)
+        {
+            return null;
+        }
+
+        if (lastId.IsObjectId)
+        {
+            return lastId.AsObjectId.ToString();
+        }
+
+        return lastId.IsString ? lastId.AsString : null;
+    }
+
+    private static long ReadUpdatedCount(BsonDocument existing)
+    {
+        if (!existing.TryGetValue("updated_count", out var updated) || !updated.IsNumeric)
+        {
+            return 0;
+        }
+
+        return updated.ToInt64();
+    }
+
+    private readonly record struct ReadStatusBatch(bool IsLast, long ModifiedCount, string? LastId);
+
+    private readonly record struct ReadStatusCheckpoint(string? LastId, long UpdatedCount);
 
     private static bool IsDuplicateKey(MongoWriteException ex)
     {
