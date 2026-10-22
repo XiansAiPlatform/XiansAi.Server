@@ -80,6 +80,7 @@ public interface ITenantService
     Task<ServiceResult<Tenant>> UpdateTenant(string id, UpdateTenantRequest request);
     Task<ServiceResult<Tenant>> UpdateTenantTheme(string id, string? theme);
     Task<ServiceResult<Tenant>> UpdateTenantLogo(string id, Logo? logo);
+    Task<ServiceResult<Tenant>> UpdateTenantFavicon(string id, Logo? favicon);
     Task<ServiceResult<bool>> DeleteTenant(string id);
 }
 
@@ -962,6 +963,49 @@ public class TenantService : ITenantService
         {
             _logger.LogError(ex, "Error updating logo for tenant with ID {Id}", LogSanitizer.Sanitize(id));
             return ServiceResult<Tenant>.InternalServerError("An error occurred while updating the tenant logo.");
+        }
+    }
+
+    /// <summary>
+    /// Saves the tenant's favicon. Pass null to remove it.
+    /// </summary>
+    public async Task<ServiceResult<Tenant>> UpdateTenantFavicon(string id, Logo? favicon)
+    {
+        try
+        {
+            SanitizeAndValidateId(id);
+
+            var existingTenant = await _tenantRepository.GetByIdAsync(id);
+            if (existingTenant == null)
+            {
+                _logger.LogWarning("Tenant with ID {Id} not found for favicon update", LogSanitizer.Sanitize(id));
+                return ServiceResult<Tenant>.NotFound("Tenant not found");
+            }
+
+            EnsureTenantAccessOrThrow(existingTenant.TenantId);
+
+            existingTenant.Favicon = favicon;
+
+            var faviconDescription = favicon == null
+                ? $"Tenant '{existingTenant.Name}' ({existingTenant.TenantId}) favicon was cleared."
+                : $"Tenant '{existingTenant.Name}' ({existingTenant.TenantId}) favicon was updated.";
+
+            return await PersistTenantUpdate(existingTenant, id, description: faviconDescription);
+        }
+        catch (ValidationException ex)
+        {
+            _logger.LogWarning("Validation failed while updating tenant favicon: {Message}", LogSanitizer.Sanitize(ex.Message));
+            return ServiceResult<Tenant>.BadRequest($"Validation failed: {ex.Message}");
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            _logger.LogWarning("Access denied: {Message}", LogSanitizer.Sanitize(ex.Message));
+            return ServiceResult<Tenant>.Forbidden("Access denied: insufficient permissions");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating favicon for tenant with ID {Id}", LogSanitizer.Sanitize(id));
+            return ServiceResult<Tenant>.InternalServerError("An error occurred while updating the tenant favicon.");
         }
     }
 
