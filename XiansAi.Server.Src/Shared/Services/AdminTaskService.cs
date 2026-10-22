@@ -74,6 +74,10 @@ public interface IAdminTaskService
         DateTime? startDate,
         DateTime? endDate,
         string? participantId);
+    Task<ServiceResult<Dictionary<(string AgentName, string ActivationName), int>>> GetTaskCountsByActivation(
+        string tenantId,
+        DateTime startDate,
+        DateTime endDateExclusive);
     Task<ServiceResult<object>> UpdateDraft(string workflowId, string updatedDraft);
     Task<ServiceResult<object>> UpdateMetadata(string workflowId, Dictionary<string, object> metadata);
     Task<ServiceResult<object>> PerformAction(string workflowId, string action, string? comment, Dictionary<string, object>? metadata = null);
@@ -682,6 +686,50 @@ public class AdminTaskService : IAdminTaskService
             total, pending, completed, timedOut, cancelled);
 
         return ServiceResult<TaskStatisticsResponse>.Success(response);
+    }
+
+    /// <summary>
+    /// Counts task workflows started in [startDate, endDateExclusive), grouped by agent and activation name.
+    /// Temporal's Count API can only group by ExecutionStatus, so workflows are listed and grouped here.
+    /// </summary>
+    public async Task<ServiceResult<Dictionary<(string AgentName, string ActivationName), int>>> GetTaskCountsByActivation(
+        string tenantId,
+        DateTime startDate,
+        DateTime endDateExclusive)
+    {
+        if (string.IsNullOrWhiteSpace(tenantId))
+        {
+            return ServiceResult<Dictionary<(string AgentName, string ActivationName), int>>.BadRequest("TenantId cannot be empty");
+        }
+
+        try
+        {
+            var query = string.Join(" and ",
+                $"{Constants.TenantIdKey} = '{tenantId}'",
+                "TaskQueue STARTS_WITH 'hitl_task:'",
+                $"StartTime >= '{startDate:yyyy-MM-ddTHH:mm:ssZ}'",
+                $"StartTime < '{endDateExclusive:yyyy-MM-ddTHH:mm:ssZ}'");
+
+            var counts = new Dictionary<(string AgentName, string ActivationName), int>();
+
+            await foreach (var client in _temporalGatewayFactory.GetClientsAsync(tenantId))
+            {
+                await foreach (var workflow in client.ListWorkflowsAsync(query))
+                {
+                    var key = (
+                        ExtractMemoValue(workflow.Memo, Constants.AgentKey) ?? string.Empty,
+                        ExtractMemoValue(workflow.Memo, Constants.IdPostfixKey) ?? string.Empty);
+                    counts[key] = counts.GetValueOrDefault(key) + 1;
+                }
+            }
+
+            return ServiceResult<Dictionary<(string AgentName, string ActivationName), int>>.Success(counts);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to count tasks by activation. Error: {ErrorMessage}", LogSanitizer.Sanitize(ex.Message));
+            return ServiceResult<Dictionary<(string AgentName, string ActivationName), int>>.InternalServerError("Failed to count tasks");
+        }
     }
 
     /// <summary>
