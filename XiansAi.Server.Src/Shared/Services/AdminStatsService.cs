@@ -252,10 +252,17 @@ public class AdminStatsService : IAdminStatsService
                 taskCounts[userId] = taskCounts.GetValueOrDefault(userId) + count;
             }
 
-            var users = (await Task.WhenAll(agentCounts.Keys.Union(taskCounts.Keys).Select(async userId => new UserUsage
+            // Every tenant member is listed, including those with no activity in the range.
+            var members = (await _userRepository.GetByTenantIdAsync(tenantId))
+                .GroupBy(u => u.UserId)
+                .ToDictionary(g => g.Key, g => g.First());
+
+            var users = (await Task.WhenAll(members.Keys.Union(agentCounts.Keys).Union(taskCounts.Keys).Select(async userId => new UserUsage
                 {
                     UserId = userId,
-                    DisplayName = await GetDisplayNameAsync(userId),
+                    DisplayName = members.TryGetValue(userId, out var member) && !string.IsNullOrWhiteSpace(member.Name)
+                        ? member.Name
+                        : await GetDisplayNameAsync(userId),
                     AgentCount = agentCounts.GetValueOrDefault(userId),
                     TasksCreated = taskCounts.GetValueOrDefault(userId)
                 })))
@@ -270,7 +277,8 @@ public class AdminStatsService : IAdminStatsService
                 To = to.ToString("yyyy-MM-dd"),
                 Totals = new UsageTotals
                 {
-                    Users = users.Count,
+                    // Tenant members only; creators who are no longer members (or "unknown") are listed but not counted.
+                    Users = members.Count,
                     Agents = users.Sum(u => u.AgentCount),
                     Tasks = users.Sum(u => u.TasksCreated)
                 },
