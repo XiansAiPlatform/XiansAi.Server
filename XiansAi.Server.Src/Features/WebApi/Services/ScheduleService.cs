@@ -304,7 +304,8 @@ public class ScheduleService : IScheduleService
                     // A recorded action means the workflow was started. Temporal's
                     // schedule info does not include the workflow's final outcome.
                     Status = ScheduleRunStatus.Completed,
-                    WorkflowRunId = startWorkflow?.FirstExecutionRunId
+                    WorkflowRunId = startWorkflow?.FirstExecutionRunId,
+                    WorkflowId = startWorkflow?.WorkflowId
                 });
             }
             
