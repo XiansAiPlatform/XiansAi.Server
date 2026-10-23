@@ -41,58 +41,28 @@ TTL (Time-to-Live) indexes automatically delete documents from a collection afte
 
 ### TTL Requirements
 
-- **Date Field**: The indexed field must contain a valid `Date` type
+- **Date Field**: The indexed field must contain a valid `Date` type. Documents where it is null or missing never expire.
 - **Single Field**: TTL indexes can only be on a single field
 - **Background**: TTL deletion happens in MongoDB's background process
 
 ## Current TTL Settings
 
-### Logs Collection (30 days)
+| Collection | Index | Field | Retention | Purpose |
+|---|---|---|---|---|
+| `logs` | `logs_ttl_created_at` | `created_at` | 15 days | System logs, to prevent unbounded growth |
+| `usage_metrics` | `usage_metrics_ttl` | `created_at` | 90 days | Token and usage metrics |
+| `webhook_deliveries` | `webhook_delivery_ttl` | `created_at` | 15 days | Outbound webhook delivery queue |
+| `audit_logs` | `audit_logs_ttl` | `created_at` | 365 days | Audit entries. GDPR retention limit for entries kept after an erasure. |
+| `activity_history` | `activity_history_ttl` | `started_time` | 90 days | Workflow activity history. `inputs` and `result` are free-form and can hold personal data, but the collection has no person key, so an erasure can't find it. It stays for up to 90 days after an erasure. |
+| `conversation_message` | `conversation_message_ttl` | `expires_at` | Per document | See [Overriding Conversation Message Retention](#overriding-conversation-message-retention) |
+| `documents` | `documents_ttl` | `expires_at` | Per document | Expires at the `expires_at` set when the document is saved |
 
-```yaml
-logs:
-  - name: logs_ttl_created_at
-    keys:
-      created_at: asc
-    expire_after: 30d
-    background: true
-```
+Indexes with `expire_after: 0s` delete each document at the timestamp stored in its indexed field. The others
+delete a document once its indexed field is older than the retention.
 
-**Purpose**: Automatic cleanup of system logs to prevent unbounded growth
-**Field**: `created_at` - when the log entry was created
-**Retention**: 30 days
-
-### Activity History Collection (90 days)
-
-```yaml
-activity_history:
-  - name: activity_history_ttl
-    keys:
-      started_time: asc
-    expire_after: 90d
-    background: true
-```
-
-**Purpose**: Cleanup of workflow activity history for storage management
-**Field**: `started_time` - when the activity started
-**Retention**: 90 days
-
-### Conversation Messages Collection (expires_at)
-
-```yaml
-conversation_message:
-  - name: conversation_message_ttl
-    keys:
-      expires_at: asc
-    expire_after: 0s
-    background: true
-```
-
-**Purpose**: Cleanup of conversation messages via per-message TTL
-**Field**: `expires_at` - when the document should be deleted
-**Retention**:
-- **Heartbeat messages** (incoming/outgoing): 1 hour
-- **Other messages**: 180 days (6 months)
+`activity_history.started_time` comes from the Agent API request. The server uses the current time when the value
+is missing or in the future, because a TTL index never expires a document whose field is null or absent, and a
+future value would keep the document past its retention.
 
 ## TTL Time Format
 
@@ -153,6 +123,8 @@ The value uses the same format as the yaml (`30d`, `12h`, `5d 6h`, `1w`).
 | `MongoIndexes__logs__logs_ttl_created_at__ExpireAfter` | `15d` |
 | `MongoIndexes__usage_metrics__usage_metrics_ttl__ExpireAfter` | `90d` |
 | `MongoIndexes__webhook_deliveries__webhook_delivery_ttl__ExpireAfter` | `15d` |
+| `MongoIndexes__audit_logs__audit_logs_ttl__ExpireAfter` | `365d` |
+| `MongoIndexes__activity_history__activity_history_ttl__ExpireAfter` | `90d` |
 
 **Behavior**
 
@@ -330,17 +302,6 @@ user_sessions:
     keys:
       created_at: asc
     expire_after: 24h
-    background: true
-```
-
-### Audit Logs (1 year)
-
-```yaml
-audit_logs:
-  - name: audit_ttl
-    keys:
-      timestamp: asc
-    expire_after: 52w
     background: true
 ```
 

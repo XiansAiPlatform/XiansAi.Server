@@ -680,7 +680,7 @@ public static class AdminMessagingEndpoints
         ;
 
         // Mark all messages in a thread as read, up to a (threadId, timestamp) or (threadId, messageId) cutoff.
-        // Returns how many messages were just marked, plus how many remain unread in the thread.
+        // markedCount and unreadCount include only Outgoing Chat and File messages.
         adminMessagingGroup.MapPost("/threads/{threadId}/read", async (
             string tenantId,
             string threadId,

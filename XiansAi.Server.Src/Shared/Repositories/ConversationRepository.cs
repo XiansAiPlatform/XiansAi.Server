@@ -28,6 +28,36 @@ public enum MessageStatus
     Read,
 }
 
+/// <summary>
+/// Unread means an agent Chat or File the participant has not read.
+/// Incoming messages are the participant's own sends and are never unread.
+/// </summary>
+public static class ConversationMessageReadRules
+{
+    public static bool CanBeUnread(MessageDirection direction, MessageType? messageType)
+    {
+        return direction == MessageDirection.Outgoing
+            && messageType is MessageType.Chat or MessageType.File;
+    }
+
+    public static MessageStatus InitialStatus(MessageDirection direction, MessageType messageType)
+    {
+        return CanBeUnread(direction, messageType) ? MessageStatus.Unread : MessageStatus.Read;
+    }
+
+    /// <summary>
+    /// Legacy rows that cannot be unread may still be stored as Unread or with no status.
+    /// Reports them as Read on the way out instead of rewriting stored data.
+    /// </summary>
+    public static void ApplyReadStatusRule(ConversationMessage message)
+    {
+        if (!CanBeUnread(message.Direction, message.MessageType))
+        {
+            message.Status = MessageStatus.Read;
+        }
+    }
+}
+
 public enum MessageType
 {
     Chat,
@@ -225,7 +255,11 @@ public interface IConversationRepository
     /// </summary>
     Task<List<ConversationThread>> GetByTenantAndActivationAsync(string tenantId, string activationName);
     Task<bool> DeleteThreadAsync(string threadId, string? tenantId = null);
-    Task<string> GetThreadIdAsync(string tenantId, string workflowId, string participantId);
+    /// <summary>
+    /// Looks up the thread id for a tenant/workflow/participant. Returns null when no thread
+    /// exists yet, which is the normal first-message case rather than an error.
+    /// </summary>
+    Task<string?> TryGetThreadIdAsync(string tenantId, string workflowId, string participantId);
 
 
     // Message operations
@@ -247,12 +281,15 @@ public interface IConversationRepository
 
     /// <summary>
     /// Marks every message in the thread with CreatedAt &lt;= <paramref name="cutoff"/> as read.
-    /// Messages already marked read are left untouched. Returns the number of messages updated.
+    /// Messages already marked read are left untouched.
+    /// Returns how many Outgoing Chat or File messages were included; other messages in the window
+    /// are still updated, but they are not part of the count.
     /// </summary>
     Task<long> MarkThreadMessagesAsReadAsync(string tenantId, string threadId, DateTime cutoff);
 
     /// <summary>
-    /// Counts messages in the thread that are not yet marked as read (missing/null status counts as unread).
+    /// Counts Outgoing Chat and File messages in the thread that are not yet marked as read.
+    /// Missing or null status counts as unread. Incoming, Tool, and Reasoning messages are excluded.
     /// </summary>
     Task<long> GetUnreadMessageCountAsync(string tenantId, string threadId);
 
@@ -636,6 +673,7 @@ public class ConversationRepository : IConversationRepository
 
             ConvertBsonDataToObject(message);
             DecryptMessageText(message);
+            ConversationMessageReadRules.ApplyReadStatusRule(message);
             return message;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetMessageById");
     }
@@ -724,6 +762,7 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
             {
                 ConvertBsonDataToObject(message);
                 DecryptMessageText(message);
+                ConversationMessageReadRules.ApplyReadStatusRule(message);
             }
             
             _logger.LogDebug("Found history of {Count} messages for thread {ThreadId}", messages.Count, LogSanitizer.Sanitize(threadId));
@@ -800,6 +839,7 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
             {
                 ConvertBsonDataToObject(message);
                 DecryptMessageText(message);
+                ConversationMessageReadRules.ApplyReadStatusRule(message);
             }
 
             _logger.LogDebug(
@@ -877,6 +917,7 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
             {
                 ConvertBsonDataToObject(message);
                 DecryptMessageText(message);
+                ConversationMessageReadRules.ApplyReadStatusRule(message);
             }
 
             return messages;
@@ -913,48 +954,84 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
 
     public async Task<long> MarkThreadMessagesAsReadAsync(string tenantId, string threadId, DateTime cutoff)
     {
-        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
-        {
-            var filter = Builders<ConversationMessage>.Filter.And(
-                Builders<ConversationMessage>.Filter.Eq(x => x.TenantId, tenantId),
-                Builders<ConversationMessage>.Filter.Eq(x => x.ThreadId, threadId),
-                Builders<ConversationMessage>.Filter.Lte(x => x.CreatedAt, cutoff),
-                Builders<ConversationMessage>.Filter.Ne(x => x.Status, MessageStatus.Read));
+        var filter = Builders<ConversationMessage>.Filter;
+        var inWindow = filter.And(
+            filter.Eq(x => x.TenantId, tenantId),
+            filter.Eq(x => x.ThreadId, threadId),
+            filter.Lte(x => x.CreatedAt, cutoff),
+            NotReadFilter());
+        var update = Builders<ConversationMessage>.Update.Set(x => x.Status, MessageStatus.Read);
 
-            var update = Builders<ConversationMessage>.Update.Set(x => x.Status, MessageStatus.Read);
+        // Legacy rows first. The counted update then reports its own ModifiedCount, so a message
+        // that arrives between the two writes is included only when that write actually changes it.
+        await UpdateMessagesAsReadAsync(
+            filter.And(inWindow, filter.Not(OutgoingChatOrFileFilter())),
+            update,
+            "MarkThreadMessagesAsReadLegacy");
 
-            var result = await _messagesCollection.UpdateManyAsync(filter, update);
+        var markedCount = await UpdateMessagesAsReadAsync(
+            filter.And(inWindow, OutgoingChatOrFileFilter()),
+            update,
+            "MarkThreadMessagesAsRead");
 
-            _logger.LogInformation("Marked {Count} messages as read in thread {ThreadId} up to {Cutoff}",
-                result.ModifiedCount, LogSanitizer.Sanitize(threadId), cutoff);
+        _logger.LogInformation(
+            "Marked {MarkedCount} outgoing chat/file messages as read in thread {ThreadId} up to {Cutoff}",
+            markedCount, LogSanitizer.Sanitize(threadId), cutoff);
 
-            return result.ModifiedCount;
-        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "MarkThreadMessagesAsRead");
+        return markedCount;
     }
 
     public async Task<long> GetUnreadMessageCountAsync(string tenantId, string threadId)
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            var filter = Builders<ConversationMessage>.Filter.And(
-                Builders<ConversationMessage>.Filter.Eq(x => x.TenantId, tenantId),
-                Builders<ConversationMessage>.Filter.Eq(x => x.ThreadId, threadId),
-                Builders<ConversationMessage>.Filter.Ne(x => x.Status, MessageStatus.Read));
+            var filter = Builders<ConversationMessage>.Filter;
+            var unread = filter.And(
+                filter.Eq(x => x.TenantId, tenantId),
+                filter.Eq(x => x.ThreadId, threadId),
+                OutgoingChatOrFileFilter(),
+                NotReadFilter());
 
-            return await _messagesCollection.CountDocumentsAsync(filter);
+            return await _messagesCollection.CountDocumentsAsync(unread);
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetUnreadMessageCount");
+    }
+
+    private async Task<long> UpdateMessagesAsReadAsync(
+        FilterDefinition<ConversationMessage> filter,
+        UpdateDefinition<ConversationMessage> update,
+        string operationName)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var result = await _messagesCollection.UpdateManyAsync(filter, update);
+            return result.ModifiedCount;
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: operationName);
+    }
+
+    private static FilterDefinition<ConversationMessage> OutgoingChatOrFileFilter()
+    {
+        var filter = Builders<ConversationMessage>.Filter;
+        return filter.And(
+            filter.Eq(x => x.Direction, MessageDirection.Outgoing),
+            filter.Or(
+                filter.Eq(x => x.MessageType, MessageType.Chat),
+                filter.Eq(x => x.MessageType, MessageType.File)));
+    }
+
+    /// <summary>
+    /// Missing status is not Read, so legacy rows with a null status are included.
+    /// </summary>
+    private static FilterDefinition<ConversationMessage> NotReadFilter()
+    {
+        return Builders<ConversationMessage>.Filter.Ne(x => x.Status, MessageStatus.Read);
     }
 
     public async Task<List<string>> GetFileIdsByWorkflowParticipantAndScopeAsync(string tenantId, string workflowId, string participantId, string? scope)
     {
         var fileIds = new List<string>();
 
-        string threadId;
-        try
-        {
-            threadId = await GetThreadIdAsync(tenantId, workflowId, participantId);
-        }
-        catch (KeyNotFoundException)
+        var threadId = await TryGetThreadIdAsync(tenantId, workflowId, participantId);
+        if (threadId == null)
         {
             return fileIds;
         }
@@ -1002,12 +1079,8 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
         try
         {
             // First, get the thread ID
-            string threadId;
-            try
-            {
-                threadId = await GetThreadIdAsync(tenantId, workflowId, participantId);
-            }
-            catch (KeyNotFoundException)
+            var threadId = await TryGetThreadIdAsync(tenantId, workflowId, participantId);
+            if (threadId == null)
             {
                 _logger.LogWarning("Thread not found for workflowId {WorkflowId}, participant {ParticipantId}, tenant {TenantId}. No messages to delete.", 
                     LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(tenantId));
@@ -1054,7 +1127,7 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
         }
     }
 
-    public async Task<string> GetThreadIdAsync(string tenantId, string workflowId, string participantId)
+    public async Task<string?> TryGetThreadIdAsync(string tenantId, string workflowId, string participantId)
     {
         var cacheKey = BuildThreadIdCacheKey(tenantId, workflowId, participantId);
         if (_memoryCache.TryGetValue(cacheKey, out string? cachedThreadId) && !string.IsNullOrEmpty(cachedThreadId))
@@ -1067,11 +1140,12 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
             var thread = await GetByCompositeKeyAsync(tenantId, workflowId, participantId);
             if (thread == null)
             {
-                throw new KeyNotFoundException($"No conversation thread found for tenant '{tenantId}', workflow '{workflowId}', and participant '{participantId}'.");
+                // Not cached: the thread may be created moments later.
+                return null;
             }
             CacheThreadId(cacheKey, thread.Id);
             return thread.Id;
-        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetThreadId");
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "TryGetThreadId");
     }
 
     public async Task<TopicsResult> GetTopicsByThreadIdAsync(string tenantId, string threadId, int page, int pageSize)

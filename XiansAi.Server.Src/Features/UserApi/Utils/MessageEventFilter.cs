@@ -65,7 +65,8 @@ public static class MessageEventFilter
             scope = message.Scope,
             requestId = message.RequestId,
             createdAt = message.CreatedAt,
-            createdBy = message.CreatedBy
+            createdBy = message.CreatedBy,
+            status = message.Status?.ToString()
         };
     }
 } 

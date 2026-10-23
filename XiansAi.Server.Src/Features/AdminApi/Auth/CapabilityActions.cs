@@ -28,6 +28,13 @@ public static class CapabilityActions
     public const string TenantUsersDelete = "tenant.users.delete";
     public const string TenantUsersRolesRemove = "tenant.users.roles.remove";
 
+    // AdminContactEndpoints: /tenants/{tenantId}/contacts
+    public const string TenantContactsList = "tenant.contacts.list";
+    public const string TenantContactsGet = "tenant.contacts.get";
+    public const string TenantContactsCreate = "tenant.contacts.create";
+    public const string TenantContactsUpdate = "tenant.contacts.update";
+    public const string TenantContactsDelete = "tenant.contacts.delete";
+
     // AdminGlobalUserEndpoints: /users
     public const string GlobalUsersList = "global.users.list";
     public const string GlobalUsersGet = "global.users.get";
@@ -96,6 +103,7 @@ public static class CapabilityActions
 
     // AdminStatsEndpoints: /tenants/{tenantId}/stats
     public const string TenantStatsGet = "tenant.stats.get";
+    public const string TenantStatsUsersGet = "tenant.stats.users.get";
 
     // AdminTaskEndpoints: /tenants/{tenantId}/tasks
     public const string TenantTasksList = "tenant.tasks.list";
@@ -145,6 +153,9 @@ public static class CapabilityActions
     public const string TenantLogoGet = "tenant.logo.get";
     public const string TenantLogoSet = "tenant.logo.set";
     public const string TenantLogoClear = "tenant.logo.clear";
+    public const string TenantFaviconGet = "tenant.favicon.get";
+    public const string TenantFaviconSet = "tenant.favicon.set";
+    public const string TenantFaviconClear = "tenant.favicon.clear";
     public const string TenantThemeGet = "tenant.theme.get";
     public const string TenantThemeSet = "tenant.theme.set";
     public const string TenantThemeClear = "tenant.theme.clear";
@@ -154,6 +165,12 @@ public static class CapabilityActions
     public const string TenantTemporalConfigSet = "tenant.temporalConfig.set";
     public const string TenantTemporalConfigRevert = "tenant.temporalConfig.revert";
     public const string TenantTemporalConfigTestConnection = "tenant.temporalConfig.testConnection";
+
+    // AdminTenantEndpoints: /tenants/{tenantId}/smtp-config
+    public const string TenantSmtpConfigGet = "tenant.smtpConfig.get";
+    public const string TenantSmtpConfigSet = "tenant.smtpConfig.set";
+    public const string TenantSmtpConfigDelete = "tenant.smtpConfig.delete";
+    public const string TenantSmtpConfigTest = "tenant.smtpConfig.test";
 
     // AdminTenantEndpoints: /tenants/{tenantId}/oidc-config
     public const string TenantOidcConfigGet = "tenant.oidcConfig.get";
@@ -263,6 +280,17 @@ public static class CapabilityActions
             "Remove a user's membership of a tenant entirely."),
         new(TenantUsersRolesRemove, [SystemRoles.TenantAdmin],
             "Remove one role from a user's tenant membership."),
+
+        new(TenantContactsList, [SystemRoles.TenantAdmin],
+            "List the notification contacts of a tenant."),
+        new(TenantContactsGet, [SystemRoles.TenantAdmin],
+            "Read a single notification contact of a tenant."),
+        new(TenantContactsCreate, [SystemRoles.TenantAdmin],
+            "Add a notification contact to a tenant."),
+        new(TenantContactsUpdate, [SystemRoles.TenantAdmin],
+            "Update a notification contact of a tenant."),
+        new(TenantContactsDelete, [SystemRoles.TenantAdmin],
+            "Delete a notification contact of a tenant."),
 
         new(GlobalUsersList, [],
             "List user accounts across every tenant.",
@@ -377,6 +405,8 @@ public static class CapabilityActions
 
         new(TenantStatsGet, [SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
             "Read aggregated tenant statistics."),
+        new(TenantStatsUsersGet, [SystemRoles.TenantAdmin],
+            "Read per-user agent and task usage for a tenant."),
 
         new(TenantTasksList, [SystemRoles.TenantAdmin],
             "List HITL tasks for a tenant."),
@@ -460,6 +490,12 @@ public static class CapabilityActions
             "Set or replace a tenant's logo."),
         new(TenantLogoClear, [SystemRoles.TenantAdmin],
             "Remove a tenant's logo."),
+        new(TenantFaviconGet, [SystemRoles.TenantAdmin],
+            "Read a tenant's favicon image."),
+        new(TenantFaviconSet, [SystemRoles.TenantAdmin],
+            "Set or replace a tenant's favicon."),
+        new(TenantFaviconClear, [SystemRoles.TenantAdmin],
+            "Remove a tenant's favicon."),
         new(TenantThemeGet, [SystemRoles.TenantAdmin],
             "Read a tenant's UI theme."),
         new(TenantThemeSet, [SystemRoles.TenantAdmin],
@@ -477,6 +513,15 @@ public static class CapabilityActions
             "Revert a tenant to the platform's default Temporal connection."),
         new(TenantTemporalConfigTestConnection, [],
             "Test a Temporal connection without saving it."),
+
+        new(TenantSmtpConfigGet, [SystemRoles.TenantAdmin],
+            "Read a tenant's email (SMTP) configuration. The password is never returned."),
+        new(TenantSmtpConfigSet, [SystemRoles.TenantAdmin],
+            "Create or replace a tenant's email (SMTP) configuration."),
+        new(TenantSmtpConfigDelete, [SystemRoles.TenantAdmin],
+            "Remove a tenant's email (SMTP) configuration, reverting to the server default."),
+        new(TenantSmtpConfigTest, [SystemRoles.TenantAdmin],
+            "Send a test email with the given SMTP settings without saving them."),
 
         new(TenantOidcConfigGet, [],
             "Read a tenant's OIDC token-acceptance configuration."),

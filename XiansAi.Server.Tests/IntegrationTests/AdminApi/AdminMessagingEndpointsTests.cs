@@ -43,9 +43,104 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
         Assert.Equal(2, result!.MarkedCount);
         Assert.Equal(1, result.UnreadCount);
 
-        Assert.Equal(MessageStatus.Read, (await GetMessageByIdAsync(msg1.Id))!.Status);
-        Assert.Equal(MessageStatus.Read, (await GetMessageByIdAsync(msg2.Id))!.Status);
-        Assert.Equal(MessageStatus.Unread, (await GetMessageByIdAsync(msg3.Id))!.Status);
+        Assert.Equal(MessageStatus.Read, (await GetStoredMessageAsync(msg1.Id))!.Status);
+        Assert.Equal(MessageStatus.Read, (await GetStoredMessageAsync(msg2.Id))!.Status);
+        Assert.Equal(MessageStatus.Unread, (await GetStoredMessageAsync(msg3.Id))!.Status);
+    }
+
+    [Fact]
+    public async Task MarkThreadAsRead_UnreadCountIgnoresUserMessagesThatWerePreviouslyUnread()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+
+        var threadId = ObjectId.GenerateNewId().ToString();
+        var baseTime = DateTime.UtcNow.AddMinutes(-10);
+
+        var userBeforeCutoff = await CreateTestMessageAsync(
+            tenantId, threadId, baseTime, MessageDirection.Incoming, MessageType.Chat, MessageStatus.Unread);
+        var agentChat = await CreateTestMessageAsync(
+            tenantId, threadId, baseTime.AddMinutes(1), MessageDirection.Outgoing, MessageType.Chat, MessageStatus.Unread);
+        var agentFile = await CreateTestMessageAsync(
+            tenantId, threadId, baseTime.AddMinutes(1), MessageDirection.Outgoing, MessageType.File, MessageStatus.Unread);
+
+        var userStillUnread = await CreateTestMessageAsync(
+            tenantId, threadId, baseTime.AddMinutes(2), MessageDirection.Incoming, MessageType.Chat, MessageStatus.Unread);
+        var tool = await CreateTestMessageAsync(
+            tenantId, threadId, baseTime.AddMinutes(2), MessageDirection.Outgoing, MessageType.Tool, MessageStatus.Unread);
+        var reasoning = await CreateTestMessageAsync(
+            tenantId, threadId, baseTime.AddMinutes(2), MessageDirection.Outgoing, MessageType.Reasoning, MessageStatus.Unread);
+        var agentChatAfterCutoff = await CreateTestMessageAsync(
+            tenantId, threadId, baseTime.AddMinutes(3), MessageDirection.Outgoing, MessageType.Chat, MessageStatus.Unread);
+
+        var response = await PostAsJsonAsync(
+            $"/api/v1/admin/tenants/{tenantId}/messaging/threads/{threadId}/read",
+            new { timestamp = agentChat.CreatedAt });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await ReadAsJsonAsync<MarkThreadReadResponse>(response);
+        Assert.NotNull(result);
+        Assert.Equal(2, result!.MarkedCount);
+        Assert.Equal(1, result.UnreadCount);
+
+        Assert.Equal(MessageStatus.Read, (await GetStoredMessageAsync(userBeforeCutoff.Id))!.Status);
+        Assert.Equal(MessageStatus.Read, (await GetStoredMessageAsync(agentChat.Id))!.Status);
+        Assert.Equal(MessageStatus.Read, (await GetStoredMessageAsync(agentFile.Id))!.Status);
+        Assert.Equal(MessageStatus.Unread, (await GetStoredMessageAsync(userStillUnread.Id))!.Status);
+        Assert.Equal(MessageStatus.Unread, (await GetStoredMessageAsync(tool.Id))!.Status);
+        Assert.Equal(MessageStatus.Unread, (await GetStoredMessageAsync(reasoning.Id))!.Status);
+        Assert.Equal(MessageStatus.Unread, (await GetStoredMessageAsync(agentChatAfterCutoff.Id))!.Status);
+    }
+
+    [Fact]
+    public async Task GetHistory_ReportsLegacyRowsThatCannotBeUnreadAsReadWithoutRewritingThem()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+
+        var agent = await CreateTestAgentAsync($"agent-{Guid.NewGuid()}", tenantId);
+        await CreateBuiltInFlowDefinitionAsync(agent.Name, tenantId);
+        var activation = await CreateTestActivationAsync(agent.Name, tenantId, isActive: true, name: "inbox");
+        var participantId = "reader@example.com";
+        var seeded = await SeedConversationAsync(tenantId, agent.Name, activation.Name, participantId, "seeded chat");
+
+        var legacyUnread = await InsertHistoryMessageAsync(
+            tenantId, seeded.ThreadId, seeded.WorkflowId, seeded.WorkflowType, participantId,
+            MessageDirection.Incoming, MessageType.Chat, MessageStatus.Unread, "legacy unread user");
+        var legacyNull = await InsertHistoryMessageAsync(
+            tenantId, seeded.ThreadId, seeded.WorkflowId, seeded.WorkflowType, participantId,
+            MessageDirection.Incoming, MessageType.File, null, "legacy null user file");
+        var legacyTool = await InsertHistoryMessageAsync(
+            tenantId, seeded.ThreadId, seeded.WorkflowId, seeded.WorkflowType, participantId,
+            MessageDirection.Outgoing, MessageType.Tool, MessageStatus.Unread, "legacy tool");
+        var agentChat = await InsertHistoryMessageAsync(
+            tenantId, seeded.ThreadId, seeded.WorkflowId, seeded.WorkflowType, participantId,
+            MessageDirection.Outgoing, MessageType.Chat, MessageStatus.Unread, "agent reply");
+
+        var query = $"agentName={Uri.EscapeDataString(agent.Name)}&activationName={Uri.EscapeDataString(activation.Name)}&participantId={Uri.EscapeDataString(participantId)}";
+        var historyResponse = await GetAsync($"/api/v1/admin/tenants/{tenantId}/messaging/history?{query}");
+        Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
+        var history = await ReadAsJsonAsync<List<ConversationMessage>>(historyResponse);
+        Assert.NotNull(history);
+
+        Assert.Equal(MessageStatus.Read, history!.Single(m => m.Id == legacyUnread.Id).Status);
+        Assert.Equal(MessageStatus.Read, history.Single(m => m.Id == legacyNull.Id).Status);
+        Assert.Equal(MessageStatus.Read, history.Single(m => m.Id == legacyTool.Id).Status);
+        Assert.Equal(MessageStatus.Unread, history.Single(m => m.Id == agentChat.Id).Status);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var repository = scope.ServiceProvider.GetRequiredService<IConversationRepository>();
+            Assert.Equal(MessageStatus.Read, (await repository.GetMessageByIdAsync(legacyUnread.Id, tenantId))!.Status);
+            Assert.Equal(MessageStatus.Read, (await repository.GetMessageByIdAsync(legacyNull.Id, tenantId))!.Status);
+            Assert.Equal(MessageStatus.Unread, (await repository.GetMessageByIdAsync(agentChat.Id, tenantId))!.Status);
+        }
+
+        Assert.Equal(MessageStatus.Unread, (await GetStoredMessageAsync(legacyUnread.Id))!.Status);
+        Assert.Null((await GetStoredMessageAsync(legacyNull.Id))!.Status);
+        Assert.Equal(MessageStatus.Unread, (await GetStoredMessageAsync(legacyTool.Id))!.Status);
     }
 
     [Fact]
@@ -74,9 +169,9 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
         Assert.Equal(2, result!.MarkedCount);
         Assert.Equal(1, result.UnreadCount);
 
-        Assert.Equal(MessageStatus.Read, (await GetMessageByIdAsync(msg1.Id))!.Status);
-        Assert.Equal(MessageStatus.Read, (await GetMessageByIdAsync(msg2.Id))!.Status);
-        Assert.Equal(MessageStatus.Unread, (await GetMessageByIdAsync(msg3.Id))!.Status);
+        Assert.Equal(MessageStatus.Read, (await GetStoredMessageAsync(msg1.Id))!.Status);
+        Assert.Equal(MessageStatus.Read, (await GetStoredMessageAsync(msg2.Id))!.Status);
+        Assert.Equal(MessageStatus.Unread, (await GetStoredMessageAsync(msg3.Id))!.Status);
     }
 
     [Fact]
@@ -304,7 +399,13 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
         public long UnreadCount { get; set; }
     }
 
-    private async Task<ConversationMessage> CreateTestMessageAsync(string tenantId, string threadId, DateTime createdAt)
+    private async Task<ConversationMessage> CreateTestMessageAsync(
+        string tenantId,
+        string threadId,
+        DateTime createdAt,
+        MessageDirection direction = MessageDirection.Outgoing,
+        MessageType messageType = MessageType.Chat,
+        MessageStatus? status = MessageStatus.Unread)
     {
         using var scope = _factory.Services.CreateScope();
         var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
@@ -320,9 +421,10 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
             CreatedAt = createdAt,
             UpdatedAt = createdAt,
             CreatedBy = "test-user-id",
-            Direction = MessageDirection.Incoming,
+            Direction = direction,
+            MessageType = messageType,
             Text = "Test message",
-            Status = MessageStatus.Unread
+            Status = status
         };
 
         var database = await databaseService.GetDatabaseAsync();
@@ -332,11 +434,54 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
         return message;
     }
 
-    private async Task<ConversationMessage?> GetMessageByIdAsync(string messageId)
+    private async Task<ConversationMessage> InsertHistoryMessageAsync(
+        string tenantId,
+        string threadId,
+        string workflowId,
+        string workflowType,
+        string participantId,
+        MessageDirection direction,
+        MessageType messageType,
+        MessageStatus? status,
+        string text)
     {
         using var scope = _factory.Services.CreateScope();
-        var conversationRepository = scope.ServiceProvider.GetRequiredService<IConversationRepository>();
-        return await conversationRepository.GetMessageByIdAsync(messageId, _adminTenantId!);
+        var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
+
+        var message = new ConversationMessage
+        {
+            Id = ObjectId.GenerateNewId().ToString(),
+            ThreadId = threadId,
+            TenantId = tenantId,
+            ParticipantId = participantId.ToLowerInvariant(),
+            WorkflowId = workflowId,
+            WorkflowType = workflowType,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow,
+            CreatedBy = "test-user-id",
+            Direction = direction,
+            MessageType = messageType,
+            Text = text,
+            Status = status
+        };
+
+        var database = await databaseService.GetDatabaseAsync();
+        var collection = database.GetCollection<ConversationMessage>("conversation_message");
+        await collection.InsertOneAsync(message);
+        return message;
+    }
+
+    /// <summary>
+    /// Reads the stored document directly, so assertions see the persisted status rather than
+    /// the read-time status the repository reports.
+    /// </summary>
+    private async Task<ConversationMessage?> GetStoredMessageAsync(string messageId)
+    {
+        using var scope = _factory.Services.CreateScope();
+        var database = await scope.ServiceProvider.GetRequiredService<IDatabaseService>().GetDatabaseAsync();
+        return await database.GetCollection<ConversationMessage>("conversation_message")
+            .Find(m => m.Id == messageId)
+            .FirstOrDefaultAsync();
     }
 }
 

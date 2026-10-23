@@ -93,7 +93,7 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
 
             // Mock external services only
             var mockEmailService = new Mock<IEmailService>();
-            mockEmailService.Setup(x => x.SendEmailAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>()))
+            mockEmailService.Setup(x => x.SendEmailAsync(It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>()))
                 .Returns(Task.CompletedTask);
             RemoveService<IEmailService>(services);
             services.AddSingleton(mockEmailService.Object);

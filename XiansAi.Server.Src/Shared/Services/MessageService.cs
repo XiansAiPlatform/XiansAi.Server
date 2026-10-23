@@ -125,12 +125,14 @@ public interface IMessageService
     /// Marks all messages in the thread up to and including the given cutoff as read.
     /// The cutoff is either an explicit timestamp, or resolved from a messageId's CreatedAt.
     /// Exactly one of <paramref name="timestamp"/> or <paramref name="messageId"/> must be provided.
+    /// MarkedCount and UnreadCount include only Outgoing Chat and File messages.
     /// </summary>
     Task<ServiceResult<MarkThreadReadResult>> MarkThreadAsReadAsync(string threadId, DateTime? timestamp, string? messageId);
 }
 
 /// <summary>
-/// Result of marking a thread's messages as read: how many were just marked, and how many remain unread.
+/// Result of marking a thread's messages as read.
+/// Both counts include only Outgoing Chat and File messages.
 /// </summary>
 public class MarkThreadReadResult
 {
@@ -635,7 +637,7 @@ public class MessageService : IMessageService
             CreatedBy = _tenantContext.LoggedInUser,
             Direction = direction,
             Text = request.Text,
-            Status = MessageStatus.Unread,
+            Status = ConversationMessageReadRules.InitialStatus(direction, messageType),
             Data = request.Data, // Assign original metadata
             WorkflowId = request.WorkflowId ?? $"{_tenantContext.TenantId}:{request.WorkflowType}",
             WorkflowType = request.WorkflowType ?? throw new Exception("WorkflowType is required"),
@@ -666,14 +668,10 @@ public class MessageService : IMessageService
             }
 
             // First, find the thread ID using workflowId and participantId
-            string threadId;
-            try
+            var threadId = await _conversationRepository.TryGetThreadIdAsync(_tenantContext.TenantId, workflowId, participantId);
+            if (threadId == null)
             {
-                threadId = await _conversationRepository.GetThreadIdAsync(_tenantContext.TenantId, workflowId, participantId);
-            }
-            catch (KeyNotFoundException)
-            {
-                _logger.LogWarning("Thread not found for workflowId {WorkflowId}, participant {ParticipantId}, tenant {TenantId}", 
+                _logger.LogWarning("Thread not found for workflowId {WorkflowId}, participant {ParticipantId}, tenant {TenantId}",
                     LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(_tenantContext.TenantId));
                 return ServiceResult<bool>.NotFound("Thread not found");
             }
@@ -836,7 +834,7 @@ public class MessageService : IMessageService
             }
             else
             {
-                cutoff = timestamp.Value;
+                cutoff = timestamp!.Value;
             }
 
             // Two separate queries, so the count is a snapshot taken after the update, not atomic with it.
@@ -918,12 +916,8 @@ public class MessageService : IMessageService
             }
 
             // Get the thread ID using workflowId and participantId
-            string threadId;
-            try
-            {
-                threadId = await _conversationRepository.GetThreadIdAsync(_tenantContext.TenantId, workflowId, participantId);
-            }
-            catch (KeyNotFoundException)
+            var threadId = await _conversationRepository.TryGetThreadIdAsync(_tenantContext.TenantId, workflowId, participantId);
+            if (threadId == null)
             {
                 _logger.LogInformation("Thread not found for workflowId {WorkflowId}, participant {ParticipantId}, tenant {TenantId}. Returning empty topics list.", 
                     LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId), LogSanitizer.Sanitize(_tenantContext.TenantId));

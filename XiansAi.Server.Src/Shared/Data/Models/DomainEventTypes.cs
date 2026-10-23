@@ -40,6 +40,12 @@ public static class DomainEventTypes
     /// <summary>A tenant's Temporal (flow-server) configuration was reverted to the platform default.</summary>
     public const string TenantTemporalReverted = "tenant.temporal.reverted";
 
+    /// <summary>A tenant's email (SMTP) configuration was created or updated.</summary>
+    public const string TenantSmtpUpdated = "tenant.smtp.updated";
+
+    /// <summary>A tenant's email (SMTP) configuration was removed, reverting to the server default.</summary>
+    public const string TenantSmtpDeleted = "tenant.smtp.deleted";
+
     /// <summary>The platform was bootstrapped (first SysAdmin, tenant, and API key).</summary>
     public const string PlatformBootstrapped = "platform.bootstrapped";
 
@@ -174,6 +180,9 @@ public static class DomainEventTypes
     /// <summary>A vault secret was deleted.</summary>
     public const string SecretDeleted = "secret.deleted";
 
+    /// <summary>A vault secret was fetched for multiple tenants in one request (audit only; values never recorded).</summary>
+    public const string SecretBatchFetched = "secret.batch_fetched";
+
     // ----- API keys and certificates -----
 
     /// <summary>An API key was created.</summary>
@@ -230,6 +239,8 @@ public static class DomainEventTypes
         TenantOidcDeleted => "A tenant's OIDC configuration was deleted.",
         TenantTemporalUpdated => "A tenant's Temporal configuration was created or updated.",
         TenantTemporalReverted => "A tenant's Temporal configuration was reverted to the platform default.",
+        TenantSmtpUpdated => "A tenant's email (SMTP) configuration was created or updated.",
+        TenantSmtpDeleted => "A tenant's email (SMTP) configuration was removed, reverting to the server default.",
         PlatformBootstrapped => "The platform was bootstrapped (first SysAdmin, tenant, and API key).",
         CapabilityMatrixUpdated => "A capability-matrix row was created or updated.",
         CapabilityMatrixDeleted => "A capability-matrix row was deleted, reverting its action to the code-level default.",
@@ -268,6 +279,7 @@ public static class DomainEventTypes
         SecretCreated => "A vault secret was created.",
         SecretUpdated => "A vault secret was updated.",
         SecretDeleted => "A vault secret was deleted.",
+        SecretBatchFetched => "A vault secret was fetched for multiple tenants.",
         ApiKeyCreated => "An API key was created.",
         ApiKeyRevoked => "An API key was revoked.",
         ApiKeyRotated => "An API key was rotated.",

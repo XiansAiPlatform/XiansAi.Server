@@ -58,7 +58,7 @@ public static class AdminAuditLogEndpoints
         .WithSummary("List audit log entries")
         .WithDescription(
             "Returns a paginated list of audit log entries for the tenant, newest first. " +
-            "Filter by performedBy, action, activationName, a createdAt date range, or set onlyWithoutActivation=true " +
+            "Filter by performedBy, action (one value or comma-separated values, e.g. action=a,b), activationName, a createdAt date range, or set onlyWithoutActivation=true " +
             "to list only entries that have no associated activation. Page size is limited to 100.");
 
         auditLogGroup.MapGet("/performed-by", async (

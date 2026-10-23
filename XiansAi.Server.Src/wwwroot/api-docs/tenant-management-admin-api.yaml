@@ -283,6 +283,61 @@ paths:
         - bearerAuth: []
         - apiKey: []
 
+  /admin/tenants/{tenantId}/favicon:
+    get:
+      tags:
+        - Tenant Management
+      summary: Get Tenant Favicon
+      description: |
+        Serves the tenant favicon (browser tab icon). This is the endpoint referenced by the
+        `favicon.url` field returned in tenant responses. Same behaviour as the logo endpoint:
+
+        - If the favicon is stored as base64, the decoded image bytes are returned with the detected `Content-Type`.
+        - If the favicon is stored as an external URL, the request is redirected (302) to that URL.
+        - If the tenant has no favicon, 404 is returned.
+
+        The favicon is set with `PUT /admin/tenants/{tenantId}/favicon` (body: `Logo`) and removed
+        with `DELETE /admin/tenants/{tenantId}/favicon`.
+      operationId: getTenantFavicon
+      parameters:
+        - name: tenantId
+          in: path
+          required: true
+          description: Tenant ID (business identifier, not MongoDB ObjectId)
+          schema:
+            type: string
+            pattern: '^[a-zA-Z0-9._@-]+$'
+            example: "spacex01"
+      responses:
+        '200':
+          description: Favicon image bytes
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/x-icon:
+              schema:
+                type: string
+                format: binary
+            image/*:
+              schema:
+                type: string
+                format: binary
+        '302':
+          description: Redirect to the external favicon URL
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+      security:
+        - bearerAuth: []
+        - apiKey: []
+
   /admin/tenants/by-domain/{domain}:
     get:
       tags:
@@ -465,6 +520,12 @@ components:
           example: "Acme Corporation - Main tenant"
         logo:
           $ref: '#/components/schemas/LogoResponse'
+        favicon:
+          allOf:
+            - $ref: '#/components/schemas/LogoResponse'
+          description: |
+            Browser tab icon, same shape as `logo`. For base64-stored favicons `url` points to
+            `GET /admin/tenants/{tenantId}/favicon`.
         theme:
           type: string
           description: Theme identifier
