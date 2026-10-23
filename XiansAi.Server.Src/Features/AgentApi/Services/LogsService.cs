@@ -84,7 +84,7 @@ public class LogsService : ILogsService
                     Agent = request.Agent,
                     Activation = request.Activation,
                     Exception = request.Exception,
-                    ParticipantId = request.ParticipantId,
+                    ParticipantId = ResolveParticipant(request.ParticipantId),
                     TraceId = request.TraceId,
                     SpanId = request.SpanId,
                     CreatedAt = DateTime.UtcNow
@@ -141,7 +141,7 @@ public class LogsService : ILogsService
                 Agent = request.Agent,
                 Activation = request.Activation,
                 Exception = request.Exception,
-                ParticipantId = request.ParticipantId,
+                ParticipantId = ResolveParticipant(request.ParticipantId),
                 TraceId = request.TraceId,
                 SpanId = request.SpanId,
                 CreatedAt = DateTime.UtcNow
@@ -156,6 +156,44 @@ public class LogsService : ILogsService
             _logger.LogError(ex, "Error creating log: {Request}", request);
             return Results.BadRequest("An error occurred while creating the log");
         }
+    }
+
+    /// <summary>
+    /// Participant shown on the log. A conversation participant supplied by the agent is kept.
+    /// When that value is missing, or it is only the API-key or certificate owner, a distinct
+    /// <see cref="ITenantContext.ParticipantId"/> (the <c>X-On-Behalf-Of</c> user) is used instead.
+    /// The service identity is not invented onto a log that named nobody.
+    /// </summary>
+    private string? ResolveParticipant(string? requestedParticipantId)
+    {
+        var requested = string.IsNullOrWhiteSpace(requestedParticipantId)
+            ? null
+            : requestedParticipantId.Trim();
+        var actor = string.IsNullOrWhiteSpace(_tenantContext.ParticipantId)
+            ? null
+            : _tenantContext.ParticipantId.Trim();
+        var serviceIdentity = string.IsNullOrWhiteSpace(_tenantContext.LoggedInUser)
+            ? null
+            : _tenantContext.LoggedInUser.Trim();
+
+        var requestedIsServiceIdentity = requested != null
+            && serviceIdentity != null
+            && string.Equals(requested, serviceIdentity, StringComparison.OrdinalIgnoreCase);
+        var actorIsDistinct = actor != null
+            && (serviceIdentity == null
+                || !string.Equals(actor, serviceIdentity, StringComparison.OrdinalIgnoreCase));
+
+        if (requested != null && !requestedIsServiceIdentity)
+        {
+            return requested;
+        }
+
+        if (actorIsDistinct)
+        {
+            return actor;
+        }
+
+        return requested;
     }
 
     /// <summary>

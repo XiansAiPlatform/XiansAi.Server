@@ -14,9 +14,12 @@ public class NewWorkflowOptions : WorkflowOptions
             throw new InvalidOperationException("TenantId is required to create workflow options");
         }
 
-        // Use provided userId or fall back to LoggedInUser from tenant context
-        var effectiveUserId = userId ?? tenantContext.LoggedInUser;
-        if (string.IsNullOrEmpty(effectiveUserId))
+        // An explicit participant wins. Otherwise use the on-behalf-of user, which is
+        // LoggedInUser when no X-On-Behalf-Of header was sent. Agent logs read this value.
+        var effectiveUserId = !string.IsNullOrWhiteSpace(userId)
+            ? userId
+            : tenantContext.ParticipantId;
+        if (string.IsNullOrWhiteSpace(effectiveUserId))
         {
             throw new InvalidOperationException("UserId is required to create workflow options (either provided or from tenant context)");
         }

@@ -243,7 +243,10 @@ namespace Features.AgentApi.Endpoints
                 }
 
                 // Normalize participant ID to lowercase for consistency (especially important for emails)
-                var resolvedParticipantId = (string.IsNullOrEmpty(participantId) ? tenantContext.LoggedInUser : participantId).ToLowerInvariant();
+                var participantFallback = string.IsNullOrWhiteSpace(tenantContext.ParticipantId)
+                    ? tenantContext.LoggedInUser
+                    : tenantContext.ParticipantId;
+                var resolvedParticipantId = (string.IsNullOrEmpty(participantId) ? participantFallback : participantId).ToLowerInvariant();
 
                 // Generate unique request ID for correlation
                 if (string.IsNullOrEmpty(requestId))
