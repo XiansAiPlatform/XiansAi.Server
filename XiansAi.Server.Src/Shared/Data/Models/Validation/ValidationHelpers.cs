@@ -25,6 +25,13 @@ public static class ValidationHelpers
     public const string UnicodeSafeWorkflowTypePattern = @"^[\p{L}\p{M}\p{N}\s._@|+\-:/\\,#='’]+$";
 
     /// <summary>
+    /// Free-text fields such as descriptions. Allows any Unicode letter, digit,
+    /// punctuation (commas, quotes, parentheses, ...), symbol and whitespace.
+    /// Angle brackets and invisible control/format characters are still rejected.
+    /// </summary>
+    public const string SafeFreeTextPattern = @"^(?:(?![<>])[\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}\r\n\t])*$";
+
+    /// <summary>
     /// Values interpolated into Temporal Query Language filters.
     /// Same Unicode letter scope as <see cref="UnicodeSafeNamePattern"/> so
     /// international agent names can be queried. Quotes and operators that
