@@ -9,6 +9,7 @@ public class TaskInfoResponse
     public required string RunId { get; set; }
     public required string Title { get; set; }
     public required string Description { get; set; }
+    public string? DescriptionType { get; set; }
     public string? InitialWork { get; set; }
     public string? FinalWork { get; set; }
     public string? ParticipantId { get; set; }
