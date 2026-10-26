@@ -14,7 +14,7 @@ public class AdminTaskInfoResponse
     public required string RunId { get; set; }
     public required string Title { get; set; }
     public required string Description { get; set; }
-    public string? DescriptionType { get; set; }
+    public string DescriptionType { get; set; } = Constants.DefaultTaskDescriptionType;
     public required string WorkflowStatus { get; set; }
     public bool TimedOut { get; set; }
     public string? InitialWork { get; set; }
@@ -135,7 +135,7 @@ public class AdminTaskService : IAdminTaskService
             // Extract values from the parsed task info
             string? title = parsedTaskInfo.TryGetProperty("Title", out var titleProp) ? titleProp.GetString() : null;
             string? description = parsedTaskInfo.TryGetProperty("Description", out var descProp) ? descProp.GetString() : null;
-            string? descriptionType = parsedTaskInfo.TryGetProperty("DescriptionType", out var descTypeProp) ? descTypeProp.GetString() : null;
+            string descriptionType = (parsedTaskInfo.TryGetProperty("DescriptionType", out var descTypeProp) ? descTypeProp.GetString() : null) ?? Constants.DefaultTaskDescriptionType;
             string? initialWork = parsedTaskInfo.TryGetProperty("InitialWork", out var initialWorkProp) ? initialWorkProp.GetString() : null;
             string? finalWork = parsedTaskInfo.TryGetProperty("FinalWork", out var finalWorkProp) ? finalWorkProp.GetString() : null;
             string? participantId = parsedTaskInfo.TryGetProperty("ParticipantId", out var partProp) ? partProp.GetString() : null;
@@ -405,7 +405,7 @@ public class AdminTaskService : IAdminTaskService
     {
         var taskTitle = ExtractMemoValue(workflow.Memo, Constants.TaskTitleKey) ?? "Untitled Task";
         var taskDescription = ExtractMemoValue(workflow.Memo, Constants.TaskDescriptionKey) ?? "";
-        var taskDescriptionType = ExtractMemoValue(workflow.Memo, Constants.TaskDescriptionTypeKey);
+        var taskDescriptionType = ExtractMemoValue(workflow.Memo, Constants.TaskDescriptionTypeKey) ?? Constants.DefaultTaskDescriptionType;
         var participantId = ExtractMemoValue(workflow.Memo, Constants.UserIdKey);
         var taskActionsStr = ExtractMemoValue(workflow.Memo, Constants.TaskActionsKey);
         var agentName = ExtractMemoValue(workflow.Memo, Constants.AgentKey);
