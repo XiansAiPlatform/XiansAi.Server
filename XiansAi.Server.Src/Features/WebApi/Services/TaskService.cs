@@ -300,7 +300,7 @@ public class TaskService : ITaskService
     {
         var taskTitle = ExtractMemoValue(workflow.Memo, Constants.TaskTitleKey) ?? "Untitled Task";
         var taskDescription = ExtractMemoValue(workflow.Memo, Constants.TaskDescriptionKey) ?? "";
-        var taskDescriptionType = ExtractMemoValue(workflow.Memo, Constants.TaskDescriptionTypeKey) ?? Constants.DefaultTaskDescriptionType;
+        var taskDescriptionType = ExtractMemoValue(workflow.Memo, Constants.TaskDescriptionTypeKey) is { Length: > 0 } memoDescType ? memoDescType : Constants.DefaultTaskDescriptionType;
         var participantId = ExtractMemoValue(workflow.Memo, Constants.UserIdKey);
         var taskActionsStr = ExtractMemoValue(workflow.Memo, Constants.TaskActionsKey);
 
