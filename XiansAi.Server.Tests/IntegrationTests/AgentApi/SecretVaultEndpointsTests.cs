@@ -76,5 +76,27 @@ public class SecretVaultEndpointsTests : IntegrationTestBase
         Assert.Null(body["missing-tenant"]);
     }
 
+    [Fact]
+    public async Task FetchByTenants_WithActivationName_ReturnsOnlyMatchingScope()
+    {
+        var key = $"batch-activation-secret-{Guid.NewGuid()}";
+        var activationName = $"act-{Guid.NewGuid():N}";
+        var create = await _client.PostAsJsonAsync("/api/agent/secrets",
+            new AgentSecretVaultCreateRequest { Key = key, Value = "activation-level", TenantId = TestTenantId, ActivationName = activationName });
+        Assert.True(create.IsSuccessStatusCode, $"Create failed with {create.StatusCode}");
+
+        var matching = await _client.PostAsJsonAsync("/api/agent/secrets/fetch/by-tenants",
+            new AgentSecretVaultFetchByTenantsRequest { Key = key, TenantIds = [TestTenantId], ActivationName = activationName });
+        var otherActivation = await _client.PostAsJsonAsync("/api/agent/secrets/fetch/by-tenants",
+            new AgentSecretVaultFetchByTenantsRequest { Key = key, TenantIds = [TestTenantId], ActivationName = "other-activation" });
+        var noActivation = await _client.PostAsJsonAsync("/api/agent/secrets/fetch/by-tenants",
+            new AgentSecretVaultFetchByTenantsRequest { Key = key, TenantIds = [TestTenantId] });
+
+        Assert.Equal(HttpStatusCode.OK, matching.StatusCode);
+        Assert.Equal("activation-level", (await matching.Content.ReadFromJsonAsync<Dictionary<string, string?>>())![TestTenantId]);
+        Assert.Null((await otherActivation.Content.ReadFromJsonAsync<Dictionary<string, string?>>())![TestTenantId]);
+        Assert.Null((await noActivation.Content.ReadFromJsonAsync<Dictionary<string, string?>>())![TestTenantId]);
+    }
+
     private sealed record SecretFetchResponse(string Value, object? AdditionalData);
 }

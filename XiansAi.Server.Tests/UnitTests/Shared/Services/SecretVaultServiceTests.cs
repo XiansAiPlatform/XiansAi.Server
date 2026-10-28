@@ -249,12 +249,12 @@ public class SecretVaultServiceTests
         _repo.Setup(r => r.FindManyForAccessAsync(
                 "k1",
                 It.Is<IReadOnlyCollection<string>>(ids => ids.SequenceEqual(new[] { "tenant-a", "tenant-b", "tenant-c" })),
-                null, null))
+                null, null, null))
             .ReturnsAsync(new List<SecretVault> { a, b });
         await _store.SetAsync(a.Id, "sk_live_aaa");
         await _store.SetAsync(b.Id, "sk_live_bbb");
 
-        var result = await _service.FetchByTenantsAsync("k1", new[] { "tenant-a", "tenant-b", "tenant-c", "tenant-a" }, null, null);
+        var result = await _service.FetchByTenantsAsync("k1", new[] { "tenant-a", "tenant-b", "tenant-c", "tenant-a" }, null, null, null);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(3, result.Data!.Count);
@@ -264,15 +264,33 @@ public class SecretVaultServiceTests
     }
 
     [Fact]
+    public async Task FetchByTenantsAsync_Passes_ActivationName_To_Repository()
+    {
+        var a = NewEntity("tenant-a", "k1");
+        a.ActivationName = "act-1";
+        _repo.Setup(r => r.FindManyForAccessAsync(
+                "k1",
+                It.Is<IReadOnlyCollection<string>>(ids => ids.SequenceEqual(new[] { "tenant-a" })),
+                null, null, "act-1"))
+            .ReturnsAsync(new List<SecretVault> { a });
+        await _store.SetAsync(a.Id, "sk_activation");
+
+        var result = await _service.FetchByTenantsAsync("k1", new[] { "tenant-a" }, null, null, "act-1");
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("sk_activation", result.Data!["tenant-a"]);
+    }
+
+    [Fact]
     public async Task FetchByTenantsAsync_Validates_Input()
     {
         var tooMany = Enumerable.Range(0, SecretVaultService.MaxBatchTenantIds + 1).Select(i => $"t{i}").ToArray();
 
-        Assert.Equal(StatusCode.BadRequest, (await _service.FetchByTenantsAsync("", new[] { "t" }, null, null)).StatusCode);
-        Assert.Equal(StatusCode.BadRequest, (await _service.FetchByTenantsAsync("k", null, null, null)).StatusCode);
-        Assert.Equal(StatusCode.BadRequest, (await _service.FetchByTenantsAsync("k", Array.Empty<string>(), null, null)).StatusCode);
-        Assert.Equal(StatusCode.BadRequest, (await _service.FetchByTenantsAsync("k", new[] { "t", " " }, null, null)).StatusCode);
-        Assert.Equal(StatusCode.BadRequest, (await _service.FetchByTenantsAsync("k", tooMany, null, null)).StatusCode);
+        Assert.Equal(StatusCode.BadRequest, (await _service.FetchByTenantsAsync("", new[] { "t" }, null, null, null)).StatusCode);
+        Assert.Equal(StatusCode.BadRequest, (await _service.FetchByTenantsAsync("k", null, null, null, null)).StatusCode);
+        Assert.Equal(StatusCode.BadRequest, (await _service.FetchByTenantsAsync("k", Array.Empty<string>(), null, null, null)).StatusCode);
+        Assert.Equal(StatusCode.BadRequest, (await _service.FetchByTenantsAsync("k", new[] { "t", " " }, null, null, null)).StatusCode);
+        Assert.Equal(StatusCode.BadRequest, (await _service.FetchByTenantsAsync("k", tooMany, null, null, null)).StatusCode);
     }
 
     private static SecretVault NewEntity(string tenantId, string key) => new()
