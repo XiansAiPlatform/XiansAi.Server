@@ -27,9 +27,10 @@ public static class ValidationHelpers
     /// <summary>
     /// Free-text fields such as descriptions. Allows any Unicode letter, digit,
     /// punctuation (commas, quotes, parentheses, ...), symbol and whitespace.
-    /// Angle brackets and invisible control/format characters are still rejected.
+    /// Angle brackets (including common Unicode lookalikes such as fullwidth
+    /// ＜ ＞ and ⟨ ⟩) and invisible control/format characters are still rejected.
     /// </summary>
-    public const string SafeFreeTextPattern = @"^(?:(?![<>])[\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}\r\n\t])*$";
+    public const string SafeFreeTextPattern = @"^(?:(?![<>＜＞〈〉⟨⟩])[\p{L}\p{M}\p{N}\p{P}\p{S}\p{Zs}\r\n\t])*$";
 
     /// <summary>
     /// Values interpolated into Temporal Query Language filters.
@@ -60,19 +61,22 @@ public static class ValidationHelpers
     }
 
     // Add these private static readonly Regex fields for sanitization:
+    private static readonly Regex LineBreaksAndTabs = new Regex(@"[\r\n\t]", RegexOptions.Compiled);
     private static readonly Regex ControlChars = new Regex(@"[\x00-\x1F\x7F]", RegexOptions.Compiled);
     private static readonly Regex MultiWhitespace = new Regex(@"\s+", RegexOptions.Compiled);
 
     /// <summary>
-    /// Sanitizes a string by removing control characters, normalizing whitespace,
-    /// and converting to Unicode NFC so composed characters (e.g. å) compare consistently.
+    /// Sanitizes a string by turning line breaks and tabs into spaces, removing other
+    /// control characters, normalizing whitespace, and converting to Unicode NFC so
+    /// composed characters (e.g. å) compare consistently.
     /// </summary>
     public static string SanitizeString(string? input)
     {
         if (string.IsNullOrEmpty(input))
             return string.Empty;
 
-        var sanitized = ControlChars.Replace(input, "");
+        var sanitized = LineBreaksAndTabs.Replace(input, " ");
+        sanitized = ControlChars.Replace(sanitized, "");
         sanitized = MultiWhitespace.Replace(sanitized, " ");
         sanitized = sanitized.Trim();
 
