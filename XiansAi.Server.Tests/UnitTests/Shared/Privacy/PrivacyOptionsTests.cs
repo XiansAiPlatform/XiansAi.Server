@@ -92,6 +92,26 @@ public class PrivacyOptionsTests
         Assert.Throws<InvalidOperationException>(options.Validate);
     }
 
+    public static TheoryData<PrivacyOptions> OutOfRangeOptions() =>
+    [
+        new PrivacyOptions { Enabled = true, PseudonymKey = ValidKey, ErasureDelay = TimeSpan.FromHours(-1) },
+        new PrivacyOptions { Enabled = true, PseudonymKey = ValidKey, PollIntervalSeconds = 0 },
+        new PrivacyOptions { Enabled = true, PseudonymKey = ValidKey, MaxAttempts = 0 }
+    ];
+
+    [Theory]
+    [MemberData(nameof(OutOfRangeOptions))]
+    public void Enabled_WithOutOfRangeValue_Throws(PrivacyOptions options)
+    {
+        Assert.Throws<InvalidOperationException>(options.Validate);
+    }
+
+    [Fact]
+    public void Enabled_WithZeroErasureDelay_Passes()
+    {
+        new PrivacyOptions { Enabled = true, PseudonymKey = ValidKey, ErasureDelay = TimeSpan.Zero }.Validate();
+    }
+
     [Fact]
     public void Enabled_WithValidKey_Passes()
     {
