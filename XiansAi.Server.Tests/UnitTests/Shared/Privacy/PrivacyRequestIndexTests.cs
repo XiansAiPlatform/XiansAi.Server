@@ -35,6 +35,14 @@ public class PrivacyRequestIndexTests
         Assert.Equal(TimeSpan.FromDays(1095), ttl.ExpireAfter);
     }
 
+    [Fact]
+    public void TenantListing_SortsByCreationWithOrWithoutAStatusFilter()
+    {
+        var index = Assert.Single(PrivacyRequestIndexes(), index => index.Name == "privacy_request_tenant");
+
+        Assert.Equal(["scope.tenant_ids", "created_at", "status"], index.Keys.Keys);
+    }
+
     [Theory]
     [InlineData("privacy_request_claim", "status")]
     [InlineData("privacy_request_tenant", "scope.tenant_ids")]
@@ -51,6 +59,6 @@ public class PrivacyRequestIndexTests
     {
         var index = Assert.Single(Indexes("conversation_thread"), index => index.Name == "thread_participant_lookup");
 
-        Assert.Equal(["participant_id", "tenant_id"], index.Keys.Keys);
+        Assert.Equal(["participant_id", "tenant_id", "workflow_id"], index.Keys.Keys);
     }
 }

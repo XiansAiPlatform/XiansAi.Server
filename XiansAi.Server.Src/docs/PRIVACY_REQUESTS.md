@@ -153,10 +153,10 @@ in DI as `IPersonalDataContributor`:
 | Index | Keys | Used by |
 |---|---|---|
 | `privacy_request_claim` | `status`, `run_after` | Claiming due erasures |
-| `privacy_request_tenant` | `scope.tenant_ids`, `status`, `created_at` | Listing a tenant's requests |
+| `privacy_request_tenant` | `scope.tenant_ids`, `created_at`, `status` | Listing a tenant's requests, with or without a status filter |
 | `privacy_request_requester` | `requested_by.user_hash`, `created_at` | Listing a requester's own requests |
 | `privacy_request_ttl` | `closed_at`, expires after 1095 days | Record retention |
-| `conversation_thread.thread_participant_lookup` | `participant_id`, `tenant_id` | Finding a person's threads |
+| `conversation_thread.thread_participant_lookup` | `participant_id`, `tenant_id`, `workflow_id` | Finding a person's threads and their workflow IDs from the index alone |
 
 ## Implementation
 

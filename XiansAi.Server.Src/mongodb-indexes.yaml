@@ -177,6 +177,7 @@ conversation_thread:
     keys:
       participant_id: asc
       tenant_id: asc
+      workflow_id: asc
     background: true
 
 certificates:
@@ -650,8 +651,8 @@ privacy_requests:
   - name: privacy_request_tenant
     keys:
       scope.tenant_ids: asc
-      status: asc
       created_at: desc
+      status: asc
     background: true
   - name: privacy_request_requester
     keys:
