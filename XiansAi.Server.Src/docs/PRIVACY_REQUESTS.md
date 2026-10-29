@@ -148,6 +148,11 @@ If no account matches, the input is used as a bare participant ID (Slack, Teams,
 participants). A participant ID input resolves an account only when it equals that account's email. A
 request limited to some tenants never resolves data in other tenants.
 
+Resolution throws `PrivacyRequestException` when any resolved participant ID is shared by many senders:
+`webhook` and `unknown` (the webhook, Slack and Teams fallbacks) or a `default_participant_id` configured on an
+integration in the scoped tenants, enabled or not. Threads under these IDs hold other people's messages, so they
+are handled manually.
+
 ## Implementing a contributor
 
 Implement `IPersonalDataContributor` (`Shared/Services/Privacy/IPersonalDataContributor.cs`) and register it

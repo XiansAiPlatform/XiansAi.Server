@@ -9,23 +9,30 @@ namespace Shared.Services.Privacy;
 public interface IPrivacySubjectResolver
 {
     /// <exception cref="ArgumentException">The input is blank, or the scope names no tenant.</exception>
+    /// <exception cref="PrivacyRequestException">The subject's identifiers include a shared participant ID.</exception>
     Task<PrivacySubject> ResolveAsync(PrivacySubjectInput input, PrivacyScope scope, CancellationToken cancellationToken);
 }
 
 public class PrivacySubjectResolver : IPrivacySubjectResolver
 {
+    // Fallbacks the Apps and User API webhooks use when the sender is unknown.
+    private static readonly string[] BuiltInSharedParticipantIds = ["webhook", "unknown"];
+
     private readonly IUserRepository _userRepository;
     private readonly ITenantRepository _tenantRepository;
     private readonly IConversationRepository _conversationRepository;
+    private readonly IAppIntegrationRepository _appIntegrationRepository;
 
     public PrivacySubjectResolver(
         IUserRepository userRepository,
         ITenantRepository tenantRepository,
-        IConversationRepository conversationRepository)
+        IConversationRepository conversationRepository,
+        IAppIntegrationRepository appIntegrationRepository)
     {
         _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
         _tenantRepository = tenantRepository ?? throw new ArgumentNullException(nameof(tenantRepository));
         _conversationRepository = conversationRepository ?? throw new ArgumentNullException(nameof(conversationRepository));
+        _appIntegrationRepository = appIntegrationRepository ?? throw new ArgumentNullException(nameof(appIntegrationRepository));
     }
 
     public async Task<PrivacySubject> ResolveAsync(
@@ -61,6 +68,8 @@ public class PrivacySubjectResolver : IPrivacySubjectResolver
             memberships.UnionWith(account.TenantRoles.Select(role => role.Tenant).Where(tenantIds.Contains));
         }
 
+        await RejectSharedParticipantIdsAsync(tenantIds, participantIds);
+
         subject.ParticipantIds = participantIds.Order(StringComparer.Ordinal).ToList();
         subject.Emails = emails.Order(StringComparer.Ordinal).ToList();
         subject.MembershipTenantIds = memberships.Order(StringComparer.Ordinal).ToList();
@@ -68,6 +77,18 @@ public class PrivacySubjectResolver : IPrivacySubjectResolver
             subject.TenantIds, subject.ParticipantIds);
 
         return subject;
+    }
+
+    // Threads under a shared participant ID hold many senders' messages, so erasing them would reach other people.
+    private async Task RejectSharedParticipantIdsAsync(IReadOnlyCollection<string> tenantIds, HashSet<string> participantIds)
+    {
+        var configured = await _appIntegrationRepository.GetDefaultParticipantIdsAsync(tenantIds);
+        if (participantIds.Overlaps(BuiltInSharedParticipantIds) || participantIds.Overlaps(configured))
+        {
+            throw new PrivacyRequestException(
+                "The subject's identifiers include a participant ID shared by many senders, such as an integration's " +
+                "default participant ID. Data under it must be handled manually.");
+        }
     }
 
     private async Task<HashSet<string>> TenantsInScopeAsync(PrivacyScope scope, CancellationToken cancellationToken)

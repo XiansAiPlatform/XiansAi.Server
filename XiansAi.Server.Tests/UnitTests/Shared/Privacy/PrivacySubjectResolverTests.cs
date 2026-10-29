@@ -11,7 +11,9 @@ public class PrivacySubjectResolverTests
     private readonly Mock<IUserRepository> _users = new();
     private readonly Mock<ITenantRepository> _tenants = new();
     private readonly Mock<IConversationRepository> _conversations = new();
+    private readonly Mock<IAppIntegrationRepository> _integrations = new();
     private readonly List<User> _accounts = [];
+    private readonly List<string> _defaultParticipantIds = [];
 
     private IReadOnlyCollection<string>? _workflowLookupTenants;
     private IReadOnlyCollection<string>? _workflowLookupParticipants;
@@ -32,9 +34,12 @@ public class PrivacySubjectResolverTests
                 _workflowLookupParticipants = participants;
             })
             .ReturnsAsync(["workflow-1"]);
+
+        _integrations.Setup(i => i.GetDefaultParticipantIdsAsync(It.IsAny<IReadOnlyCollection<string>>()))
+            .ReturnsAsync(() => _defaultParticipantIds.ToList());
     }
 
-    private PrivacySubjectResolver CreateResolver() => new(_users.Object, _tenants.Object, _conversations.Object);
+    private PrivacySubjectResolver CreateResolver() => new(_users.Object, _tenants.Object, _conversations.Object, _integrations.Object);
 
     private User AddAccount(string userId, string email, params string[] tenants)
     {
@@ -129,6 +134,38 @@ public class PrivacySubjectResolverTests
         var subject = await ResolveAsync(PrivacySubjectKind.ParticipantId, "alice@example.com", Tenants("t1"));
 
         Assert.Equal(["keycloak|abc"], subject.UserIds);
+    }
+
+    [Theory]
+    [InlineData("webhook")]
+    [InlineData("Unknown")]
+    public async Task BuiltInSharedParticipantId_IsRejected(string value)
+    {
+        await Assert.ThrowsAsync<PrivacyRequestException>(() =>
+            ResolveAsync(PrivacySubjectKind.ParticipantId, value, Tenants("t1")));
+    }
+
+    [Fact]
+    public async Task ConfiguredDefaultParticipantId_IsRejected()
+    {
+        _defaultParticipantIds.Add("support-bot");
+
+        var error = await Assert.ThrowsAsync<PrivacyRequestException>(() =>
+            ResolveAsync(PrivacySubjectKind.ParticipantId, "Support-Bot", Tenants("t1")));
+
+        Assert.DoesNotContain("support-bot", error.Message, StringComparison.OrdinalIgnoreCase);
+        _integrations.Verify(i => i.GetDefaultParticipantIdsAsync(
+            It.Is<IReadOnlyCollection<string>>(t => t.SequenceEqual(new[] { "t1" }))));
+    }
+
+    [Fact]
+    public async Task AccountWhoseEmailIsAConfiguredDefault_IsRejected()
+    {
+        AddAccount("keycloak|abc", "shared@example.com", "t1");
+        _defaultParticipantIds.Add("shared@example.com");
+
+        await Assert.ThrowsAsync<PrivacyRequestException>(() =>
+            ResolveAsync(PrivacySubjectKind.UserId, "keycloak|abc", Tenants("t1")));
     }
 
     [Fact]
