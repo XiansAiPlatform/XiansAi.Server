@@ -139,7 +139,10 @@ public class PrivacyContributorResult
     [BsonElement("items_affected")]
     public long ItemsAffected { get; set; }
 
-    /// <summary>Failure detail. Must not contain the person's identifiers, because it is kept after scrubbing.</summary>
+    /// <summary>
+    /// Failure detail from <c>PrivacyErrorText.Describe</c>, which keeps out the person's identifiers because it is
+    /// kept after scrubbing.
+    /// </summary>
     [BsonElement("error")]
     public string? Error { get; set; }
 
@@ -226,6 +229,7 @@ public class PrivacyRequest
     [BsonElement("next_attempt_at")]
     public DateTime? NextAttemptAt { get; set; }
 
+    /// <summary>Failure detail from <c>PrivacyErrorText.Describe</c>, which keeps out the person's identifiers.</summary>
     [BsonElement("last_error")]
     public string? LastError { get; set; }
 

@@ -123,6 +123,13 @@ Failed requests still hold plain identifiers, so they are deleted 90 days after 
 Override either per deployment with `MongoIndexes__privacy_requests__{index name}__ExpireAfter` (see
 [INDEXES_AND_TTL.md](INDEXES_AND_TTL.md)).
 
+### Stored errors
+
+`last_error` and each result's `error` are kept on the record, so they must not contain identifiers. Build
+them with `PrivacyErrorText.Describe`. It keeps the message of a `PrivacyRequestException`, whose messages are
+written without identifiers, and only the exception type of anything else, because driver and framework
+messages can quote the values they failed on.
+
 ## Identifier resolution
 
 One person can appear under several keys. `PrivacySubjectResolver` collects all of them, limited to the
@@ -150,8 +157,9 @@ in DI as `IPersonalDataContributor`:
 - `Order` sets the run order, lower first. The account contributor runs last, so the account exists while
   the others act.
 - `EraseAsync` must be idempotent, because erasure may run again after a partial failure. Report failure by
-  throwing. Return the number of items affected and any notes. Notes and errors must not contain the
-  person's identifiers.
+  throwing. Only a `PrivacyRequestException` message is stored, other exceptions are stored by type (see
+  [Stored errors](#stored-errors)). Return the number of items affected and any notes. Notes must not contain
+  the person's identifiers.
 - `ExportAsync` writes entries through `IExportWriter`.
 
 ## Indexes
@@ -176,3 +184,4 @@ in DI as `IPersonalDataContributor`:
 | Identifier resolution | `Shared/Services/Privacy/PrivacySubjectResolver.cs` |
 | Contributor and export writer contracts | `Shared/Services/Privacy/IPersonalDataContributor.cs` |
 | HMAC hashing | `Shared/Services/Privacy/Pseudonymiser.cs` |
+| Storable errors | `Shared/Services/Privacy/PrivacyRequestException.cs` |

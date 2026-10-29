@@ -18,7 +18,7 @@ public interface IPersonalDataContributor
 
     /// <summary>
     /// Erases or anonymises the data. Must be idempotent, because a request is retried after a partial failure.
-    /// Throws to report failure.
+    /// Throws to report failure. Only a <see cref="PrivacyRequestException"/> message is stored on the request.
     /// </summary>
     Task<ContributorErasureResult> EraseAsync(PrivacySubject subject, PrivacyScope scope, CancellationToken cancellationToken);
 }
