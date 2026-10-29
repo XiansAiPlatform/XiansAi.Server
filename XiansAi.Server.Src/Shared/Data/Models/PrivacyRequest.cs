@@ -200,6 +200,12 @@ public class PrivacyRequest
     [BsonElement("closed_at")]
     public DateTime? ClosedAt { get; set; }
 
+    /// <summary>
+    /// When the request failed. A shorter TTL is on this field, because a failed request keeps plain identifiers.
+    /// </summary>
+    [BsonElement("failed_at")]
+    public DateTime? FailedAt { get; set; }
+
     [BsonElement("claimed_by")]
     public string? ClaimedBy { get; set; }
 

@@ -70,7 +70,7 @@ exported or erased data itself.
 | `subject` | The identifier as given and its kind (`UserId`, `Email`, `ParticipantId`) |
 | `scope` | `tenant_ids` (fixed at creation, used for tenant listing), `all_tenants`, `include_account` |
 | `requested_by` | Requester `user_id`, `user_hash` and actor type (`Self`, `TenantAdmin`, `SysAdmin`) |
-| Timing | `created_at`, `run_after`, `completed_at`, `cancelled_at`, `closed_at` |
+| Timing | `created_at`, `run_after`, `completed_at`, `cancelled_at`, `closed_at`, `failed_at` |
 | Processing | `claimed_by`, `lease_id`, `lease_expires_at`, `attempts`, `next_attempt_at`, `last_error` |
 | `resolved_subject` | The identifiers found by the resolver |
 | `results`, `notes` | One result per contributor, and notes for operators |
@@ -82,7 +82,7 @@ Pending ──claim──▶ Running ──complete──▶ Completed
    └──cancel──▶ Cancelled      └──fail──▶ Failed
 ```
 
-`Completed`, `Cancelled` and `Failed` are closed states and set `closed_at`.
+`Completed`, `Cancelled` and `Failed` are closed states and set `closed_at`. `Failed` also sets `failed_at`.
 
 ### Repository behaviour
 
@@ -96,6 +96,7 @@ Pending ──claim──▶ Running ──complete──▶ Completed
   must carry the claim's `lease_id` and return `false` when it no longer matches. A holder whose lease
   expired and was claimed again cannot overwrite the new holder's work.
 - **Complete** and **cancel** each scrub the plain identifiers in a single update (see below).
+- **Fail** keeps the identifiers and sets `failed_at`, which starts the shorter retention below.
 - **Record export delivered** stores an `Export` request that is already `Completed` and scrubbed.
 - **Create** is safe to repeat with the same request after an unclear failure.
 
@@ -103,8 +104,8 @@ Pending ──claim──▶ Running ──complete──▶ Completed
 
 | | Completed | Cancelled | Failed |
 |---|---|---|---|
-| `subject.value`, `resolved_subject` | scrubbed | scrubbed | kept for follow-up |
-| `requested_by.user_id` of a `Self` requester | scrubbed | scrubbed | kept for follow-up |
+| `subject.value`, `resolved_subject` | scrubbed | scrubbed | kept for 90 days for follow-up |
+| `requested_by.user_id` of a `Self` requester | scrubbed | scrubbed | kept for 90 days for follow-up |
 | `requested_by.user_id` of an admin requester | kept | kept | kept |
 | `subject_hash`, `requested_by.user_hash` | kept | kept | kept |
 
@@ -114,8 +115,13 @@ their plain user ID is removed.
 ### Retention
 
 Records are deleted 3 years after `closed_at` by the TTL index `privacy_request_ttl`, as evidence that
-requests were handled (GDPR Art. 5(2)). Override it per deployment with
-`MongoIndexes__privacy_requests__privacy_request_ttl__ExpireAfter` (see [INDEXES_AND_TTL.md](INDEXES_AND_TTL.md)).
+requests were handled (GDPR Art. 5(2)).
+
+Failed requests still hold plain identifiers, so they are deleted 90 days after `failed_at` by
+`privacy_request_failed_ttl` (storage limitation, Art. 5(1)(e)). Operations must follow up within that window.
+
+Override either per deployment with `MongoIndexes__privacy_requests__{index name}__ExpireAfter` (see
+[INDEXES_AND_TTL.md](INDEXES_AND_TTL.md)).
 
 ## Identifier resolution
 
@@ -156,6 +162,7 @@ in DI as `IPersonalDataContributor`:
 | `privacy_request_tenant` | `scope.tenant_ids`, `created_at`, `status` | Listing a tenant's requests, with or without a status filter |
 | `privacy_request_requester` | `requested_by.user_hash`, `created_at` | Listing a requester's own requests |
 | `privacy_request_ttl` | `closed_at`, expires after 1095 days | Record retention |
+| `privacy_request_failed_ttl` | `failed_at`, expires after 90 days | Retention of failed requests |
 | `conversation_thread.thread_participant_lookup` | `participant_id`, `tenant_id`, `workflow_id` | Finding a person's threads and their workflow IDs from the index alone |
 
 ## Implementation

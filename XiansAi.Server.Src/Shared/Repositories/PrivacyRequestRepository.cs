@@ -65,7 +65,10 @@ public interface IPrivacyRequestRepository
     /// </summary>
     Task<bool> CompleteAsync(string id, string leaseId, DateTime now);
 
-    /// <summary>Marks the request failed for operations follow-up. Identifiers are kept so it can be investigated.</summary>
+    /// <summary>
+    /// Marks the request failed for operations follow-up. Identifiers are kept so it can be investigated, and
+    /// <c>failed_at</c> is set so the record expires sooner than other closed requests.
+    /// </summary>
     Task<bool> FailAsync(string id, string leaseId, DateTime now, string? error);
 }
 
@@ -276,6 +279,7 @@ public class PrivacyRequestRepository : IPrivacyRequestRepository
         var update = Update
             .Set(r => r.Status, PrivacyRequestStatus.Failed)
             .Set(r => r.ClosedAt, now)
+            .Set(r => r.FailedAt, now)
             .Set(r => r.LeaseExpiresAt, null)
             .Set(r => r.LastError, Truncate(error));
 

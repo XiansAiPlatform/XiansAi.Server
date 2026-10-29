@@ -28,11 +28,19 @@ public class PrivacyRequestIndexTests
     [Fact]
     public void Records_ExpireThreeYearsAfterTheyClose()
     {
-        var ttl = Assert.Single(PrivacyRequestIndexes(), index => index.ExpireAfter.HasValue);
+        var ttl = Assert.Single(PrivacyRequestIndexes(), index => index.Name == "privacy_request_ttl");
 
-        Assert.Equal("privacy_request_ttl", ttl.Name);
         Assert.Equal(new Dictionary<string, string> { ["closed_at"] = "asc" }, ttl.Keys);
         Assert.Equal(TimeSpan.FromDays(1095), ttl.ExpireAfter);
+    }
+
+    [Fact]
+    public void FailedRecords_ExpireNinetyDaysAfterTheyFail()
+    {
+        var ttl = Assert.Single(PrivacyRequestIndexes(), index => index.Name == "privacy_request_failed_ttl");
+
+        Assert.Equal(new Dictionary<string, string> { ["failed_at"] = "asc" }, ttl.Keys);
+        Assert.Equal(TimeSpan.FromDays(90), ttl.ExpireAfter);
     }
 
     [Fact]

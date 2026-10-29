@@ -664,3 +664,9 @@ privacy_requests:
       closed_at: asc
     expire_after: 1095d
     background: true
+  # Failed requests keep plain identifiers for follow-up, so they expire much sooner than other records.
+  - name: privacy_request_failed_ttl
+    keys:
+      failed_at: asc
+    expire_after: 90d
+    background: true

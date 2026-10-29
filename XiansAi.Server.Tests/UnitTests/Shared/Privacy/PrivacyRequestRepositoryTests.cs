@@ -367,6 +367,7 @@ public class PrivacyRequestRepositoryTests : IClassFixture<MongoDbFixture>
         var stored = (await _repository.GetByIdAsync(request.Id))!;
         Assert.Equal(PrivacyRequestStatus.Failed, stored.Status);
         Assert.Equal(Now, stored.ClosedAt);
+        Assert.Equal(Now, stored.FailedAt);
         Assert.Equal("keycloak|alice", stored.Subject.Value);
         Assert.Empty(await _repository.ClaimDueBatchAsync("instance-a", Now.AddDays(1), Lease, 10));
     }
