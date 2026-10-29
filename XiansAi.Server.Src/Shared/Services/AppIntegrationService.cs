@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Security.Cryptography;
 using System.Text.Json;
+using MongoDB.Bson;
 using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Services;
@@ -167,6 +168,20 @@ public class AppIntegrationService : IAppIntegrationService
         }
         
         return converted;
+    }
+
+    private static bool HasPrompt(object? workflowInputs)
+    {
+        try
+        {
+            var json = workflowInputs is string text ? text : JsonSerializer.Serialize(workflowInputs);
+            var inputs = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+            return inputs?.TryGetValue("Prompt", out var prompt) == true && !string.IsNullOrWhiteSpace(prompt);
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
 
@@ -424,20 +439,25 @@ public class AppIntegrationService : IAppIntegrationService
             {
                 // Convert and merge configuration - allow partial updates
                 var convertedConfig = ConvertConfiguration(request.Configuration);
-                foreach (var kvp in convertedConfig)
-                {
-                    existing.Configuration[kvp.Key] = kvp.Value;
-                }
+                var mergedConfig = new Dictionary<string, object>(existing.Configuration);
+                foreach (var kvp in convertedConfig) mergedConfig[kvp.Key] = kvp.Value;
+                if (existing.PlatformId == "builtin_webhook" &&
+                    mergedConfig.TryGetValue("workflowName", out var workflowName) &&
+                    workflowName?.ToString() == "Webhook Prompt Workflow" &&
+                    (!mergedConfig.TryGetValue("workflowInputs", out var workflowInputs) || !HasPrompt(workflowInputs)))
+                    return ServiceResult<AppIntegrationResponse>.BadRequest("Prompt is required for Webhook Prompt Workflow");
 
                 // Validate the merged configuration
                 try
                 {
-                    PlatformConfigurationRequirements.ValidateConfiguration(existing.PlatformId, existing.Configuration);
+                    PlatformConfigurationRequirements.ValidateConfiguration(existing.PlatformId, mergedConfig);
                 }
                 catch (ValidationException ex)
                 {
                     return ServiceResult<AppIntegrationResponse>.BadRequest(ex.Message);
                 }
+
+                existing.Configuration = mergedConfig;
 
                 changedFields.Add("configuration");
             }
@@ -598,9 +618,14 @@ public class AppIntegrationService : IAppIntegrationService
             var timeoutInSeconds = request.TimeoutInSeconds ?? 30;
             var webhookName = string.IsNullOrWhiteSpace(request.WebhookName) ? "Default" : request.WebhookName.Trim();
             var integrationName = string.IsNullOrWhiteSpace(request.Name) ? $"Webhook-{webhookName}-{request.ActivationName}" : request.Name.Trim();
+            var integrationId = ObjectId.GenerateNewId().ToString();
 
             if (timeoutInSeconds <= 0 || timeoutInSeconds > 300)
                 return ServiceResult<AppIntegrationResponse>.BadRequest("timeoutInSeconds must be between 1 and 300");
+
+            if (workflowName == "Webhook Prompt Workflow" &&
+                (request.WorkflowInputs is null || !request.WorkflowInputs.TryGetValue("Prompt", out var prompt) || string.IsNullOrWhiteSpace(prompt)))
+                return ServiceResult<AppIntegrationResponse>.BadRequest("Prompt is required for Webhook Prompt Workflow");
 
             var validationResult = await _activationValidationService.ValidateActivationAsync(tenantId, request.AgentName, request.ActivationName, workflowName);
             if (!validationResult.IsSuccess)
@@ -676,7 +701,8 @@ public class AppIntegrationService : IAppIntegrationService
                 $"agentName={Uri.EscapeDataString(request.AgentName)}",
                 $"workflowName={Uri.EscapeDataString(workflowName)}",
                 $"webhookName={Uri.EscapeDataString(webhookName)}",
-                $"activationName={Uri.EscapeDataString(request.ActivationName)}"
+                $"activationName={Uri.EscapeDataString(request.ActivationName)}",
+                $"webhookId={Uri.EscapeDataString(integrationId)}"
             };
             if (participantId != "webhook")
                 queryParams.Add($"participantId={Uri.EscapeDataString(participantId)}");
@@ -691,10 +717,13 @@ public class AppIntegrationService : IAppIntegrationService
                 ["timeoutInSeconds"] = timeoutInSeconds,
                 ["webhookName"] = webhookName
             };
+            if (request.WorkflowInputs is { Count: > 0 })
+                configuration["workflowInputs"] = request.WorkflowInputs;
 
             var workflowId = $"{tenantId}:{request.AgentName}:{workflowName}:{request.ActivationName}";
             var integration = new AppIntegration
             {
+                Id = integrationId,
                 TenantId = tenantId,
                 PlatformId = "builtin_webhook",
                 Name = integrationName,

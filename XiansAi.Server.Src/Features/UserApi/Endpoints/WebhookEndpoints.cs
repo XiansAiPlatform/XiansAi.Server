@@ -23,12 +23,14 @@ public static class WebhookEndpoints
             [FromQuery] string agentName,
             [FromQuery] string? apikeyId,
             [FromQuery] string? activationName,
+            [FromQuery] string? webhookId,
             HttpContext httpContext,
             [FromServices] IMessageService messageService,
             [FromServices] IPendingRequestService pendingRequestService,
             [FromServices] ITenantContext tenantContext,
             [FromServices] IApiKeyService apiKeyService,
             [FromServices] IActivationValidationService activationValidationService,
+            [FromServices] IAppIntegrationService appIntegrationService,
             [FromServices] IFlowDefinitionRepository flowDefinitionRepository,
             [FromServices] ILogger<SyncMessageHandler> logger,
             [FromQuery] int timeoutSeconds = 60,
@@ -97,6 +99,12 @@ public static class WebhookEndpoints
                     }
                 }
 
+                var webhookConfiguration = await GetWebhookConfigurationAsync(
+                    appIntegrationService, webhookId, tenantId, agentName, activationName, workflowName, webhookName);
+                if (webhookConfiguration is null && !string.IsNullOrWhiteSpace(webhookId))
+                    return Results.NotFound("Webhook configuration not found");
+                var workflowInputs = webhookConfiguration?.WorkflowInputs;
+
                 // Read the request body
                 using var reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8);
                 var body = await reader.ReadToEndAsync();
@@ -105,14 +113,17 @@ public static class WebhookEndpoints
                 // Using webhookName as the scope/method identifier
                 var workflowId = $"{tenantId}:{agentName}:{workflowName}{(activationName != null ? $":{activationName}" : string.Empty)}";
 
-                // Use participantId from query or default to "webhook" for identification
-                // Normalize to lowercase for consistency (especially important for emails)
-                var resolvedParticipantId = (participantId ?? "webhook").ToLowerInvariant();
+                // A stored webhook owns its participant; legacy URLs without an ID keep their query value.
+                var resolvedParticipantId = (webhookConfiguration?.ParticipantId ?? participantId ?? "webhook").ToLowerInvariant();
 
                 // Generate unique request ID for correlation
                 var requestId = MessageRequestProcessor.GenerateRequestId(workflowId, resolvedParticipantId);
 
-                var inboundMetadata = WebhookHeaderCapture.Capture(httpContext.Request.Headers);
+                var inboundMetadata = WebhookHeaderCapture.Capture(
+                        httpContext.Request.Headers, workflowInputs is { Count: > 0 })
+                    ?? new Dictionary<string, string>(StringComparer.Ordinal);
+                AddRequestValues(inboundMetadata, "Query", httpContext.Request.Query, IsSafeQueryParameter);
+                AddRequestValues(inboundMetadata, "Input", workflowInputs);
 
                 // Create the chat request for the message service
                 var chatRequest = new ChatOrDataRequest
@@ -125,7 +136,7 @@ public static class WebhookEndpoints
                     Scope = scope,
                     Authorization = authorization ?? tenantContext.Authorization,
                     Origin = $"webhook:builtin:{webhookName}",
-                    Metadata = inboundMetadata
+                    Metadata = inboundMetadata.Count == 0 ? null : inboundMetadata
                 };
 
                 // Use the sync message handler to process and wait for response
@@ -407,5 +418,93 @@ The Update method should return a string response.")
         .Produces<ProblemDetails>(StatusCodes.Status401Unauthorized)
         .Produces<ProblemDetails>(StatusCodes.Status403Forbidden)
         .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError);
+    }
+
+    private sealed record WebhookConfiguration(Dictionary<string, string> WorkflowInputs, string ParticipantId);
+
+    private static async Task<WebhookConfiguration?> GetWebhookConfigurationAsync(
+        IAppIntegrationService integrations,
+        string? webhookId,
+        string tenantId,
+        string agentName,
+        string? activationName,
+        string workflowName,
+        string webhookName)
+    {
+        if (string.IsNullOrWhiteSpace(webhookId)) return null;
+        var webhook = await integrations.GetIntegrationEntityByIdAsync(webhookId);
+        if (!MatchesWebhook(webhook, tenantId, agentName, activationName, workflowName, webhookName)) return null;
+        var storedWebhook = webhook!;
+        var storedParticipantId = ConfigurationValue(storedWebhook, "participantId");
+        var participantId = string.IsNullOrWhiteSpace(storedParticipantId) ? "webhook" : storedParticipantId.Trim();
+        if (!storedWebhook.Configuration.TryGetValue("workflowInputs", out var value) || value is null)
+            return new WebhookConfiguration([], participantId);
+        try
+        {
+            var json = value is string text ? text : JsonSerializer.Serialize(value);
+            var inputs = JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? [];
+            return new WebhookConfiguration(inputs, participantId);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static bool MatchesWebhook(
+        global::Shared.Data.Models.AppIntegration? webhook,
+        string tenantId,
+        string agentName,
+        string? activationName,
+        string workflowName,
+        string webhookName) =>
+        webhook is { IsEnabled: true } &&
+        webhook.TenantId == tenantId &&
+        webhook.AgentName == agentName &&
+        webhook.ActivationName == activationName &&
+        webhook.PlatformId.Equals("builtin_webhook", StringComparison.OrdinalIgnoreCase) &&
+        ConfigurationValue(webhook, "workflowName") == workflowName &&
+        ConfigurationValue(webhook, "webhookName") == webhookName;
+
+    private static string? ConfigurationValue(global::Shared.Data.Models.AppIntegration webhook, string key) =>
+        webhook.Configuration.TryGetValue(key, out var value) ? value?.ToString() : null;
+
+    private static void AddRequestValues(
+        Dictionary<string, string> metadata,
+        string prefix,
+        IQueryCollection values,
+        Func<string, bool> include)
+    {
+        foreach (var value in values.Where(value => include(value.Key)))
+            metadata[$"{prefix}:{value.Key}"] = value.Value.ToString();
+    }
+
+    private static void AddRequestValues(
+        Dictionary<string, string> metadata,
+        string prefix,
+        Dictionary<string, string>? values)
+    {
+        if (values is null) return;
+        foreach (var value in values) metadata[$"{prefix}:{value.Key}"] = value.Value;
+    }
+
+    private static bool IsSafeQueryParameter(string name)
+    {
+        string[] excluded =
+        [
+            "workflowName", "webhookName", "agentName", "apikeyId", "activationName", "webhookId",
+            "timeoutSeconds", "participantId", "scope", "authorization", "apikey", "access_token"
+        ];
+        return !excluded.Contains(name, StringComparer.OrdinalIgnoreCase) &&
+            !name.Contains("token", StringComparison.OrdinalIgnoreCase) &&
+            !name.Contains("secret", StringComparison.OrdinalIgnoreCase) &&
+            !name.Contains("password", StringComparison.OrdinalIgnoreCase) &&
+            !name.Contains("signature", StringComparison.OrdinalIgnoreCase) &&
+            !name.Contains("credential", StringComparison.OrdinalIgnoreCase) &&
+            !name.Contains("apikey", StringComparison.OrdinalIgnoreCase) &&
+            !name.Contains("api-key", StringComparison.OrdinalIgnoreCase) &&
+            !name.Contains("api_key", StringComparison.OrdinalIgnoreCase) &&
+            !name.Equals("auth", StringComparison.OrdinalIgnoreCase) &&
+            !name.EndsWith("-auth", StringComparison.OrdinalIgnoreCase);
     }
 }
