@@ -199,7 +199,7 @@ public static class AdminSecretVaultEndpoints
     /// user on <c>X-On-Behalf-Of</c>, which is stored on <see cref="ITenantContext.ParticipantId"/>.
     /// When that header is missing or invalid, ParticipantId already falls back to the API-key owner.
     /// </summary>
-    private static string ResolveActor(ITenantContext tenantContext)
+    internal static string ResolveActor(ITenantContext tenantContext)
     {
         return string.IsNullOrWhiteSpace(tenantContext.ParticipantId)
             ? "system"
