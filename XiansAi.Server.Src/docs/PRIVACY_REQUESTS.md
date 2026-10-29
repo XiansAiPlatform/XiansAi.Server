@@ -73,7 +73,7 @@ exported or erased data itself.
 | Timing | `created_at`, `run_after`, `completed_at`, `cancelled_at`, `closed_at`, `failed_at` |
 | Processing | `claimed_by`, `lease_id`, `lease_expires_at`, `attempts`, `next_attempt_at`, `last_error` |
 | `resolved_subject` | The identifiers found by the resolver |
-| `results`, `notes` | One result per contributor, and notes for operators |
+| `results` | One result per contributor, with its notes for operators |
 | `subject_hash` | HMAC of the person's primary identifier |
 
 ```text
@@ -92,9 +92,12 @@ Pending ──claim──▶ Running ──complete──▶ Completed
   passed), marks them `Running`, sets a lease, gives each claim a new `lease_id` and counts the attempt.
   Several server instances can claim at once without taking the same request. The claim is not wrapped in
   the application retry helper, because repeating it after a lost reply would claim a second request.
-- **Writes made while processing** (resolved subject, contributor results, notes, retry, complete, fail)
+- **Writes made while processing** (resolved subject, contributor results, retry, complete, fail)
   must carry the claim's `lease_id` and return `false` when it no longer matches. A holder whose lease
-  expired and was claimed again cannot overwrite the new holder's work.
+  expired and was claimed again cannot overwrite the new holder's work. **Retry** clears `lease_id` as well, so
+  the worker that scheduled it no longer holds the request.
+- **Record result** replaces the contributor's earlier result, notes included, so repeating it never
+  duplicates notes.
 - **Complete** and **cancel** each scrub the plain identifiers in a single update (see below).
 - **Fail** keeps the identifiers and sets `failed_at`, which starts the shorter retention below.
 - **Record export delivered** stores an `Export` request that is already `Completed` and scrubbed.

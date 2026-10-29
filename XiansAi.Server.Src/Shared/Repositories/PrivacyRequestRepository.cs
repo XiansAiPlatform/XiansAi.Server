@@ -52,12 +52,10 @@ public interface IPrivacyRequestRepository
     /// <summary>Stores the resolved identifier snapshot and the hash of its primary identifier.</summary>
     Task<bool> SaveResolvedSubjectAsync(string id, string leaseId, PrivacySubject subject, string subjectHash);
 
-    /// <summary>Records one contributor's outcome, replacing any earlier outcome for the same contributor.</summary>
+    /// <summary>Records one contributor's outcome and notes, replacing any earlier outcome for the same contributor.</summary>
     Task<bool> RecordResultAsync(string id, string leaseId, PrivacyContributorResult result);
 
-    Task<bool> AddNotesAsync(string id, string leaseId, IReadOnlyCollection<string> notes);
-
-    /// <summary>Releases the lease and schedules another attempt.</summary>
+    /// <summary>Releases the lease, ending the caller's hold, and schedules another attempt.</summary>
     Task<bool> MarkRetryAsync(string id, string leaseId, DateTime nextAttemptAt, string? error);
 
     /// <summary>
@@ -226,7 +224,8 @@ public class PrivacyRequestRepository : IPrivacyRequestRepository
         ArgumentNullException.ThrowIfNull(result);
         result.Error = Truncate(result.Error);
 
-        // A pipeline replaces the contributor's earlier result in one step, which a pull plus push cannot do.
+        // A pipeline replaces the contributor's earlier result in one step, which a pull plus push cannot do. The notes
+        // travel inside the result, so applying the same write twice cannot duplicate them.
         var replaced = new BsonDocument("$concatArrays", new BsonArray
         {
             new BsonDocument("$filter", new BsonDocument
@@ -241,21 +240,12 @@ public class PrivacyRequestRepository : IPrivacyRequestRepository
             "RecordPrivacyContributorResult");
     }
 
-    public Task<bool> AddNotesAsync(string id, string leaseId, IReadOnlyCollection<string> notes)
-    {
-        if (notes == null || notes.Count == 0)
-        {
-            return Task.FromResult(true);
-        }
-
-        return UpdateOneAsync(Held(id, leaseId), Update.PushEach(r => r.Notes, notes), "AddPrivacyRequestNotes");
-    }
-
     public Task<bool> MarkRetryAsync(string id, string leaseId, DateTime nextAttemptAt, string? error)
     {
         var update = Update
             .Set(r => r.NextAttemptAt, nextAttemptAt)
             .Set(r => r.LeaseExpiresAt, null)
+            .Set(r => r.LeaseId, null)
             .Set(r => r.LastError, Truncate(error));
 
         return UpdateOneAsync(Held(id, leaseId), update, "MarkPrivacyRequestRetry");

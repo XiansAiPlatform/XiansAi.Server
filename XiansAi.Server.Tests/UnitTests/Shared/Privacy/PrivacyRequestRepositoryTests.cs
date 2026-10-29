@@ -278,6 +278,34 @@ public class PrivacyRequestRepositoryTests : IClassFixture<MongoDbFixture>
     }
 
     [Fact]
+    public async Task Retry_EndsTheCallersHold()
+    {
+        var request = await InsertAsync(NewErasure());
+        var claimed = await ClaimOneAsync();
+
+        Assert.True(await _repository.MarkRetryAsync(request.Id, claimed.LeaseId!, Now.AddMinutes(10), null));
+
+        Assert.Null((await _repository.GetByIdAsync(request.Id))!.LeaseId);
+        Assert.False(await _repository.RecordResultAsync(request.Id, claimed.LeaseId!,
+            Result("conversations", PrivacyContributorStatus.Succeeded)));
+        Assert.False(await _repository.CompleteAsync(request.Id, claimed.LeaseId!, Now));
+    }
+
+    [Fact]
+    public async Task RecordResult_Repeated_DoesNotDuplicateNotes()
+    {
+        var request = await InsertAsync(NewErasure());
+        var leaseId = (await ClaimOneAsync()).LeaseId!;
+        var result = Result("agents", PrivacyContributorStatus.Succeeded, 1);
+        result.Notes = ["1 agent left without an owner"];
+
+        await _repository.RecordResultAsync(request.Id, leaseId, result);
+        await _repository.RecordResultAsync(request.Id, leaseId, result);
+
+        Assert.Equal(["1 agent left without an owner"], Assert.Single((await _repository.GetByIdAsync(request.Id))!.Results).Notes);
+    }
+
+    [Fact]
     public async Task RecordResult_ReplacesTheEarlierResultOfTheSameContributor()
     {
         var request = await InsertAsync(NewErasure());
@@ -321,8 +349,9 @@ public class PrivacyRequestRepositoryTests : IClassFixture<MongoDbFixture>
             Emails = ["alice@example.com"],
             ParticipantIds = ["alice@example.com"]
         }, "hash-of-primary");
-        await _repository.RecordResultAsync(request.Id, leaseId, Result("conversations", PrivacyContributorStatus.Succeeded, 4));
-        await _repository.AddNotesAsync(request.Id, leaseId, ["1 agent left without an owner"]);
+        var succeeded = Result("conversations", PrivacyContributorStatus.Succeeded, 4);
+        succeeded.Notes = ["1 agent left without an owner"];
+        await _repository.RecordResultAsync(request.Id, leaseId, succeeded);
 
         Assert.True(await _repository.CompleteAsync(request.Id, leaseId, Now));
 
@@ -336,8 +365,7 @@ public class PrivacyRequestRepositoryTests : IClassFixture<MongoDbFixture>
         Assert.Equal(PrivacyActorType.Self, stored.RequestedBy.ActorType);
         Assert.Equal("hash-of-primary", stored.SubjectHash);
         Assert.Equal(["t1"], stored.Scope.TenantIds);
-        Assert.Single(stored.Results);
-        Assert.Equal(["1 agent left without an owner"], stored.Notes);
+        Assert.Equal(["1 agent left without an owner"], Assert.Single(stored.Results).Notes);
         Assert.Equal([request.Id], (await _repository.ListByRequesterAsync(Hash("keycloak|alice"), 50)).Select(r => r.Id));
 
         var raw = await _collection.Database.GetCollection<BsonDocument>("privacy_requests")

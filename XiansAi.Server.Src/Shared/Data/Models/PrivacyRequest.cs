@@ -148,6 +148,10 @@ public class PrivacyContributorResult
 
     [BsonElement("completed_at")]
     public DateTime CompletedAt { get; set; }
+
+    /// <summary>Reports for operators, such as agents left without an owner. Must not contain the person's identifiers.</summary>
+    [BsonElement("notes")]
+    public List<string> Notes { get; set; } = [];
 }
 
 /// <summary>
@@ -235,8 +239,4 @@ public class PrivacyRequest
 
     [BsonElement("results")]
     public List<PrivacyContributorResult> Results { get; set; } = [];
-
-    /// <summary>Reports for operators, such as agents left without an owner. Must not contain the person's identifiers.</summary>
-    [BsonElement("notes")]
-    public List<string> Notes { get; set; } = [];
 }
