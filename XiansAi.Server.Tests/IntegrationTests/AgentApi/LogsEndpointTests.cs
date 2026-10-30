@@ -115,7 +115,8 @@ public class LogsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixtu
         var payload = asBatch ? $"[{log}]" : log;
 
         // Act
-        var response = await _client.PostAsync(endpoint, new StringContent(payload, System.Text.Encoding.UTF8, "application/json"));
+        using var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+        var response = await _client.PostAsync(endpoint, content);
 
         // Assert
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);

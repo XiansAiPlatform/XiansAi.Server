@@ -275,7 +275,8 @@ public class AdminLogsEndpointsTests : AdminApiIntegrationTestBase
             """;
 
         using var agentClient = CreateAgentApiClient();
-        var post = await agentClient.PostAsync("/api/agent/logs", new StringContent(payload, Encoding.UTF8, "application/json"));
+        using var content = new StringContent(payload, Encoding.UTF8, "application/json");
+        var post = await agentClient.PostAsync("/api/agent/logs", content);
         Assert.True(post.StatusCode == HttpStatusCode.OK, await post.Content.ReadAsStringAsync());
 
         await ConfigureAdminApiClientAsync(TestTenantId);
