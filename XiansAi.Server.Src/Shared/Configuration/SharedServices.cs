@@ -107,6 +107,12 @@ public static class SharedServices
         services.Configure<WebhooksOptions>(configuration.GetSection(WebhooksOptions.SectionName));
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<WebhooksOptions>>().Value);
 
+        services.AddOptions<WebhookIncomingsOptions>()
+            .Bind(configuration.GetSection(WebhookIncomingsOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+        services.AddSingleton(sp => sp.GetRequiredService<IOptions<WebhookIncomingsOptions>>().Value);
+
         var webhookOptions = configuration.GetSection(WebhooksOptions.SectionName).Get<WebhooksOptions>()
             ?? new WebhooksOptions();
 
