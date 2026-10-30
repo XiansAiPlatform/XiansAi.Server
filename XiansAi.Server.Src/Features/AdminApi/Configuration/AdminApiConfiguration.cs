@@ -33,6 +33,7 @@ public static class AdminApiConfiguration
         builder.Services.AddScoped<IActivationCleanupService, ActivationCleanupService>();
         builder.Services.AddScoped<IAdminStatsService, AdminStatsService>();
         builder.Services.AddScoped<IFeedbackQueryService, FeedbackQueryService>();
+        builder.Services.AddScoped<IWorkflowChildrenResolver, WorkflowChildrenResolver>();
         builder.Services.AddScoped<IAdminLogsService, AdminLogsService>();
         builder.Services.AddScoped<IAdminAuditLogService, AdminAuditLogService>();
         builder.Services.AddScoped<IAdminMetricsService, AdminMetricsService>();

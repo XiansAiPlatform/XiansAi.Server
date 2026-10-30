@@ -27,6 +27,7 @@ public static class AdminLogsEndpoints
             .EnforceCapabilities();
 
         // Step 1: list distinct log streams (unique workflow_id) sorted by recent activity.
+        // includeChildWorkflows=true widens a workflowType filter to child workflows of that type.
         logsGroup.MapGet("/logs/streams", async (
             string tenantId,
             [FromQuery] string? agentName,
@@ -39,6 +40,7 @@ public static class AdminLogsEndpoints
             [FromQuery] string? search,
             [FromQuery] int? pageSize,
             [FromQuery] int? page,
+            [FromQuery] bool? includeChildWorkflows,
             [FromServices] IAdminLogsService logsService) =>
         {
             participantId = NormalizeParticipantId(participantId);
@@ -55,7 +57,8 @@ public static class AdminLogsEndpoints
                 endDate,
                 search,
                 page ?? DefaultPage,
-                pageSize ?? DefaultPageSize);
+                pageSize ?? DefaultPageSize,
+                includeChildWorkflows ?? false);
 
             return result.ToHttpResult();
         })
@@ -68,6 +71,7 @@ public static class AdminLogsEndpoints
         // Step 2 (or general query): get logs with comprehensive filtering. Supports filtering
         // by one workflow_id (workflowId) or many (workflowIds, comma-separated) - the latter is
         // the typical follow-up after picking streams from /logs/streams.
+        // includeChildWorkflows=true adds child workflows of the given workflow IDs, or of the workflowType.
         logsGroup.MapGet("/logs", async (
             string tenantId,
             [FromQuery] string? agentName,
@@ -82,6 +86,7 @@ public static class AdminLogsEndpoints
             [FromQuery] string? search,
             [FromQuery] int? pageSize,
             [FromQuery] int? page,
+            [FromQuery] bool? includeChildWorkflows,
             [FromServices] IAdminLogsService logsService) =>
         {
             participantId = NormalizeParticipantId(participantId);
@@ -100,7 +105,8 @@ public static class AdminLogsEndpoints
                 endDate,
                 search,
                 page ?? DefaultPage,
-                pageSize ?? DefaultPageSize);
+                pageSize ?? DefaultPageSize,
+                includeChildWorkflows ?? false);
 
             return result.ToHttpResult();
         })
