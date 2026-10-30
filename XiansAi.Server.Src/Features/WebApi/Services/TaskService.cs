@@ -77,6 +77,7 @@ public class TaskService : ITaskService
             RunId = adminData.RunId,
             Title = adminData.Title,
             Description = adminData.Description,
+            DescriptionType = adminData.DescriptionType,
             InitialWork = adminData.InitialWork,
             FinalWork = adminData.FinalWork,
             ParticipantId = adminData.ParticipantId,
@@ -299,6 +300,7 @@ public class TaskService : ITaskService
     {
         var taskTitle = ExtractMemoValue(workflow.Memo, Constants.TaskTitleKey) ?? "Untitled Task";
         var taskDescription = ExtractMemoValue(workflow.Memo, Constants.TaskDescriptionKey) ?? "";
+        var taskDescriptionType = ExtractMemoValue(workflow.Memo, Constants.TaskDescriptionTypeKey) is { Length: > 0 } memoDescType ? memoDescType : Constants.DefaultTaskDescriptionType;
         var participantId = ExtractMemoValue(workflow.Memo, Constants.UserIdKey);
         var taskActionsStr = ExtractMemoValue(workflow.Memo, Constants.TaskActionsKey);
 
@@ -315,6 +317,7 @@ public class TaskService : ITaskService
             RunId = workflow.RunId,
             Title = taskTitle,
             Description = taskDescription,
+            DescriptionType = taskDescriptionType,
             ParticipantId = participantId,
             Status = workflow.Status.ToString(),
             IsCompleted = workflow.Status != Temporalio.Api.Enums.V1.WorkflowExecutionStatus.Running,
