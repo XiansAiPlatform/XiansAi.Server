@@ -591,6 +591,31 @@ webhook_deliveries:
     expire_after: 15d
     background: true
 
+webhook_incomings:
+  # Deliveries list for a builtin webhook (newest first) and the per-webhook retention cap.
+  - name: tenant_id_1_integration_id_1_received_at_-1__id_-1
+    keys:
+      tenant_id: asc
+      integration_id: asc
+      received_at: desc
+      _id: desc
+    background: true
+  # Calls sent to one workflow, newest first.
+  - name: tenant_id_1_workflow_id_1_received_at_-1__id_-1
+    keys:
+      tenant_id: asc
+      workflow_id: asc
+      received_at: desc
+      _id: desc
+    background: true
+  # Safety net for rows the per-webhook cap never reaches, e.g. a call recorded while its
+  # webhook was being deleted. Override with MongoIndexes__webhook_incomings__webhook_incomings_ttl__ExpireAfter.
+  - name: webhook_incomings_ttl
+    keys:
+      received_at: asc
+    expire_after: 90d
+    background: true
+
 admin_capability_matrix:
   - name: action_1
     keys:

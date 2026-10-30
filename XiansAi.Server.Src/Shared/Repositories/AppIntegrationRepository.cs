@@ -234,7 +234,7 @@ public class AppIntegrationRepository : IAppIntegrationRepository
         {
             var filter = Builders<AppIntegration>.Filter.And(
                 Builders<AppIntegration>.Filter.Eq(x => x.TenantId, tenantId),
-                Builders<AppIntegration>.Filter.Eq(x => x.PlatformId, "builtin_webhook"),
+                Builders<AppIntegration>.Filter.Eq(x => x.PlatformId, AppIntegration.BuiltinWebhookPlatformId),
                 Builders<AppIntegration>.Filter.Eq("configuration.apiKeyId", apiKeyId),
                 Builders<AppIntegration>.Filter.Ne(x => x.Id, excludeId));
             return await _integrations.CountDocumentsAsync(filter, new CountOptions { Limit = 1 }) > 0;

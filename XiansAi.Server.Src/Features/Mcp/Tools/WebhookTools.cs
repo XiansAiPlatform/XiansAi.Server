@@ -91,7 +91,7 @@ public sealed class WebhookTools(
         var webhook = await integrations.GetIntegrationEntityByIdAsync(webhookId);
         if (webhook is null || webhook.TenantId != tenantContext.TenantId ||
             webhook.AgentName != target.AgentName || webhook.ActivationName != target.ActivationName ||
-            !webhook.PlatformId.Equals("builtin_webhook", StringComparison.OrdinalIgnoreCase))
+            !webhook.PlatformId.Equals(AppIntegration.BuiltinWebhookPlatformId, StringComparison.OrdinalIgnoreCase))
             throw new McpException("Webhook not found in this activation. Use an exact ID from list_webhooks.");
         return Result(await integrations.DeleteBuiltinWebhookAsync(webhookId, tenantContext.TenantId));
     }
