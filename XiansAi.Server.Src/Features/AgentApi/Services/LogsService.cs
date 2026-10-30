@@ -1,3 +1,5 @@
+using System.Dynamic;
+using System.Text.Json;
 using MongoDB.Bson;
 using Features.AgentApi.Models;
 using Features.AgentApi.Repositories;
@@ -79,7 +81,7 @@ public class LogsService : ILogsService
                     Level = request.Level,
                     WorkflowId = request.WorkflowId,
                     WorkflowRunId = request.WorkflowRunId,
-                    Properties = request.Properties,
+                    Properties = ConvertProperties(request.Properties),
                     WorkflowType = request.WorkflowType,
                     Agent = request.Agent,
                     Activation = request.Activation,
@@ -136,7 +138,7 @@ public class LogsService : ILogsService
                 Level = request.Level,
                 WorkflowId = request.WorkflowId,
                 WorkflowRunId = request.WorkflowRunId,
-                Properties = request.Properties,
+                Properties = ConvertProperties(request.Properties),
                 WorkflowType = request.WorkflowType,
                 Agent = request.Agent,
                 Activation = request.Activation,
@@ -155,6 +157,50 @@ public class LogsService : ILogsService
         {
             _logger.LogError(ex, "Error creating log: {Request}", request);
             return Results.BadRequest("An error occurred while creating the log");
+        }
+    }
+
+    /// <summary>
+    /// Request properties are deserialized as JsonElement values, which the Mongo driver cannot
+    /// serialize. Convert them to BSON-compatible values so they are stored as plain fields
+    /// (e.g. a string value as a BSON string) that can be filtered and indexed.
+    /// </summary>
+    private static Dictionary<string, object>? ConvertProperties(Dictionary<string, object>? properties)
+    {
+        return properties?.ToDictionary(
+            kvp => kvp.Key,
+            kvp => kvp.Value is JsonElement element ? ConvertJsonElementToBsonCompatible(element)! : kvp.Value);
+    }
+
+    private static object? ConvertJsonElementToBsonCompatible(JsonElement element)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Number:
+                if (element.TryGetInt64(out long l))
+                    return l;
+                return element.GetDouble();
+            case JsonValueKind.String:
+                return element.GetString();
+            case JsonValueKind.True:
+                return true;
+            case JsonValueKind.False:
+                return false;
+            case JsonValueKind.Array:
+                return element.EnumerateArray()
+                    .Select(ConvertJsonElementToBsonCompatible)
+                    .ToList();
+            case JsonValueKind.Object:
+                // ExpandoObject is stored as a plain sub-document; a Dictionary would get a
+                // _t/_v type wrapper from the driver's ObjectSerializer.
+                IDictionary<string, object?> nested = new ExpandoObject();
+                foreach (var p in element.EnumerateObject())
+                {
+                    nested[p.Name] = ConvertJsonElementToBsonCompatible(p.Value);
+                }
+                return nested;
+            default:
+                return null;
         }
     }
 
