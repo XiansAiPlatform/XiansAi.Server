@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using MongoDB.Bson;
+using MongoDB.Driver;
 using Microsoft.Extensions.Logging;
 using Tests.TestUtils;
 using Features.AgentApi.Models;
@@ -97,6 +98,40 @@ public class LogsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixtu
         Assert.Equal(logRequests[1].Level, results[1].Level);
         Assert.Equal(logRequests[1].WorkflowId, results[1].WorkflowId);
         Assert.Equal(logRequests[1].WorkflowRunId, results[1].WorkflowRunId);
+    }
+
+    [Theory]
+    [InlineData("/api/agent/logs", true)]
+    [InlineData("/api/agent/logs/single", false)]
+    public async Task CreateLog_WithProperties_StoresPlainBsonValues(string endpoint, bool asBatch)
+    {
+        // Arrange - the JSON shape Xians.Lib posts; properties arrive as JsonElement values
+        var workflowId = ObjectId.GenerateNewId().ToString();
+        var log = $$"""
+            { "level": 2, "message": "order opened", "workflowId": "{{workflowId}}", "agent": "TestAgent",
+              "properties": { "status": "open", "orderId": "A", "attempt": 2, "ratio": 0.5, "retry": true,
+                              "reason": null, "item": { "id": "INV-1" }, "tags": ["a", "b"] } }
+            """;
+        var payload = asBatch ? $"[{log}]" : log;
+
+        // Act
+        var response = await _client.PostAsync(endpoint, new StringContent(payload, System.Text.Encoding.UTF8, "application/json"));
+
+        // Assert
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        var stored = await _database.GetCollection<BsonDocument>("logs")
+            .Find(new BsonDocument("workflow_id", workflowId))
+            .SingleAsync();
+        var properties = stored["properties"].AsBsonDocument;
+        Assert.Equal("open", properties["status"].AsString);
+        Assert.Equal("A", properties["orderId"].AsString);
+        Assert.Equal(2L, properties["attempt"].ToInt64());
+        Assert.Equal(0.5, properties["ratio"].AsDouble);
+        Assert.True(properties["retry"].AsBoolean);
+        Assert.True(properties["reason"].IsBsonNull);
+        Assert.Equal(new BsonDocument("id", "INV-1"), properties["item"].AsBsonDocument);
+        Assert.Equal(new BsonArray { "a", "b" }, properties["tags"].AsBsonArray);
     }
 
     [Fact]

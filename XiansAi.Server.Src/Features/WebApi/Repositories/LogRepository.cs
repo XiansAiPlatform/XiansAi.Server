@@ -46,7 +46,8 @@ public interface ILogRepository
         DateTime? endDate,
         string? search,
         int page = 1,
-        int pageSize = 20);
+        int pageSize = 20,
+        Dictionary<string, string[]>? propertyFilters = null);
 
     Task<(IEnumerable<LogStreamSummary> streams, long totalCount)> GetAdminLogStreamsAsync(
         string tenantId,
@@ -346,7 +347,8 @@ public class LogRepository : ILogRepository
     /// <summary>
     /// Gets logs with flexible filtering for admin purposes.
     /// Unlike GetFilteredLogsAsync, this method allows optional agent filtering for cross-agent queries.
-    /// Supports filtering by one or more workflow IDs (streams).
+    /// Supports filtering by one or more workflow IDs (streams) and by structured property
+    /// values (properties.&lt;key&gt;, exact match, AND across keys).
     /// </summary>
     public async Task<(IEnumerable<Log> logs, long totalCount)> GetAdminLogsAsync(
         string tenantId,
@@ -360,7 +362,8 @@ public class LogRepository : ILogRepository
         DateTime? endDate,
         string? search,
         int page = 1,
-        int pageSize = 20)
+        int pageSize = 20,
+        Dictionary<string, string[]>? propertyFilters = null)
     {
         var filter = BuildAdminLogsFilter(
             tenantId,
@@ -372,7 +375,8 @@ public class LogRepository : ILogRepository
             logLevels,
             startDate,
             endDate,
-            search);
+            search,
+            propertyFilters);
 
         var totalCount = await _logs.CountDocumentsAsync(filter);
         var logs = await _logs.Find(filter)
@@ -467,7 +471,8 @@ public class LogRepository : ILogRepository
         LogLevel[]? logLevels,
         DateTime? startDate,
         DateTime? endDate,
-        string? search)
+        string? search,
+        Dictionary<string, string[]>? propertyFilters = null)
     {
         var filter = Builders<Log>.Filter.Eq(x => x.TenantId, tenantId);
 
@@ -518,6 +523,14 @@ public class LogRepository : ILogRepository
             filter &= BuildSearchFilter(search.Trim());
         }
 
+        if (propertyFilters != null)
+        {
+            foreach (var (key, values) in propertyFilters.Where(f => f.Value.Length > 0))
+            {
+                filter &= BuildPropertyFilter(key, values);
+            }
+        }
+
         return filter;
     }
 
@@ -557,6 +570,19 @@ public class LogRepository : ILogRepository
         }));
 
         return messageMatch | propertiesMatch;
+    }
+
+    /// <summary>
+    /// Exact match on a top-level property value (properties.{key}). Written as a raw document
+    /// because property values are untyped (Dictionary&lt;string, object&gt;). Keys are validated
+    /// by the caller (letters, digits and underscores only), so they cannot address nested paths.
+    /// </summary>
+    private static FilterDefinition<Log> BuildPropertyFilter(string key, string[] values)
+    {
+        var field = $"properties.{key}";
+        return values.Length == 1
+            ? new BsonDocument(field, values[0])
+            : new BsonDocument(field, new BsonDocument("$in", new BsonArray(values)));
     }
 
     public async Task<long> DeleteByAgentAndActivationAsync(string tenantId, string agentName, string activationName)

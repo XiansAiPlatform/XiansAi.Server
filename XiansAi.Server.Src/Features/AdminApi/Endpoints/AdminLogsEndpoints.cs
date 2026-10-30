@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 using Shared.Services;
 using Shared.Utils.Services;
@@ -14,6 +15,10 @@ public static class AdminLogsEndpoints
 {
     private const int DefaultPageSize = 20;
     private const int DefaultPage = 1;
+
+    // Property filter keys address a single top-level field (properties.<key>), so dots, $ and
+    // nested paths are not allowed.
+    private static readonly Regex PropertyKeyPattern = new("^[A-Za-z0-9_]{1,64}$", RegexOptions.Compiled);
 
     /// <summary>
     /// Maps all AdminApi logs endpoints.
@@ -68,6 +73,8 @@ public static class AdminLogsEndpoints
         // Step 2 (or general query): get logs with comprehensive filtering. Supports filtering
         // by one workflow_id (workflowId) or many (workflowIds, comma-separated) - the latter is
         // the typical follow-up after picking streams from /logs/streams.
+        // Logs can also be filtered by structured properties with the repeatable
+        // property=key:value1,value2 parameter (exact match on properties.<key>, AND across keys).
         logsGroup.MapGet("/logs", async (
             string tenantId,
             [FromQuery] string? agentName,
@@ -80,6 +87,7 @@ public static class AdminLogsEndpoints
             [FromQuery] DateTime? startDate,
             [FromQuery] DateTime? endDate,
             [FromQuery] string? search,
+            [FromQuery] string[]? property,
             [FromQuery] int? pageSize,
             [FromQuery] int? page,
             [FromServices] IAdminLogsService logsService) =>
@@ -87,6 +95,11 @@ public static class AdminLogsEndpoints
             participantId = NormalizeParticipantId(participantId);
             var logLevels = ParseLogLevels(logLevel);
             var resolvedWorkflowIds = MergeWorkflowIds(workflowId, workflowIds);
+            var (propertyFilters, propertyError) = ParsePropertyFilters(property);
+            if (propertyError != null)
+            {
+                return ServiceResult<AdminLogsResponse>.BadRequest(propertyError).ToHttpResult();
+            }
 
             var result = await logsService.GetLogsAsync(
                 tenantId,
@@ -100,7 +113,8 @@ public static class AdminLogsEndpoints
                 endDate,
                 search,
                 page ?? DefaultPage,
-                pageSize ?? DefaultPageSize);
+                pageSize ?? DefaultPageSize,
+                propertyFilters);
 
             return result.ToHttpResult();
         })
@@ -189,5 +203,51 @@ public static class AdminLogsEndpoints
         }
 
         return ids.Distinct(StringComparer.Ordinal).ToArray();
+    }
+
+    /// <summary>
+    /// Parses repeatable property=key:value1,value2 filters, splitting on the first ':'.
+    /// Values of a key given more than once are merged. Returns an error for a missing or
+    /// invalid key or for a key without values; returns null filters when none were supplied.
+    /// </summary>
+    private static (Dictionary<string, string[]>? Filters, string? Error) ParsePropertyFilters(string[]? properties)
+    {
+        if (properties == null || properties.Length == 0)
+        {
+            return (null, null);
+        }
+
+        var filters = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        foreach (var property in properties)
+        {
+            var separator = property?.IndexOf(':') ?? -1;
+            if (separator <= 0)
+            {
+                return (null, "Property filter must be in the form key:value1,value2");
+            }
+
+            var key = property![..separator];
+            if (!PropertyKeyPattern.IsMatch(key))
+            {
+                return (null, "Property filter key may only contain letters, digits and underscores (max 64 characters)");
+            }
+
+            var values = property[(separator + 1)..]
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (values.Length == 0)
+            {
+                return (null, $"Property filter '{key}' must have at least one value");
+            }
+
+            if (!filters.TryGetValue(key, out var existing))
+            {
+                filters[key] = existing = new List<string>();
+            }
+            existing.AddRange(values);
+        }
+
+        return (filters.ToDictionary(
+            filter => filter.Key,
+            filter => filter.Value.Distinct(StringComparer.Ordinal).ToArray()), null);
     }
 }
