@@ -172,6 +172,13 @@ conversation_thread:
     keys:
       tenant_id: asc
       agent: asc
+  # Finds a person's threads by participant ID, for GDPR export and erasure.
+  - name: thread_participant_lookup
+    keys:
+      participant_id: asc
+      tenant_id: asc
+      workflow_id: asc
+    background: true
 
 certificates:
   - name: Thumbprint_1
@@ -654,3 +661,32 @@ tenant_smtp_config:
     keys:
       tenant_id: asc
     unique: true
+
+privacy_requests:
+  - name: privacy_request_claim
+    keys:
+      status: asc
+      run_after: asc
+    background: true
+  - name: privacy_request_tenant
+    keys:
+      scope.tenant_ids: asc
+      created_at: desc
+      status: asc
+    background: true
+  - name: privacy_request_requester
+    keys:
+      requested_by.user_hash: asc
+      created_at: desc
+    background: true
+  - name: privacy_request_ttl
+    keys:
+      closed_at: asc
+    expire_after: 1095d
+    background: true
+  # Failed requests keep plain identifiers for follow-up, so they expire much sooner than other records.
+  - name: privacy_request_failed_ttl
+    keys:
+      failed_at: asc
+    expire_after: 90d
+    background: true
