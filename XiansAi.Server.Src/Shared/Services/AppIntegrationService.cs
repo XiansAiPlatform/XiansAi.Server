@@ -118,6 +118,7 @@ public class AppIntegrationService : IAppIntegrationService
     private readonly IActivationValidationService _activationValidationService;
     private readonly IWebhookEventPublisher _webhookEventPublisher;
     private readonly IAuditLogService _auditLogService;
+    private readonly IWebhookIncomingRepository _webhookIncomingRepository;
     private readonly ILogger<AppIntegrationService> _logger;
 
     public AppIntegrationService(
@@ -126,6 +127,7 @@ public class AppIntegrationService : IAppIntegrationService
         IActivationValidationService activationValidationService,
         IWebhookEventPublisher webhookEventPublisher,
         IAuditLogService auditLogService,
+        IWebhookIncomingRepository webhookIncomingRepository,
         ILogger<AppIntegrationService> logger)
     {
         _repository = repository;
@@ -133,6 +135,7 @@ public class AppIntegrationService : IAppIntegrationService
         _activationValidationService = activationValidationService;
         _webhookEventPublisher = webhookEventPublisher;
         _auditLogService = auditLogService;
+        _webhookIncomingRepository = webhookIncomingRepository;
         _logger = logger;
     }
 
@@ -559,6 +562,15 @@ public class AppIntegrationService : IAppIntegrationService
                 return ServiceResult<bool>.NotFound("Integration not found");
             }
 
+            // Remove recorded calls first, so a failure leaves the integration in place to retry
+            // instead of orphaning rows that nothing can reach once the integration is gone.
+            if (existing.PlatformId.Equals(AppIntegration.BuiltinWebhookPlatformId, StringComparison.OrdinalIgnoreCase))
+            {
+                var deletedCalls = await _webhookIncomingRepository.DeleteByIntegrationAsync(tenantId, id);
+                _logger.LogInformation("Deleted {Count} incoming webhook call(s) for integration {IntegrationId}",
+                    deletedCalls, LogSanitizer.Sanitize(id));
+            }
+
             var success = await _repository.DeleteAsync(id, tenantId);
 
             if (!success)
@@ -696,7 +708,7 @@ public class AppIntegrationService : IAppIntegrationService
             var integration = new AppIntegration
             {
                 TenantId = tenantId,
-                PlatformId = "builtin_webhook",
+                PlatformId = AppIntegration.BuiltinWebhookPlatformId,
                 Name = integrationName,
                 AgentName = request.AgentName,
                 ActivationName = request.ActivationName,
@@ -740,7 +752,7 @@ public class AppIntegrationService : IAppIntegrationService
 
     public async Task<ServiceResult<List<AppIntegrationResponse>>> GetBuiltinWebhooksAsync(string tenantId, string? activationName = null, string? agentName = null)
     {
-        var result = await GetIntegrationsAsync(tenantId, "builtin_webhook", agentName, activationName);
+        var result = await GetIntegrationsAsync(tenantId, AppIntegration.BuiltinWebhookPlatformId, agentName, activationName);
         return result;
     }
 
@@ -750,8 +762,18 @@ public class AppIntegrationService : IAppIntegrationService
         if (existing == null || existing.TenantId != tenantId)
             return ServiceResult<bool>.NotFound("Integration not found");
 
-        if (!existing.PlatformId.Equals("builtin_webhook", StringComparison.OrdinalIgnoreCase))
+        if (!existing.PlatformId.Equals(AppIntegration.BuiltinWebhookPlatformId, StringComparison.OrdinalIgnoreCase))
             return ServiceResult<bool>.BadRequest("Not a builtin webhook integration");
+
+        try
+        {
+            await _webhookIncomingRepository.DeleteByIntegrationAsync(tenantId, integrationId);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to delete incoming webhook calls for integration {IntegrationId}", LogSanitizer.Sanitize(integrationId));
+            return ServiceResult<bool>.InternalServerError("Failed to delete the webhook's recorded calls");
+        }
 
         if (existing.Configuration.TryGetValue("apiKeyId", out var apiKeyIdVal) && apiKeyIdVal != null)
         {

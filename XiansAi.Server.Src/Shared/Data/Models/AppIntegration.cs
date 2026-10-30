@@ -14,6 +14,9 @@ namespace Shared.Data.Models;
 [BsonIgnoreExtraElements]
 public class AppIntegration : ModelValidatorBase<AppIntegration>
 {
+    /// <summary>Platform id of webhooks hosted by the server itself (<c>/api/user/webhooks/builtin</c>).</summary>
+    public const string BuiltinWebhookPlatformId = "builtin_webhook";
+
     [BsonId]
     [BsonRepresentation(BsonType.ObjectId)]
     public string Id { get; set; } = null!;
@@ -148,7 +151,7 @@ public class AppIntegration : ModelValidatorBase<AppIntegration>
         base.Validate();
 
         // Validate platform ID is supported
-        var supportedPlatforms = new[] { "slack", "msteams", "outlook", "webhook", "builtin_webhook" };
+        var supportedPlatforms = new[] { "slack", "msteams", "outlook", "webhook", BuiltinWebhookPlatformId };
         if (!supportedPlatforms.Contains(PlatformId.ToLowerInvariant()))
         {
             throw new ValidationException($"Unsupported platform: {PlatformId}. Supported platforms: {string.Join(", ", supportedPlatforms)}");
@@ -467,7 +470,7 @@ public class AppIntegrationResponse
 
         // Generate webhook URL - builtin_webhook stores it in configuration
         string webhookUrl;
-        if (entity.PlatformId.Equals("builtin_webhook", StringComparison.OrdinalIgnoreCase)
+        if (entity.PlatformId.Equals(AppIntegration.BuiltinWebhookPlatformId, StringComparison.OrdinalIgnoreCase)
             && entity.Configuration.TryGetValue("webhookUrl", out var urlVal) && urlVal != null)
         {
             webhookUrl = urlVal.ToString() ?? string.Empty;
@@ -603,7 +606,7 @@ public static class PlatformConfigurationRequirements
         ["msteams"] = new[] { "appId", "appPassword" },
         ["outlook"] = new[] { "clientId", "clientSecret", "tenantId" },
         ["webhook"] = Array.Empty<string>(),  // Generic webhook has no required fields
-        ["builtin_webhook"] = Array.Empty<string>()  // Config populated by create endpoint
+        [AppIntegration.BuiltinWebhookPlatformId] = Array.Empty<string>()  // Config populated by create endpoint
     };
 
     public static readonly Dictionary<string, string[]> OptionalFields = new()
@@ -612,7 +615,7 @@ public static class PlatformConfigurationRequirements
         ["msteams"] = new[] { "serviceUrl", "appTenantId" },
         ["outlook"] = new[] { "userEmail", "tenantId" },
         ["webhook"] = new[] { "headers" },
-        ["builtin_webhook"] = new[] { "webhookUrl", "apiKeyId", "workflowName", "participantId", "timeoutInSeconds", "webhookName" }
+        [AppIntegration.BuiltinWebhookPlatformId] = new[] { "webhookUrl", "apiKeyId", "workflowName", "participantId", "timeoutInSeconds", "webhookName" }
     };
 
     public static void ValidateConfiguration(string platformId, Dictionary<string, object> configuration)

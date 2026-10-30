@@ -52,6 +52,7 @@ TTL (Time-to-Live) indexes automatically delete documents from a collection afte
 | `logs` | `logs_ttl_created_at` | `created_at` | 15 days | System logs, to prevent unbounded growth |
 | `usage_metrics` | `usage_metrics_ttl` | `created_at` | 90 days | Token and usage metrics |
 | `webhook_deliveries` | `webhook_delivery_ttl` | `created_at` | 15 days | Outbound webhook delivery queue |
+| `webhook_incomings` | `webhook_incomings_ttl` | `received_at` | 90 days | Calls received by builtin webhooks, including raw bodies. A safety net: each webhook already keeps only its newest `WebhookIncomings__MaxPerWebhook` calls. |
 | `audit_logs` | `audit_logs_ttl` | `created_at` | 365 days | Audit entries. GDPR retention limit for entries kept after an erasure. |
 | `activity_history` | `activity_history_ttl` | `started_time` | 90 days | Workflow activity history. `inputs` and `result` are free-form and can hold personal data, but the collection has no person key, so an erasure can't find it. It stays for up to 90 days after an erasure. |
 | `conversation_message` | `conversation_message_ttl` | `expires_at` | Per document | See [Overriding Conversation Message Retention](#overriding-conversation-message-retention) |
@@ -123,6 +124,7 @@ The value uses the same format as the yaml (`30d`, `12h`, `5d 6h`, `1w`).
 | `MongoIndexes__logs__logs_ttl_created_at__ExpireAfter` | `15d` |
 | `MongoIndexes__usage_metrics__usage_metrics_ttl__ExpireAfter` | `90d` |
 | `MongoIndexes__webhook_deliveries__webhook_delivery_ttl__ExpireAfter` | `15d` |
+| `MongoIndexes__webhook_incomings__webhook_incomings_ttl__ExpireAfter` | `90d` |
 | `MongoIndexes__audit_logs__audit_logs_ttl__ExpireAfter` | `365d` |
 | `MongoIndexes__activity_history__activity_history_ttl__ExpireAfter` | `90d` |
 
