@@ -12,7 +12,7 @@ These classes use [`AdminApiIntegrationTestBase`](../../../XiansAi.Server.Tests/
 | `AdminAgentEndpointsTests` | List, get, create, update, delete tenant agents |
 | `AdminAgentActivationEndpointsTests` | Activation CRUD and Mongo-side activate/deactivate flags |
 | `AdminAgentAccessEndpointsTests` | Participant access to an agent |
-| `AdminApiKeyEndpointsTests` | Admin API key create/list/revoke |
+| `AdminApiKeyEndpointsTests` | Admin API key create/list/get/rotate/revoke; `userId` by id or email stores the account id in `CreatedBy` (#583); legacy email-owned keys reachable unless the email is shared; TenantAdmin self-only and key-id IDOR 404; SysAdmin-issued key acts as the target user; rotation invalidates the old key |
 | `AdminAppIntegrationEndpointsTests` | App integration credentials |
 | `AdminAuditLogEndpointsTests` | Audit log query |
 | `AdminBootstrapEndpointsTests` | Anonymous platform bootstrap (clears users first) |

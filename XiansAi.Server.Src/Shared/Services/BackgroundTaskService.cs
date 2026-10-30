@@ -15,17 +15,33 @@ public interface IBackgroundTaskService
 /// <summary>
 /// Service for processing operations in the background without blocking HTTP connections
 /// </summary>
-public class BackgroundTaskService : BackgroundService, IBackgroundTaskService
+/// <remarks>
+/// On shutdown, queued work is finished instead of thrown away. This happens in
+/// <see cref="StoppedAsync"/>, after the web server has stopped, so no new work can arrive.
+/// </remarks>
+public class BackgroundTaskService : BackgroundService, IBackgroundTaskService, IHostedLifecycleService
 {
+    public const string DrainTimeoutConfigKey = "Server:BackgroundTaskDrainTimeoutSeconds";
+    public const int DefaultDrainTimeoutSeconds = 30;
+
     private readonly Channel<Func<Task>> _workItems;
     private readonly ILogger<BackgroundTaskService> _logger;
+    private readonly TimeSpan _drainTimeout;
+    private readonly CancellationTokenSource _abandonDrain = new();
     private int _pendingTaskCount = 0;
     private readonly SemaphoreSlim _completionSemaphore = new SemaphoreSlim(1, 1);
 
-    public BackgroundTaskService(ILogger<BackgroundTaskService> logger)
+    public BackgroundTaskService(ILogger<BackgroundTaskService> logger, IConfiguration configuration)
+        : this(logger, TimeSpan.FromSeconds(Math.Max(0,
+            configuration.GetValue(DrainTimeoutConfigKey, DefaultDrainTimeoutSeconds))))
+    {
+    }
+
+    internal BackgroundTaskService(ILogger<BackgroundTaskService> logger, TimeSpan drainTimeout)
     {
         _logger = logger;
-        
+        _drainTimeout = drainTimeout;
+
         // Create an unbounded channel to store work items
         _workItems = Channel.CreateUnbounded<Func<Task>>(
             new UnboundedChannelOptions
@@ -36,9 +52,9 @@ public class BackgroundTaskService : BackgroundService, IBackgroundTaskService
     }
 
     /// <summary>
-    /// Gets whether there are any pending tasks in the queue
+    /// True if any work is waiting or running
     /// </summary>
-    public bool HasPendingTasks => _pendingTaskCount > 0 || !_workItems.Reader.Completion.IsCompleted;
+    public bool HasPendingTasks => Volatile.Read(ref _pendingTaskCount) > 0;
 
     /// <summary>
     /// Waits for all background tasks to complete or until timeout
@@ -82,9 +98,9 @@ public class BackgroundTaskService : BackgroundService, IBackgroundTaskService
     public void QueueDatabaseOperation(Func<Task> operation)
     {
         if (operation == null) throw new ArgumentNullException(nameof(operation));
-        
+
         Interlocked.Increment(ref _pendingTaskCount);
-        
+
         // Wrap the operation to decrement the counter when it completes
         async Task WrappedOperation()
         {
@@ -97,14 +113,14 @@ public class BackgroundTaskService : BackgroundService, IBackgroundTaskService
                 Interlocked.Decrement(ref _pendingTaskCount);
             }
         }
-        
+
         // Write the work item to the channel
         bool success = _workItems.Writer.TryWrite(WrappedOperation);
 
         if (!success)
         {
             Interlocked.Decrement(ref _pendingTaskCount);
-            _logger.LogWarning("Failed to queue background work item");
+            _logger.LogWarning("Failed to queue background work item: the queue is closed because the service is shutting down");
         }
     }
 
@@ -115,9 +131,15 @@ public class BackgroundTaskService : BackgroundService, IBackgroundTaskService
     {
         _logger.LogInformation("Background task service is starting");
 
-        // Process work items until the app shuts down
-        await foreach (var workItem in _workItems.Reader.ReadAllAsync(stoppingToken))
+        // Keep running until the queue is closed and empty, so nothing is lost on shutdown.
+        // Stop early only if finishing the queue takes too long.
+        await foreach (var workItem in _workItems.Reader.ReadAllAsync())
         {
+            if (_abandonDrain.IsCancellationRequested || stoppingToken.IsCancellationRequested)
+            {
+                break;
+            }
+
             try
             {
                 await workItem();
@@ -130,4 +152,65 @@ public class BackgroundTaskService : BackgroundService, IBackgroundTaskService
 
         _logger.LogInformation("Background task service is stopping");
     }
-} 
+
+    /// <summary>
+    /// Does nothing on purpose. The web server is still finishing requests at this point and they
+    /// may add more work. The queue is closed later, in <see cref="StoppedAsync"/>.
+    /// </summary>
+    public override Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StartingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StartedAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    public Task StoppingAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    /// <summary>
+    /// Called after the web server has stopped. Closes the queue and waits for the remaining
+    /// work to finish, but no longer than the drain timeout.
+    /// </summary>
+    public async Task StoppedAsync(CancellationToken cancellationToken)
+    {
+        _workItems.Writer.TryComplete();
+
+        var pending = Volatile.Read(ref _pendingTaskCount);
+        if (pending > 0)
+        {
+            _logger.LogInformation(
+                "Draining {PendingCount} background work item(s) before shutdown (timeout {TimeoutSeconds}s)",
+                pending, _drainTimeout.TotalSeconds);
+        }
+
+        using var drainCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        drainCts.CancelAfter(_drainTimeout);
+
+        try
+        {
+            if (ExecuteTask != null)
+            {
+                await ExecuteTask.WaitAsync(drainCts.Token);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _abandonDrain.Cancel();
+            _logger.LogWarning(
+                "Background task drain timed out; abandoning {PendingCount} unfinished work item(s)",
+                Volatile.Read(ref _pendingTaskCount));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Background task service faulted while draining its queue");
+        }
+
+        // Normal stop: signal the loop to end and wait for it.
+        await base.StopAsync(cancellationToken);
+    }
+
+    public override void Dispose()
+    {
+        _abandonDrain.Dispose();
+        _completionSemaphore.Dispose();
+        base.Dispose();
+    }
+}

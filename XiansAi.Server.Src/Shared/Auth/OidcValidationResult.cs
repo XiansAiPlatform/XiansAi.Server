@@ -28,8 +28,11 @@ public class OidcValidationResult
 
     public string? Email { get; init; }
 
-
-    public bool EmailVerified { get; init; }
+    /// <summary>
+    /// Whether an email may identify the caller, per the provider's <c>emailVerification</c> rule.
+    /// Null means it may not.
+    /// </summary>
+    public EmailVerificationResult? EmailVerification { get; init; }
 
     /// <summary>
     /// Whether the token was checked against the audiences the provider declared, rather than being
@@ -62,7 +65,7 @@ public class OidcValidationResult
         string? name,
         DateTimeOffset? tokenExpiresAt = null,
         bool audienceValidated = false,
-        bool emailVerified = false) =>
+        EmailVerificationResult? emailVerification = null) =>
         new()
         {
             Success = true,
@@ -70,7 +73,7 @@ public class OidcValidationResult
             ProviderUserId = providerUserId,
             ProviderAuthority = providerAuthority,
             Email = email,
-            EmailVerified = emailVerified,
+            EmailVerification = emailVerification,
             AudienceValidated = audienceValidated,
             Name = name,
             TokenExpiresAt = tokenExpiresAt

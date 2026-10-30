@@ -24,6 +24,9 @@ The Admin Logs Service provides query access to workflow execution logs for admi
 - `logLevel` (optional): Filter by log level (Error, Warning, Information, Debug, Trace, query parameter)
 - `startDate` (optional): Start of date range for log filtering (ISO 8601 format, query parameter)
 - `endDate` (optional): End of date range for log filtering (ISO 8601 format, query parameter)
+- `property` (optional, repeatable): Filter by structured log properties in the form `key:value1,value2` (exact match on `properties.<key>`). Values of one key are OR'ed; different keys are AND'ed. The key is everything before the first `:` and must match `^[A-Za-z0-9_]{1,64}$` (no dots, `$` or nested paths). A missing or invalid key, or a key without values, returns 400. Example: `property=status:open,pending&property=orderId:1042`.
+  - Values are matched as strings: `property=count:5` matches a stored string `"5"`, not a stored number `5` or a boolean.
+  - Property filters have no index of their own and use the existing `logs` indexes, so combine them with `activationName` (or `workflowIds`) and a `startDate`/`endDate` range to keep queries selective.
 - `pageSize` (optional): Number of items per page (default: 20, max: 100, query parameter)
 - `page` (optional): Page number for pagination (default: 1, query parameter)
 

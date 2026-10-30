@@ -65,8 +65,10 @@ public interface IAdminLogsService
         LogLevel[]? logLevels,
         DateTime? startDate,
         DateTime? endDate,
+        string? search,
         int page,
-        int pageSize);
+        int pageSize,
+        Dictionary<string, string[]>? propertyFilters = null);
 
     Task<ServiceResult<AdminLogStreamsResponse>> GetLogStreamsAsync(
         string tenantId,
@@ -77,6 +79,7 @@ public interface IAdminLogsService
         LogLevel[]? logLevels,
         DateTime? startDate,
         DateTime? endDate,
+        string? search,
         int page,
         int pageSize);
 
@@ -92,6 +95,7 @@ public class AdminLogsService : IAdminLogsService
 {
     private const int MinPageSize = 1;
     private const int MaxPageSize = 100;
+    private const int MaxSearchLength = 100;
 
     private readonly ILogRepository _logRepository;
     private readonly ILogger<AdminLogsService> _logger;
@@ -107,7 +111,8 @@ public class AdminLogsService : IAdminLogsService
     /// <summary>
     /// Retrieves logs for a tenant with comprehensive filtering options.
     /// Supports filtering by one or more workflow IDs (streams) for follow-up queries
-    /// after listing streams via <see cref="GetLogStreamsAsync"/>.
+    /// after listing streams via <see cref="GetLogStreamsAsync"/>, and by structured property
+    /// values (<paramref name="propertyFilters"/>: key to accepted values, AND across keys).
     /// </summary>
     public async Task<ServiceResult<AdminLogsResponse>> GetLogsAsync(
         string tenantId,
@@ -119,10 +124,13 @@ public class AdminLogsService : IAdminLogsService
         LogLevel[]? logLevels,
         DateTime? startDate,
         DateTime? endDate,
+        string? search,
         int page,
-        int pageSize)
+        int pageSize,
+        Dictionary<string, string[]>? propertyFilters = null)
     {
-        var validation = ValidateCommonInputs(tenantId, page, pageSize, startDate, endDate);
+        search = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
+        var validation = ValidateCommonInputs(tenantId, page, pageSize, startDate, endDate, search);
         if (validation != null)
         {
             return ServiceResult<AdminLogsResponse>.BadRequest(validation);
@@ -133,12 +141,17 @@ public class AdminLogsService : IAdminLogsService
             _logger.LogInformation(
                 "Retrieving admin logs - TenantId: {TenantId}, AgentName: {AgentName}, ActivationName: {ActivationName}, " +
                 "ParticipantId: {ParticipantId}, WorkflowIds: {WorkflowIds}, WorkflowType: {WorkflowType}, " +
-                "LogLevels: {LogLevels}, StartDate: {StartDate}, EndDate: {EndDate}, Page: {Page}, PageSize: {PageSize}",
+                "LogLevels: {LogLevels}, StartDate: {StartDate}, EndDate: {EndDate}, Search: {Search}, PropertyFilters: {PropertyFilters}, " +
+                "Page: {Page}, PageSize: {PageSize}",
                 LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(agentName ?? "null"), LogSanitizer.Sanitize(activationName ?? "null"), LogSanitizer.Sanitize(participantId ?? "null"),
                 workflowIds != null ? string.Join(",", workflowIds.Select(LogSanitizer.Sanitize)) : "null",
                 LogSanitizer.Sanitize(workflowType ?? "null"),
                 logLevels != null ? string.Join(",", logLevels.Select(l => l.ToString())) : "null",
-                startDate?.ToString() ?? "null", endDate?.ToString() ?? "null", page, pageSize);
+                startDate?.ToString() ?? "null", endDate?.ToString() ?? "null", LogSanitizer.Sanitize(search ?? "null"),
+                propertyFilters != null
+                    ? string.Join(";", propertyFilters.Select(f => $"{f.Key}:{string.Join(",", f.Value.Select(LogSanitizer.Sanitize))}"))
+                    : "null",
+                page, pageSize);
 
             var (logs, totalCount) = await _logRepository.GetAdminLogsAsync(
                 tenantId,
@@ -150,8 +163,10 @@ public class AdminLogsService : IAdminLogsService
                 logLevels,
                 startDate,
                 endDate,
+                search,
                 page,
-                pageSize);
+                pageSize,
+                propertyFilters);
 
             var response = new AdminLogsResponse
             {
@@ -189,10 +204,12 @@ public class AdminLogsService : IAdminLogsService
         LogLevel[]? logLevels,
         DateTime? startDate,
         DateTime? endDate,
+        string? search,
         int page,
         int pageSize)
     {
-        var validation = ValidateCommonInputs(tenantId, page, pageSize, startDate, endDate);
+        search = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
+        var validation = ValidateCommonInputs(tenantId, page, pageSize, startDate, endDate, search);
         if (validation != null)
         {
             return ServiceResult<AdminLogStreamsResponse>.BadRequest(validation);
@@ -203,11 +220,11 @@ public class AdminLogsService : IAdminLogsService
             _logger.LogInformation(
                 "Retrieving admin log streams - TenantId: {TenantId}, AgentName: {AgentName}, ActivationName: {ActivationName}, " +
                 "ParticipantId: {ParticipantId}, WorkflowType: {WorkflowType}, LogLevels: {LogLevels}, " +
-                "StartDate: {StartDate}, EndDate: {EndDate}, Page: {Page}, PageSize: {PageSize}",
+                "StartDate: {StartDate}, EndDate: {EndDate}, Search: {Search}, Page: {Page}, PageSize: {PageSize}",
                 LogSanitizer.Sanitize(tenantId), LogSanitizer.Sanitize(agentName ?? "null"), LogSanitizer.Sanitize(activationName ?? "null"), LogSanitizer.Sanitize(participantId ?? "null"),
                 LogSanitizer.Sanitize(workflowType ?? "null"),
                 logLevels != null ? string.Join(",", logLevels.Select(l => l.ToString())) : "null",
-                startDate?.ToString() ?? "null", endDate?.ToString() ?? "null", page, pageSize);
+                startDate?.ToString() ?? "null", endDate?.ToString() ?? "null", LogSanitizer.Sanitize(search ?? "null"), page, pageSize);
 
             var (streams, totalCount) = await _logRepository.GetAdminLogStreamsAsync(
                 tenantId,
@@ -218,6 +235,7 @@ public class AdminLogsService : IAdminLogsService
                 logLevels,
                 startDate,
                 endDate,
+                search,
                 page,
                 pageSize);
 
@@ -277,7 +295,8 @@ public class AdminLogsService : IAdminLogsService
         int page,
         int pageSize,
         DateTime? startDate,
-        DateTime? endDate)
+        DateTime? endDate,
+        string? search)
     {
         if (string.IsNullOrWhiteSpace(tenantId))
         {
@@ -302,6 +321,12 @@ public class AdminLogsService : IAdminLogsService
             _logger.LogWarning("Invalid date range: startDate {StartDate} is after endDate {EndDate}",
                 startDate.Value, endDate.Value);
             return "StartDate cannot be after EndDate";
+        }
+
+        if (search != null && search.Length > MaxSearchLength)
+        {
+            _logger.LogWarning("Search term too long: {Length} characters", search.Length);
+            return $"Search cannot be longer than {MaxSearchLength} characters";
         }
 
         return null;

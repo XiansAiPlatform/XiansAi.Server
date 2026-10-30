@@ -10,8 +10,8 @@ namespace Features.AdminApi.Repositories;
 /// Mongo access for the AdminApi capability matrix. 
 /// The matrix is a collection of <see cref="CapabilityMatrixEntry"/> documents, 
 /// one per action, that declare which roles may perform that action. 
-/// The matrix is read by <see cref="CapabilityMatrixFilter"/> to authorize requests, 
-/// and written by <see cref="AdminCapabilityMatrixEndpoints"/> to widen or narrow
+/// The matrix is read by <see cref="Features.AdminApi.Auth.CapabilityMatrixFilter"/> to authorize requests, 
+/// and written by <see cref="Features.AdminApi.Endpoints.AdminCapabilityMatrixEndpoints"/> to widen or narrow
 /// the AdminApi's role-based access control.
 /// </summary>
 public interface ICapabilityMatrixRepository

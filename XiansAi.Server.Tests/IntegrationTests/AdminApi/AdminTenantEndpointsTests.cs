@@ -775,6 +775,47 @@ public class AdminTenantEndpointsTests : AdminApiIntegrationTestBase
     }
 
     [Fact]
+    public async Task SetAndClearTenantFavicon_RoundTripsMongo_WithoutTouchingLogo()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+
+        var before = await GetAsync($"/api/v1/admin/tenants/{tenantId}/favicon");
+        Assert.Equal(HttpStatusCode.NotFound, before.StatusCode);
+
+        var set = await PutAsJsonAsync($"/api/v1/admin/tenants/{tenantId}/favicon", new
+        {
+            imgBase64 = OnePixelPngBase64,
+            width = 1,
+            height = 1
+        });
+        Assert.Equal(HttpStatusCode.OK, set.StatusCode);
+
+        // The response must not include the base64 data, only a link to the favicon endpoint.
+        var setBody = await set.Content.ReadAsStringAsync();
+        Assert.DoesNotContain(OnePixelPngBase64, setBody);
+        var setTenant = await ReadAsJsonAsync<Tenant>(set);
+        Assert.NotNull(setTenant?.Favicon);
+        Assert.Contains($"/tenants/{tenantId}/favicon", setTenant!.Favicon!.Url!);
+
+        var get = await GetAsync($"/api/v1/admin/tenants/{tenantId}/favicon");
+        Assert.Equal(HttpStatusCode.OK, get.StatusCode);
+        Assert.Equal("image/png", get.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(Convert.FromBase64String(OnePixelPngBase64), await get.Content.ReadAsByteArrayAsync());
+
+        // Setting a favicon must not create a logo.
+        var logo = await GetAsync($"/api/v1/admin/tenants/{tenantId}/logo");
+        Assert.Equal(HttpStatusCode.NotFound, logo.StatusCode);
+
+        var clear = await DeleteAsync($"/api/v1/admin/tenants/{tenantId}/favicon");
+        Assert.Equal(HttpStatusCode.OK, clear.StatusCode);
+
+        var afterClear = await GetAsync($"/api/v1/admin/tenants/{tenantId}/favicon");
+        Assert.Equal(HttpStatusCode.NotFound, afterClear.StatusCode);
+    }
+
+    [Fact]
     public async Task GetOidcConfigTemplate_ReturnsSampleForTenant()
     {
         var tenantId = $"test-tenant-{Guid.NewGuid()}";

@@ -192,6 +192,9 @@ public static class DomainEventTypes
     /// <summary>A vault secret was deleted.</summary>
     public const string SecretDeleted = "secret.deleted";
 
+    /// <summary>A vault secret was fetched for multiple tenants in one request (audit only; values never recorded).</summary>
+    public const string SecretBatchFetched = "secret.batch_fetched";
+
     // ----- API keys and certificates -----
 
     /// <summary>An API key was created.</summary>
@@ -291,6 +294,7 @@ public static class DomainEventTypes
         SecretCreated => "A vault secret was created.",
         SecretUpdated => "A vault secret was updated.",
         SecretDeleted => "A vault secret was deleted.",
+        SecretBatchFetched => "A vault secret was fetched for multiple tenants.",
         ApiKeyCreated => "An API key was created.",
         ApiKeyRevoked => "An API key was revoked.",
         ApiKeyRotated => "An API key was rotated.",

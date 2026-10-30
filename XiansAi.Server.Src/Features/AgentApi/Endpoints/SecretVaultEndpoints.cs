@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
+using Features.Shared.Configuration;
 using Shared.Auth;
 using Shared.Services;
 using Shared.Utils.Services;
@@ -107,6 +108,40 @@ public static class SecretVaultEndpoints
         .WithName("Agent_FetchSecretByKey")
         ;
 
+        group.MapPost("/fetch/by-tenants", async (
+            [FromBody] AgentSecretVaultFetchByTenantsRequest request,
+            [FromServices] ISecretVaultService service,
+            [FromServices] ITenantContext tenantContext,
+            HttpContext httpContext) =>
+        {
+            // Cap before iterating so oversized payloads are rejected cheaply.
+            if (request.TenantIds is { Count: > SecretVaultService.MaxBatchTenantIds })
+            {
+                return ServiceResult<Dictionary<string, string?>>
+                    .BadRequest($"tenantIds must not contain more than {SecretVaultService.MaxBatchTenantIds} entries")
+                    .ToHttpResult();
+            }
+
+            // Non-SysAdmin callers may only fetch their own tenant; reject the whole batch on any foreign tenant.
+            if (request.TenantIds != null &&
+                request.TenantIds.Any(t => !string.IsNullOrWhiteSpace(t) &&
+                                           !SecretVaultScopeEnforcement.CanAccessSecretTenant(tenantContext, t)))
+            {
+                return ServiceResult<Dictionary<string, string?>>
+                    .Forbidden("Access denied. Secret Vault operations are only allowed within your tenant.")
+                    .ToHttpResult();
+            }
+
+            var result = await service.FetchByTenantsAsync(
+                request.Key, request.TenantIds, request.AgentId, request.UserId);
+            if (result.IsSuccess)
+                httpContext.Response.Headers.CacheControl = "no-store";
+            return result.ToHttpResult();
+        })
+        .WithName("Agent_FetchSecretsByTenants")
+        .WithGlobalRateLimit()
+        ;
+
         group.MapGet("/{id}", async (
             string id,
             [FromServices] ISecretVaultService service,
@@ -192,6 +227,14 @@ public class AgentSecretVaultCreateRequest
     public string? ActivationName { get; set; }
     /// <summary>Optional. JSON object with string, number, or boolean values only (e.g. {"purpose":"webhook","count":1}).</summary>
     public object? AdditionalData { get; set; }
+}
+
+public class AgentSecretVaultFetchByTenantsRequest
+{
+    public string Key { get; set; } = null!;
+    public List<string>? TenantIds { get; set; }
+    public string? AgentId { get; set; }
+    public string? UserId { get; set; }
 }
 
 public class AgentSecretVaultUpdateRequest

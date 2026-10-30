@@ -308,6 +308,96 @@ public class KnowledgeEndpointsTests : WebApiIntegrationTestBase
         Assert.Equal("versioned-knowledge", result2.Name);
     }
 
+    [Fact]
+    public async Task Create_NewRecord_UpdatedAtEqualsCreatedAt()
+    {
+        var agentName = $"test-agent-{Guid.NewGuid()}";
+        await CreateTestAgentAsync(agentName);
+
+        var response = await PostAsJsonAsync("/api/client/knowledge/", new KnowledgeRequest
+        {
+            Name = "updated-at-new", Content = "content", Type = "text", Agent = agentName
+        });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await ReadAsJsonAsync<Knowledge>(response);
+        Assert.NotNull(result);
+        Assert.Equal(result.CreatedAt, result.UpdatedAt);
+    }
+
+    [Fact]
+    public async Task Create_SameContentTwice_BumpsUpdatedAtAndKeepsCreatedAt()
+    {
+        var agentName = $"test-agent-{Guid.NewGuid()}";
+        await CreateTestAgentAsync(agentName);
+        var request = new KnowledgeRequest
+        {
+            Name = "updated-at-repost", Content = "same content", Type = "text", Agent = agentName
+        };
+
+        var first = await ReadAsJsonAsync<Knowledge>(await PostAsJsonAsync("/api/client/knowledge/", request));
+        await Task.Delay(100);
+        var second = await ReadAsJsonAsync<Knowledge>(await PostAsJsonAsync("/api/client/knowledge/", request));
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.Equal(first.Id, second.Id);
+        // Mongo stores milliseconds; the first response carries the in-memory value
+        Assert.True((first.CreatedAt - second.CreatedAt).Duration() < TimeSpan.FromMilliseconds(5));
+        Assert.True(second.UpdatedAt > first.UpdatedAt);
+
+        // Persisted, not just returned
+        var fetched = await ReadAsJsonAsync<Knowledge>(await GetAsync($"/api/client/knowledge/{first.Id}"));
+        Assert.NotNull(fetched);
+        Assert.True(fetched.UpdatedAt > first.UpdatedAt);
+    }
+
+    [Fact]
+    public async Task GetLatest_AfterRepostingOlderContent_ReturnsRepostedRecord()
+    {
+        var agentName = $"test-agent-{Guid.NewGuid()}";
+        await CreateTestAgentAsync(agentName);
+        var older = new KnowledgeRequest { Name = "latest-by-updated", Content = "older content", Type = "text", Agent = agentName };
+        var newer = new KnowledgeRequest { Name = "latest-by-updated", Content = "newer content", Type = "text", Agent = agentName };
+
+        await PostAsJsonAsync("/api/client/knowledge/", older);
+        await Task.Delay(100);
+        await PostAsJsonAsync("/api/client/knowledge/", newer);
+
+        var beforeRepost = await ReadAsJsonAsync<Knowledge>(
+            await GetAsync($"/api/client/knowledge/latest?name=latest-by-updated&agent={agentName}"));
+        Assert.Equal("newer content", beforeRepost!.Content);
+
+        await Task.Delay(100);
+        await PostAsJsonAsync("/api/client/knowledge/", older);
+
+        var afterRepost = await ReadAsJsonAsync<Knowledge>(
+            await GetAsync($"/api/client/knowledge/latest?name=latest-by-updated&agent={agentName}"));
+        Assert.Equal("older content", afterRepost!.Content);
+    }
+
+    [Fact]
+    public async Task GetVersions_OrderedByUpdatedAtDescending()
+    {
+        var agentName = $"test-agent-{Guid.NewGuid()}";
+        await CreateTestAgentAsync(agentName);
+        var oldest = await CreateTestKnowledgeAsync("ordered-versions", agentName, "A");
+        await CreateTestKnowledgeAsync("ordered-versions", agentName, "B");
+        await Task.Delay(100);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var repo = scope.ServiceProvider.GetRequiredService<IKnowledgeRepository>();
+            await repo.TouchUpdatedAtAsync(oldest.Id, DateTime.UtcNow);
+        }
+
+        var versions = await ReadAsJsonAsync<Knowledge[]>(
+            await GetAsync($"/api/client/knowledge/versions?name=ordered-versions&agent={agentName}"));
+
+        Assert.NotNull(versions);
+        Assert.Equal("A", versions[0].Content);
+    }
+
     private async Task<Agent> CreateTestAgentAsync(string agentName)
     {
         using var scope = _factory.Services.CreateScope();

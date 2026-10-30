@@ -34,11 +34,18 @@ public class Tenant : ModelValidatorBase<Tenant>
 
     [BsonElement("description")]
     [StringLength(500, ErrorMessage = "Description cannot exceed 500 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9\s._@-]*$", ErrorMessage = "Description contains invalid characters")]
+    [RegularExpression(ValidationHelpers.SafeFreeTextPattern, ErrorMessage = "Description contains invalid characters")]
     public string? Description { get; set; }
 
     [BsonElement("logo")]
     public Logo? Logo { get; set; }
+
+    /// <summary>
+    /// The tenant's browser tab icon. It is stored the same way as the logo (a URL or a base64
+    /// image, plus width and height) and checked with the same rules.
+    /// </summary>
+    [BsonElement("favicon")]
+    public Logo? Favicon { get; set; }
 
     [BsonElement("theme")]
     [StringLength(50, ErrorMessage = "Theme cannot exceed 50 characters")]
@@ -103,6 +110,11 @@ public class Tenant : ModelValidatorBase<Tenant>
             Logo.Validate();
         }
 
+        if (Favicon != null)
+        {
+            Favicon.Validate();
+        }
+
         // Validate collections
         if (Agents != null)
         {
@@ -149,6 +161,7 @@ public class Tenant : ModelValidatorBase<Tenant>
             Domain = Domain,
             Description = Description,
             Logo = Logo == null ? null : new Logo { Url = Logo.Url, ImgBase64 = Logo.ImgBase64, Width = Logo.Width, Height = Logo.Height },
+            Favicon = Favicon == null ? null : new Logo { Url = Favicon.Url, ImgBase64 = Favicon.ImgBase64, Width = Favicon.Width, Height = Favicon.Height },
             Theme = Theme,
             Timezone = Timezone,
             Agents = Agents?.Select(a => a.ShallowCopy()).ToList(),
@@ -178,6 +191,7 @@ public class Tenant : ModelValidatorBase<Tenant>
             UpdatedAt = this.UpdatedAt,
             Enabled = this.Enabled,
             Logo = this.Logo,
+            Favicon = this.Favicon,
             Agents = this.Agents,
             Permissions = this.Permissions,
             Metadata = this.Metadata?.Select(m => m.SanitizeAndReturn()).ToList()

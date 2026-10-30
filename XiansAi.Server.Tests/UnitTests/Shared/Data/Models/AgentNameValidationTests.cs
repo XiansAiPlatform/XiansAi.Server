@@ -131,6 +131,34 @@ public class AgentNameValidationTests
         Assert.Equal("Order Manager", ValidationHelpers.SanitizeString("Order Manager"));
     }
 
+    [Theory]
+    [InlineData("Hello\nWorld")]
+    [InlineData("Hello\r\nWorld")]
+    [InlineData("Hello\tWorld")]
+    [InlineData("Hello \n\t World")]
+    public void SanitizeString_TurnsLineBreaksAndTabsIntoSpaces(string input)
+    {
+        Assert.Equal("Hello World", ValidationHelpers.SanitizeString(input));
+    }
+
+    [Theory]
+    [InlineData("Acme, Inc. (Norway) - \"best\" 100% & more!")]
+    [InlineData("Line one\nLine two")]
+    public void SafeFreeTextPattern_AcceptsPunctuationAndLineBreaks(string value)
+    {
+        Assert.Matches(ValidationHelpers.SafeFreeTextPattern, value);
+    }
+
+    [Theory]
+    [InlineData("<script>")]
+    [InlineData("＜script＞")]
+    [InlineData("〈script〉")]
+    [InlineData("⟨script⟩")]
+    public void SafeFreeTextPattern_RejectsAngleBracketsAndLookalikes(string value)
+    {
+        Assert.DoesNotMatch(ValidationHelpers.SafeFreeTextPattern, value);
+    }
+
     private static Agent CreateAgent(string name)
     {
         return new Agent

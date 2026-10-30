@@ -47,7 +47,7 @@ public static class AdminTenantEndpoints
             {
                 foreach (var tenant in result.Data.Tenants)
                 {
-                    TenantLogoHelper.ApplyLogoUrl(tenant, httpContext, linkGenerator);
+                    TenantLogoHelper.ApplyImageUrls(tenant, httpContext, linkGenerator);
                 }
             }
             return result.ToHttpResult();
@@ -72,7 +72,7 @@ public static class AdminTenantEndpoints
             var result = await tenantService.GetTenantByTenantId(tenantId, httpContext.RequestAborted, bypassCache);
             if (result.IsSuccess)
             {
-                TenantLogoHelper.ApplyLogoUrl(result.Data, httpContext, linkGenerator);
+                TenantLogoHelper.ApplyImageUrls(result.Data, httpContext, linkGenerator);
             }
             return result.ToHttpResult();
         })
@@ -169,40 +169,31 @@ public static class AdminTenantEndpoints
                 return result.ToHttpResult();
             }
 
-            var logo = result.Data.Logo;
-            if (logo == null)
-            {
-                return Results.NotFound(new { message = "Tenant has no logo" });
-            }
-
-            // Logo stored as an external URL: redirect to the source image.
-            if (!string.IsNullOrEmpty(logo.Url))
-            {
-                return Results.Redirect(logo.Url);
-            }
-
-            if (string.IsNullOrEmpty(logo.ImgBase64))
-            {
-                return Results.NotFound(new { message = "Tenant has no logo" });
-            }
-
-            byte[] imageBytes;
-            try
-            {
-                imageBytes = Convert.FromBase64String(logo.ImgBase64);
-            }
-            catch (FormatException ex)
-            {
-                logger.LogError(ex, "Tenant {TenantId} has invalid base64 logo data", LogSanitizer.Sanitize(tenantId));
-                return Results.Problem("Stored logo image is invalid", statusCode: StatusCodes.Status500InternalServerError);
-            }
-
-            var contentType = DetectImageContentType(imageBytes);
-            httpContext.Response.Headers.CacheControl = "private, max-age=3600";
-            return Results.File(imageBytes, contentType);
+            return ServeTenantImage(result.Data.Logo, "logo", tenantId, httpContext, logger);
         })
         .WithName(TenantLogoHelper.LogoRouteName)
         .RequireCapability(CapabilityActions.TenantLogoGet)
+        .Produces(StatusCodes.Status302Found)
+        .Produces(StatusCodes.Status404NotFound)
+        ;
+
+        // Get Tenant Favicon - returns the tenant's browser tab icon. Works the same way as the logo GET.
+        adminTenantGroup.MapGet("/{tenantId}/favicon", async (
+            string tenantId,
+            HttpContext httpContext,
+            [FromServices] ITenantService tenantService,
+            [FromServices] ILogger<ITenantService> logger) =>
+        {
+            var result = await tenantService.GetTenantByTenantId(tenantId, httpContext.RequestAborted);
+            if (!result.IsSuccess || result.Data == null)
+            {
+                return result.ToHttpResult();
+            }
+
+            return ServeTenantImage(result.Data.Favicon, "favicon", tenantId, httpContext, logger);
+        })
+        .WithName(TenantLogoHelper.FaviconRouteName)
+        .RequireCapability(CapabilityActions.TenantFaviconGet)
         .Produces(StatusCodes.Status302Found)
         .Produces(StatusCodes.Status404NotFound)
         ;
@@ -287,7 +278,7 @@ public static class AdminTenantEndpoints
             var result = await tenantService.UpdateTenantLogo(tenantResult.Data.Id, request);
             if (result.IsSuccess)
             {
-                TenantLogoHelper.ApplyLogoUrl(result.Data, httpContext, linkGenerator);
+                TenantLogoHelper.ApplyImageUrls(result.Data, httpContext, linkGenerator);
             }
             return result.ToHttpResult();
         })
@@ -316,6 +307,58 @@ public static class AdminTenantEndpoints
         .Produces(StatusCodes.Status404NotFound)
         ;
 
+        // Set Tenant Favicon - saves the favicon, replacing any old one. It takes the same body as
+        // the logo (a URL or a base64 image). The response never includes the base64 data.
+        adminTenantGroup.MapPut("/{tenantId}/favicon", async (
+            string tenantId,
+            [FromBody] Logo request,
+            HttpContext httpContext,
+            [FromServices] LinkGenerator linkGenerator,
+            [FromServices] ITenantService tenantService) =>
+        {
+            var tenantResult = await tenantService.GetTenantByTenantId(tenantId, httpContext.RequestAborted);
+            if (!tenantResult.IsSuccess || tenantResult.Data == null)
+            {
+                return tenantResult.ToHttpResult();
+            }
+
+            var result = await tenantService.UpdateTenantFavicon(tenantResult.Data.Id, request);
+            if (result.IsSuccess)
+            {
+                TenantLogoHelper.ApplyImageUrls(result.Data, httpContext, linkGenerator);
+            }
+            return result.ToHttpResult();
+        })
+        .WithName("SetTenantFavicon")
+        .RequireCapability(CapabilityActions.TenantFaviconSet)
+        .Produces(StatusCodes.Status404NotFound)
+        ;
+
+        // Clear Tenant Favicon - removes the favicon. Agent Studio then shows the logo or its default icon.
+        adminTenantGroup.MapDelete("/{tenantId}/favicon", async (
+            string tenantId,
+            HttpContext httpContext,
+            [FromServices] LinkGenerator linkGenerator,
+            [FromServices] ITenantService tenantService) =>
+        {
+            var tenantResult = await tenantService.GetTenantByTenantId(tenantId, httpContext.RequestAborted);
+            if (!tenantResult.IsSuccess || tenantResult.Data == null)
+            {
+                return tenantResult.ToHttpResult();
+            }
+
+            var result = await tenantService.UpdateTenantFavicon(tenantResult.Data.Id, null);
+            if (result.IsSuccess)
+            {
+                TenantLogoHelper.ApplyImageUrls(result.Data, httpContext, linkGenerator);
+            }
+            return result.ToHttpResult();
+        })
+        .WithName("ClearTenantFavicon")
+        .RequireCapability(CapabilityActions.TenantFaviconClear)
+        .Produces(StatusCodes.Status404NotFound)
+        ;
+
         // Create Tenant - No X-Tenant-Id header required (creating new tenant). SysAdmin only by
         // default, enforced by the capability matrix (tenants.create); see CapabilityActions.
         adminTenantGroup.MapPost("", async (
@@ -329,7 +372,7 @@ public static class AdminTenantEndpoints
             var result = await tenantService.CreateTenant(request, createdBy);
             if (result.IsSuccess && result.Data != null)
             {
-                TenantLogoHelper.ApplyLogoUrl(result.Data.Tenant, httpContext, linkGenerator);
+                TenantLogoHelper.ApplyImageUrls(result.Data.Tenant, httpContext, linkGenerator);
             }
             return result.ToHttpResult();
         })
@@ -359,7 +402,7 @@ public static class AdminTenantEndpoints
             var result = await tenantService.UpdateTenant(tenantResult.Data.Id, request);
             if (result.IsSuccess)
             {
-                TenantLogoHelper.ApplyLogoUrl(result.Data, httpContext, linkGenerator);
+                TenantLogoHelper.ApplyImageUrls(result.Data, httpContext, linkGenerator);
             }
             return result.ToHttpResult();
         })
@@ -608,11 +651,6 @@ public static class AdminTenantEndpoints
         .WithDescription("Returns a sample OIDC configuration (with the tenantId filled in) to use as a starting point.");
     }
 
-    /// <summary>
-    /// Reads a tenant's OIDC configuration. Internal (not private) so
-    /// <see cref="AdminConsoleOidcEndpoints"/> can reuse it for the "admin-console" pseudo-tenant
-    /// instead of duplicating the body.
-    /// </summary>
     internal static async Task<IResult> GetOidcConfig(
         string tenantId,
         [FromServices] ITenantOidcConfigService service)
@@ -620,10 +658,6 @@ public static class AdminTenantEndpoints
         var result = await service.GetForTenantAsync(tenantId);
         return result.ToHttpResult();
     }
-
-    /// <summary>
-    /// Removes a tenant's OIDC configuration. Internal for the same reason as <see cref="GetOidcConfig"/>.
-    /// </summary>
     internal static async Task<IResult> DeleteOidcConfig(
         string tenantId,
         [FromServices] ITenantOidcConfigService service)
@@ -632,12 +666,6 @@ public static class AdminTenantEndpoints
         return result.ToHttpResult();
     }
 
-    /// <summary>
-    /// Shared handler for POST/PUT: validates the body, forces the tenant id to the given value
-    /// (so callers cannot point a config at another tenant), and upserts via the service. Internal
-    /// for the same reason as <see cref="GetOidcConfig"/> — <see cref="AdminConsoleOidcEndpoints"/>
-    /// calls this directly with the "admin-console" pseudo-tenant instead of duplicating the body.
-    /// </summary>
     internal static async Task<IResult> UpsertOidcConfigCore(
         string tenantId,
         [FromBody] JsonObject? config,
@@ -702,6 +730,50 @@ public static class AdminTenantEndpoints
     };
 
     /// <summary>
+    /// Returns a tenant's logo or favicon. If it is stored as a URL, the caller is redirected
+    /// there. If it is stored as base64, the image is decoded and returned.
+    /// <paramref name="label"/> ("logo" or "favicon") is used in messages.
+    /// </summary>
+    private static IResult ServeTenantImage(
+        Logo? image,
+        string label,
+        string tenantId,
+        HttpContext httpContext,
+        ILogger logger)
+    {
+        if (image == null)
+        {
+            return Results.NotFound(new { message = $"Tenant has no {label}" });
+        }
+
+        // Stored as a URL: send the caller to that address.
+        if (!string.IsNullOrEmpty(image.Url))
+        {
+            return Results.Redirect(image.Url);
+        }
+
+        if (string.IsNullOrEmpty(image.ImgBase64))
+        {
+            return Results.NotFound(new { message = $"Tenant has no {label}" });
+        }
+
+        byte[] imageBytes;
+        try
+        {
+            imageBytes = Convert.FromBase64String(image.ImgBase64);
+        }
+        catch (FormatException ex)
+        {
+            logger.LogError(ex, "Tenant {TenantId} has invalid base64 {Label} data", LogSanitizer.Sanitize(tenantId), label);
+            return Results.Problem($"Stored {label} image is invalid", statusCode: StatusCodes.Status500InternalServerError);
+        }
+
+        var contentType = DetectImageContentType(imageBytes);
+        httpContext.Response.Headers.CacheControl = "private, max-age=3600";
+        return Results.File(imageBytes, contentType);
+    }
+
+    /// <summary>
     /// Best-effort detection of an image content type from its leading magic bytes.
     /// Stored base64 logos do not carry a MIME type, so we sniff the decoded bytes.
     /// </summary>
@@ -728,6 +800,10 @@ public static class AdminTenantEndpoints
         if (bytes.Length >= 2 && bytes[0] == 0x42 && bytes[1] == 0x4D)
         {
             return "image/bmp";
+        }
+        if (bytes.Length >= 4 && bytes[0] == 0x00 && bytes[1] == 0x00 && bytes[2] == 0x01 && bytes[3] == 0x00)
+        {
+            return "image/x-icon";
         }
         // SVG is text based and starts with '<' (e.g. "<svg" or "<?xml").
         if (bytes.Length >= 1 && bytes[0] == (byte)'<')
