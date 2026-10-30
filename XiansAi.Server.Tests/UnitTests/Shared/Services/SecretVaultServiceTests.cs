@@ -282,6 +282,27 @@ public class SecretVaultServiceTests
     }
 
     [Fact]
+    public async Task FetchByTenantsAsync_Omitted_ActivationName_Is_Forwarded_As_Null()
+    {
+        var tenantLevel = NewEntity("tenant-a", "k1");
+        _repo.Setup(r => r.FindManyForAccessAsync(
+                "k1",
+                It.Is<IReadOnlyCollection<string>>(ids => ids.SequenceEqual(new[] { "tenant-a" })),
+                null, null, null))
+            .ReturnsAsync(new List<SecretVault> { tenantLevel });
+        await _store.SetAsync(tenantLevel.Id, "sk_tenant");
+
+        var result = await _service.FetchByTenantsAsync("k1", new[] { "tenant-a" }, null, null, null);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("sk_tenant", result.Data!["tenant-a"]);
+        _repo.Verify(r => r.FindManyForAccessAsync(
+            "k1", It.IsAny<IReadOnlyCollection<string>>(), null, null, null), Times.Once);
+        _repo.Verify(r => r.FindManyForAccessAsync(
+            It.IsAny<string>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<string?>(), It.IsAny<string?>(), It.Is<string?>(a => a != null)), Times.Never);
+    }
+
+    [Fact]
     public async Task FetchByTenantsAsync_Validates_Input()
     {
         var tooMany = Enumerable.Range(0, SecretVaultService.MaxBatchTenantIds + 1).Select(i => $"t{i}").ToArray();

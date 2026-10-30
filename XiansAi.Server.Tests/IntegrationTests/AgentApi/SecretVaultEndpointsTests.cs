@@ -79,23 +79,41 @@ public class SecretVaultEndpointsTests : IntegrationTestBase
     [Fact]
     public async Task FetchByTenants_WithActivationName_ReturnsOnlyMatchingScope()
     {
+        // Key uniqueness is enforced per tenant, so the activation-scoped and tenant-level secrets
+        // share a key across two different tenants.
+        const string otherTenantId = "99x.io";
         var key = $"batch-activation-secret-{Guid.NewGuid()}";
         var activationName = $"act-{Guid.NewGuid():N}";
-        var create = await _client.PostAsJsonAsync("/api/agent/secrets",
+        var activationCreate = await _client.PostAsJsonAsync("/api/agent/secrets",
             new AgentSecretVaultCreateRequest { Key = key, Value = "activation-level", TenantId = TestTenantId, ActivationName = activationName });
-        Assert.True(create.IsSuccessStatusCode, $"Create failed with {create.StatusCode}");
+        Assert.True(activationCreate.IsSuccessStatusCode, $"Create failed with {activationCreate.StatusCode}");
+        var tenantCreate = await _client.PostAsJsonAsync("/api/agent/secrets",
+            new AgentSecretVaultCreateRequest { Key = key, Value = "tenant-level", TenantId = otherTenantId });
+        Assert.True(tenantCreate.IsSuccessStatusCode, $"Create failed with {tenantCreate.StatusCode}");
 
-        var matching = await _client.PostAsJsonAsync("/api/agent/secrets/fetch/by-tenants",
-            new AgentSecretVaultFetchByTenantsRequest { Key = key, TenantIds = [TestTenantId], ActivationName = activationName });
-        var otherActivation = await _client.PostAsJsonAsync("/api/agent/secrets/fetch/by-tenants",
-            new AgentSecretVaultFetchByTenantsRequest { Key = key, TenantIds = [TestTenantId], ActivationName = "other-activation" });
-        var noActivation = await _client.PostAsJsonAsync("/api/agent/secrets/fetch/by-tenants",
-            new AgentSecretVaultFetchByTenantsRequest { Key = key, TenantIds = [TestTenantId] });
+        var matching = await FetchByTenantsAsync(key, activationName);
+        var otherActivation = await FetchByTenantsAsync(key, "other-activation");
+        var noActivation = await FetchByTenantsAsync(key, activationName: null);
 
-        Assert.Equal(HttpStatusCode.OK, matching.StatusCode);
-        Assert.Equal("activation-level", (await matching.Content.ReadFromJsonAsync<Dictionary<string, string?>>())![TestTenantId]);
-        Assert.Null((await otherActivation.Content.ReadFromJsonAsync<Dictionary<string, string?>>())![TestTenantId]);
-        Assert.Null((await noActivation.Content.ReadFromJsonAsync<Dictionary<string, string?>>())![TestTenantId]);
+        // Supplied activationName: only the exact activation-scoped secret; the tenant-level one is not returned.
+        Assert.Equal("activation-level", matching[TestTenantId]);
+        Assert.Null(matching[otherTenantId]);
+        // Different activationName: nothing matches.
+        Assert.Null(otherActivation[TestTenantId]);
+        Assert.Null(otherActivation[otherTenantId]);
+        // Omitted activationName: only the tenant-level secret; the activation-scoped one is not returned.
+        Assert.Null(noActivation[TestTenantId]);
+        Assert.Equal("tenant-level", noActivation[otherTenantId]);
+    }
+
+    private async Task<Dictionary<string, string?>> FetchByTenantsAsync(string key, string? activationName)
+    {
+        var response = await _client.PostAsJsonAsync("/api/agent/secrets/fetch/by-tenants",
+            new AgentSecretVaultFetchByTenantsRequest { Key = key, TenantIds = [TestTenantId, "99x.io"], ActivationName = activationName });
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var body = await response.Content.ReadFromJsonAsync<Dictionary<string, string?>>();
+        Assert.NotNull(body);
+        return body!;
     }
 
     private sealed record SecretFetchResponse(string Value, object? AdditionalData);
