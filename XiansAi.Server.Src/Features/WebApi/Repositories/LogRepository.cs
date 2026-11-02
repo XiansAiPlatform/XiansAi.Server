@@ -436,6 +436,7 @@ public class LogRepository : ILogRepository
             startDate,
             endDate,
             search,
+            propertyFilters: null,
             childWorkflowIds);
 
         // Exclude logs without a workflow_id - they cannot form a stream.
