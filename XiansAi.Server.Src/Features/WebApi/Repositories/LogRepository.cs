@@ -47,7 +47,8 @@ public interface ILogRepository
         string? search,
         int page = 1,
         int pageSize = 20,
-        Dictionary<string, string[]>? propertyFilters = null);
+        Dictionary<string, string[]>? propertyFilters = null,
+        string[]? childWorkflowIds = null);
 
     Task<(IEnumerable<LogStreamSummary> streams, long totalCount)> GetAdminLogStreamsAsync(
         string tenantId,
@@ -60,7 +61,21 @@ public interface ILogRepository
         DateTime? endDate,
         string? search,
         int page = 1,
-        int pageSize = 20);
+        int pageSize = 20,
+        string[]? childWorkflowIds = null);
+
+    /// <summary>
+    /// Returns the workflow IDs of a given type that have logs in scope, most recently active first.
+    /// </summary>
+    Task<List<string>> GetRecentWorkflowIdsForTypeAsync(
+        string tenantId,
+        string? agentName,
+        string? activationName,
+        string? participantId,
+        string workflowType,
+        DateTime? startDate,
+        DateTime? endDate,
+        int limit);
 
     Task<long> DeleteByAgentAndActivationAsync(string tenantId, string agentName, string activationName);
 }
@@ -363,7 +378,8 @@ public class LogRepository : ILogRepository
         string? search,
         int page = 1,
         int pageSize = 20,
-        Dictionary<string, string[]>? propertyFilters = null)
+        Dictionary<string, string[]>? propertyFilters = null,
+        string[]? childWorkflowIds = null)
     {
         var filter = BuildAdminLogsFilter(
             tenantId,
@@ -376,7 +392,8 @@ public class LogRepository : ILogRepository
             startDate,
             endDate,
             search,
-            propertyFilters);
+            propertyFilters,
+            childWorkflowIds);
 
         var totalCount = await _logs.CountDocumentsAsync(filter);
         var logs = await _logs.Find(filter)
@@ -405,7 +422,8 @@ public class LogRepository : ILogRepository
         DateTime? endDate,
         string? search,
         int page = 1,
-        int pageSize = 20)
+        int pageSize = 20,
+        string[]? childWorkflowIds = null)
     {
         var filter = BuildAdminLogsFilter(
             tenantId,
@@ -417,7 +435,9 @@ public class LogRepository : ILogRepository
             logLevels,
             startDate,
             endDate,
-            search);
+            search,
+            propertyFilters: null,
+            childWorkflowIds);
 
         // Exclude logs without a workflow_id - they cannot form a stream.
         filter &= Builders<Log>.Filter.Ne(x => x.WorkflowId, null) &
@@ -458,8 +478,45 @@ public class LogRepository : ILogRepository
         return (streams, totalCount);
     }
 
+    public async Task<List<string>> GetRecentWorkflowIdsForTypeAsync(
+        string tenantId,
+        string? agentName,
+        string? activationName,
+        string? participantId,
+        string workflowType,
+        DateTime? startDate,
+        DateTime? endDate,
+        int limit)
+    {
+        var filter = BuildAdminLogsFilter(
+            tenantId,
+            agentName,
+            activationName,
+            participantId,
+            workflowIds: null,
+            workflowType,
+            logLevels: null,
+            startDate,
+            endDate,
+            search: null);
+
+        var groups = await _logs.Aggregate()
+            .Match(filter)
+            .Group(x => x.WorkflowId, g => new { WorkflowId = g.Key, LastLogAt = g.Max(x => x.CreatedAt) })
+            .SortByDescending(g => g.LastLogAt)
+            .Limit(limit)
+            .ToListAsync();
+
+        return groups
+            .Where(g => !string.IsNullOrEmpty(g.WorkflowId))
+            .Select(g => g.WorkflowId)
+            .ToList();
+    }
+
     /// <summary>
     /// Builds the shared MongoDB filter used by admin log queries.
+    /// When <paramref name="childWorkflowIds"/> is supplied, the workflow type filter also matches
+    /// logs of those (child) workflows, whatever their own type.
     /// </summary>
     private static FilterDefinition<Log> BuildAdminLogsFilter(
         string tenantId,
@@ -472,7 +529,8 @@ public class LogRepository : ILogRepository
         DateTime? startDate,
         DateTime? endDate,
         string? search,
-        Dictionary<string, string[]>? propertyFilters = null)
+        Dictionary<string, string[]>? propertyFilters = null,
+        string[]? childWorkflowIds = null)
     {
         var filter = Builders<Log>.Filter.Eq(x => x.TenantId, tenantId);
 
@@ -500,7 +558,10 @@ public class LogRepository : ILogRepository
 
         if (!string.IsNullOrEmpty(workflowType))
         {
-            filter &= Builders<Log>.Filter.Eq(x => x.WorkflowType, workflowType);
+            var typeMatch = Builders<Log>.Filter.Eq(x => x.WorkflowType, workflowType);
+            filter &= childWorkflowIds != null && childWorkflowIds.Length > 0
+                ? typeMatch | Builders<Log>.Filter.In(x => x.WorkflowId, childWorkflowIds)
+                : typeMatch;
         }
 
         if (logLevels != null && logLevels.Length > 0)
