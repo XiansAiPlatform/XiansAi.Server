@@ -18,7 +18,8 @@ public class WebhookIncomingsOptionsTests
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
-    public void MaxPerWebhookMustBePositive(int value)
+    [InlineData(1_001)]
+    public void MaxPerWebhookMustBeBetweenOneAndAThousand(int value)
     {
         Assert.True(Validate(new WebhookIncomingsOptions { MaxPerWebhook = value }).Failed);
     }
@@ -29,5 +30,22 @@ public class WebhookIncomingsOptionsTests
     public void MaxStoredBodyBytesMustFitInADocument(int value)
     {
         Assert.True(Validate(new WebhookIncomingsOptions { MaxStoredBodyBytes = value }).Failed);
+    }
+
+    [Fact]
+    public void LargestCapWithDefaultBodySizeIsAllowed()
+    {
+        Assert.True(Validate(new WebhookIncomingsOptions { MaxPerWebhook = 1_000 }).Succeeded);
+    }
+
+    [Theory]
+    [InlineData(1_000, 2 * 1024 * 1024)]
+    [InlineData(100, WebhookIncomingsOptions.MaxStoredBodyBytesLimit)]
+    public void WorstCaseStoragePerWebhookIsCapped(int maxPerWebhook, int maxStoredBodyBytes)
+    {
+        var result = Validate(new WebhookIncomingsOptions { MaxPerWebhook = maxPerWebhook, MaxStoredBodyBytes = maxStoredBodyBytes });
+
+        Assert.True(result.Failed);
+        Assert.Contains("per webhook", result.FailureMessage);
     }
 }

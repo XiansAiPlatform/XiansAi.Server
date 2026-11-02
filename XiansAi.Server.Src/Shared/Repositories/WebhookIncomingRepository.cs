@@ -11,7 +11,10 @@ namespace Shared.Repositories;
 /// </summary>
 public interface IWebhookIncomingRepository
 {
-    /// <summary>Saves one incoming call.</summary>
+    /// <summary>
+    /// Saves one incoming call. Credential headers are removed from <paramref name="incoming"/>
+    /// first, so a caller cannot persist them by mistake.
+    /// </summary>
     Task InsertAsync(WebhookIncoming incoming);
 
     /// <summary>
@@ -26,7 +29,11 @@ public interface IWebhookIncomingRepository
     /// <summary>Lists the incoming calls sent to a workflow, newest first, at most <see cref="WebhookIncomingRepository.MaxPageSize"/>.</summary>
     Task<List<WebhookIncomingSummary>> ListByWorkflowAsync(string tenantId, string workflowId, int limit);
 
-    /// <summary>Keeps the newest <paramref name="keep"/> calls for a connection and deletes the rest.</summary>
+    /// <summary>
+    /// Keeps the newest <paramref name="keep"/> calls for a connection and deletes the rest.
+    /// Finding the cut-off walks <paramref name="keep"/> index entries, so on a busy webhook call it
+    /// every few inserts or from a background sweep rather than after each insert.
+    /// </summary>
     /// <returns>The number of rows deleted.</returns>
     Task<long> TrimAsync(string tenantId, string integrationId, int keep);
 
@@ -61,6 +68,12 @@ public class WebhookIncomingRepository : IWebhookIncomingRepository
     public async Task InsertAsync(WebhookIncoming incoming)
     {
         ArgumentNullException.ThrowIfNull(incoming);
+
+        var removed = incoming.RemoveCredentialHeaders();
+        if (removed > 0)
+        {
+            _logger.LogDebug("Removed {Count} credential header(s) from webhook incoming {Id}", removed, incoming.Id);
+        }
 
         try
         {

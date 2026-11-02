@@ -7,7 +7,7 @@ namespace Shared.Configuration;
 /// Bound from the "WebhookIncomings" configuration section, e.g. <c>WebhookIncomings__MaxPerWebhook=200</c>.
 /// Validated at startup, so an out-of-range value stops the server instead of deleting or rejecting calls.
 /// </summary>
-public class WebhookIncomingsOptions
+public class WebhookIncomingsOptions : IValidatableObject
 {
     public const string SectionName = "WebhookIncomings";
 
@@ -18,6 +18,11 @@ public class WebhookIncomingsOptions
     public const int MaxStoredBodyBytesLimit = 15 * 1024 * 1024;
 
     /// <summary>
+    /// Largest worst-case storage for one builtin webhook (<see cref="MaxPerWebhook"/> full-size bodies): 1 GB.
+    /// </summary>
+    public const long MaxStoragePerWebhookBytes = 1024L * 1024 * 1024;
+
+    /// <summary>
     /// Master switch. When false, incoming calls are not recorded.
     /// </summary>
     public bool Enabled { get; set; } = true;
@@ -25,7 +30,7 @@ public class WebhookIncomingsOptions
     /// <summary>
     /// Number of calls kept per builtin webhook. Older calls are deleted.
     /// </summary>
-    [Range(1, 10_000)]
+    [Range(1, 1_000)]
     public int MaxPerWebhook { get; set; } = 100;
 
     /// <summary>
@@ -38,4 +43,16 @@ public class WebhookIncomingsOptions
     /// When false, only metadata and headers are stored, without the request body.
     /// </summary>
     public bool StoreBodies { get; set; } = true;
+
+    public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+    {
+        var worstCase = (long)MaxPerWebhook * MaxStoredBodyBytes;
+        if (worstCase > MaxStoragePerWebhookBytes)
+        {
+            yield return new ValidationResult(
+                $"{nameof(MaxPerWebhook)} x {nameof(MaxStoredBodyBytes)} allows {worstCase / (1024 * 1024)} MB per webhook; " +
+                $"the limit is {MaxStoragePerWebhookBytes / (1024 * 1024)} MB. Lower one of them.",
+                new[] { nameof(MaxPerWebhook), nameof(MaxStoredBodyBytes) });
+        }
+    }
 }

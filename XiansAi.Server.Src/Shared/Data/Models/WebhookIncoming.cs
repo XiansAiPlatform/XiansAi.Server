@@ -6,11 +6,21 @@ namespace Shared.Data.Models;
 /// <summary>
 /// One inbound call received by a builtin webhook (including redeliveries), persisted in the
 /// MongoDB collection <c>webhook_incomings</c>. Powers the connection's Deliveries page and
-/// holds what is needed to redeliver the call. Secrets are stripped before a row is saved.
+/// holds what is needed to redeliver the call. Credential headers are removed by
+/// <see cref="RemoveCredentialHeaders"/>, which the repository runs on every insert.
 /// </summary>
 [BsonIgnoreExtraElements]
 public class WebhookIncoming
 {
+    /// <summary>Headers that carry the caller's credentials. They are never stored.</summary>
+    public static readonly IReadOnlySet<string> CredentialHeaders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "Authorization",
+        "Proxy-Authorization",
+        "Cookie",
+        "X-Api-Key"
+    };
+
     /// <summary>Delivery id. A UUID v7, so ids sort in the order they were created.</summary>
     [BsonId]
     [BsonGuidRepresentation(GuidRepresentation.Standard)]
@@ -35,7 +45,7 @@ public class WebhookIncoming
     public string ContentType { get; set; } = string.Empty;
 
     /// <summary>
-    /// Request headers in the order received, minus credentials (Authorization, Cookie, X-Api-Key).
+    /// Request headers in the order received, minus <see cref="CredentialHeaders"/>.
     /// Kept as a list so repeated headers survive and header names never become BSON field names.
     /// </summary>
     [BsonElement("headers")]
@@ -48,6 +58,11 @@ public class WebhookIncoming
     /// <summary>Target workflow id: <c>{tenantId}:{agentName}:{workflowName}[:{activationName}]</c>.</summary>
     [BsonElement("workflow_id")]
     public required string WorkflowId { get; set; }
+
+    /// <summary>Drops every header in <see cref="CredentialHeaders"/>, whatever its casing.</summary>
+    /// <returns>The number of headers removed.</returns>
+    public int RemoveCredentialHeaders() =>
+        Headers.RemoveAll(h => h.Name != null && CredentialHeaders.Contains(h.Name.Trim()));
 }
 
 /// <summary>One request header line of a <see cref="WebhookIncoming"/>.</summary>

@@ -79,6 +79,25 @@ public class WebhookIncomingRepositoryTests : IClassFixture<MongoDbFixture>
     }
 
     [Fact]
+    public async Task InsertNeverStoresCredentialHeaders()
+    {
+        var tenant = NewTenant();
+        var row = Incoming(tenant, 0);
+        row.Headers.Add(new() { Name = "Authorization", Value = "Bearer secret" });
+        row.Headers.Add(new() { Name = "cookie", Value = "session=secret" });
+        row.Headers.Add(new() { Name = "X-API-KEY", Value = "secret" });
+        row.Headers.Add(new() { Name = "Proxy-Authorization", Value = "Basic secret" });
+        await _repository.InsertAsync(row);
+
+        var raw = await _database.GetCollection<BsonDocument>("webhook_incomings")
+            .Find(new BsonDocument("tenant_id", tenant)).SingleAsync();
+
+        Assert.DoesNotContain("secret", raw["headers"].ToJson());
+        var stored = (await _repository.GetAsync(tenant, Integration, row.Id))!.Headers.Select(h => h.Name);
+        Assert.Equal(new[] { "X-GitHub-Event", "X-Hub-Signature-256" }, stored);
+    }
+
+    [Fact]
     public async Task InsertingTheSameCallTwiceIsNotAnError()
     {
         var tenant = NewTenant();
