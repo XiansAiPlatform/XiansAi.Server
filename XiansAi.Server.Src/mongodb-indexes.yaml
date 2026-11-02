@@ -615,13 +615,6 @@ webhook_incomings:
       received_at: desc
       _id: desc
     background: true
-  # Safety net for rows the per-webhook cap never reaches, e.g. a call recorded while its
-  # webhook was being deleted. Override with MongoIndexes__webhook_incomings__webhook_incomings_ttl__ExpireAfter.
-  - name: webhook_incomings_ttl
-    keys:
-      received_at: asc
-    expire_after: 90d
-    background: true
 
 admin_capability_matrix:
   - name: action_1

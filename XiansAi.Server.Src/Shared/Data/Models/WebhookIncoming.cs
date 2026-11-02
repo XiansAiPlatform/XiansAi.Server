@@ -37,7 +37,7 @@ public class WebhookIncoming
     [BsonElement("request_id")]
     public required string RequestId { get; set; }
 
-    /// <summary>When the call arrived (UTC). Drives the list order, the per-webhook cap and the TTL index.</summary>
+    /// <summary>When the call arrived (UTC). Drives the list order and the per-webhook cap.</summary>
     [BsonElement("received_at")]
     public DateTime ReceivedAt { get; set; } = DateTime.UtcNow;
 

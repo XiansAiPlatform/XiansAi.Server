@@ -564,7 +564,7 @@ public class AppIntegrationService : IAppIntegrationService
 
             // Remove recorded calls first, so a failure leaves the integration in place to retry
             // instead of orphaning rows that nothing can reach once the integration is gone.
-            if (existing.PlatformId.Equals(AppIntegration.BuiltinWebhookPlatformId, StringComparison.OrdinalIgnoreCase))
+            if (existing.PlatformId.Equals("builtin_webhook", StringComparison.OrdinalIgnoreCase))
             {
                 var deletedCalls = await _webhookIncomingRepository.DeleteByIntegrationAsync(tenantId, id);
                 _logger.LogInformation("Deleted {Count} incoming webhook call(s) for integration {IntegrationId}",
@@ -708,7 +708,7 @@ public class AppIntegrationService : IAppIntegrationService
             var integration = new AppIntegration
             {
                 TenantId = tenantId,
-                PlatformId = AppIntegration.BuiltinWebhookPlatformId,
+                PlatformId = "builtin_webhook",
                 Name = integrationName,
                 AgentName = request.AgentName,
                 ActivationName = request.ActivationName,
@@ -752,7 +752,7 @@ public class AppIntegrationService : IAppIntegrationService
 
     public async Task<ServiceResult<List<AppIntegrationResponse>>> GetBuiltinWebhooksAsync(string tenantId, string? activationName = null, string? agentName = null)
     {
-        var result = await GetIntegrationsAsync(tenantId, AppIntegration.BuiltinWebhookPlatformId, agentName, activationName);
+        var result = await GetIntegrationsAsync(tenantId, "builtin_webhook", agentName, activationName);
         return result;
     }
 
@@ -762,7 +762,7 @@ public class AppIntegrationService : IAppIntegrationService
         if (existing == null || existing.TenantId != tenantId)
             return ServiceResult<bool>.NotFound("Integration not found");
 
-        if (!existing.PlatformId.Equals(AppIntegration.BuiltinWebhookPlatformId, StringComparison.OrdinalIgnoreCase))
+        if (!existing.PlatformId.Equals("builtin_webhook", StringComparison.OrdinalIgnoreCase))
             return ServiceResult<bool>.BadRequest("Not a builtin webhook integration");
 
         try
