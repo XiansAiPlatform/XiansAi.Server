@@ -81,14 +81,15 @@ public class ActivityHistoryService : IActivityHistoryService
 
     public void Create(ActivityHistoryRequest request)
     {
-        _logger.LogInformation("Received request to create activity at: {Time} for {ActivityName}", 
-            DateTime.UtcNow, LogSanitizer.Sanitize(request.ActivityName));
+        var now = DateTime.UtcNow;
+        _logger.LogInformation("Received request to create activity at: {Time} for {ActivityName}",
+            now, LogSanitizer.Sanitize(request.ActivityName));
         var activity = new ActivityHistory
         {
             Id = ObjectId.GenerateNewId().ToString(),
             ActivityId = request.ActivityId,
             ActivityName = request.ActivityName,
-            StartedTime = request.StartedTime,
+            StartedTime = request.StartedTime is { } started && started <= now ? started : now,
             EndedTime = request.EndedTime,
             WorkflowId = request.WorkflowId,
             WorkflowRunId = request.WorkflowRunId,

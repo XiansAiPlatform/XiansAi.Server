@@ -11,6 +11,7 @@ public interface ISecretVaultRepository
     Task<SecretVault?> GetByKeyAsync(string key, string? tenantId);
     Task<bool> ExistsByKeyAsync(string key, string? tenantId);
     Task<SecretVault?> FindForAccessAsync(string key, string? tenantId, string? agentId, string? userId, string? activationName);
+    Task<List<SecretVault>> FindManyForAccessAsync(string key, IReadOnlyCollection<string> tenantIds, string? agentId, string? userId);
     Task<List<SecretVault>> ListAsync(string? tenantId, string? agentId, string? activationName);
     Task CreateAsync(SecretVault entity);
     Task<bool> UpdateAsync(SecretVault entity);
@@ -138,6 +139,33 @@ public class SecretVaultRepository : ISecretVaultRepository
             _logger.LogError(ex, "Error finding secret for access key {Key}", LogSanitizer.Sanitize(key));
             return null;
         }
+    }
+
+    /// <summary>
+    /// Batch variant of <see cref="FindForAccessAsync"/> for a set of tenants in a single query. Same strict
+    /// scope matching for agentId and userId; activation-scoped secrets are never matched. Unlike the other
+    /// methods, exceptions are not swallowed so that a database failure is not mistaken for "no secrets found".
+    /// </summary>
+    public async Task<List<SecretVault>> FindManyForAccessAsync(string key, IReadOnlyCollection<string> tenantIds, string? agentId, string? userId)
+    {
+        var builder = Builders<SecretVault>.Filter;
+        var filters = new List<FilterDefinition<SecretVault>>
+        {
+            builder.Eq(x => x.Key, key),
+            builder.In(x => x.TenantId, tenantIds)
+        };
+
+        filters.Add(!string.IsNullOrWhiteSpace(agentId)
+            ? builder.Eq(x => x.AgentId, agentId)
+            : builder.Eq(x => x.AgentId, (string?)null));
+
+        filters.Add(!string.IsNullOrWhiteSpace(userId)
+            ? builder.Eq(x => x.UserId, userId)
+            : builder.Eq(x => x.UserId, (string?)null));
+
+        filters.Add(builder.Eq(x => x.ActivationName, (string?)null));
+
+        return await _collection.Find(builder.And(filters)).ToListAsync();
     }
 
     public async Task<List<SecretVault>> ListAsync(string? tenantId, string? agentId, string? activationName)

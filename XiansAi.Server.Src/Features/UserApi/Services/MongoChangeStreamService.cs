@@ -184,6 +184,7 @@ namespace Features.UserApi.Services
 
                             // Decrypt the message text
                             DecryptMessageText(message);
+                            ConversationMessageReadRules.ApplyReadStatusRule(message);
 
                             var groupId = MessageGroupKey.ForParticipant(message.WorkflowId, message.ParticipantId, message.TenantId);
                             var tenantGroupId = MessageGroupKey.ForTenant(message.WorkflowId, message.TenantId);

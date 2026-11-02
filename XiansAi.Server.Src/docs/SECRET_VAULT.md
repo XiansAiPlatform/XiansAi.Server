@@ -162,6 +162,25 @@ Same management operations as Admin API, under base path `/api/agent/secrets`. *
 }
 ```
 
+**Agent batch fetch by tenants** (POST `/api/agent/secrets/fetch/by-tenants`)
+
+Fetches the secret with `key` for each tenant in one request (one metadata query + one value lookup). `agentId` and `userId` are optional and use the same strict scope match as `GET /fetch`. Activation-scoped secrets are not returned.
+
+```json
+{ "key": "openai-api-key", "tenantIds": ["tenant-a", "tenant-b", "tenant-c"] }
+```
+
+Response — every requested tenant id is present; `null` = not found or value missing in store:
+
+```json
+{ "tenant-a": "sk_live_aaa", "tenant-b": "sk_live_bbb", "tenant-c": null }
+```
+
+- `400` — missing `key`; `tenantIds` missing, empty, containing blank values, or more than 100 entries.
+- `401` — no/invalid certificate. `403` — non-SysAdmin caller requests any tenant other than its own.
+- `500` — database/store failure (never reported as `null`).
+- Response carries `Cache-Control: no-store`; the route is rate limited (global policy) and each call writes a `secret.batch_fetched` audit entry (no values).
+
 **Agent get by id / create / update response** (full record, with value)
 
 - Includes: `id`, `key`, `value`, `tenantId`, `agentId`, `userId`, `activationName`, `additionalData`, `createdAt`, `createdBy`, `updatedAt`, `updatedBy`. The `value` is decrypted; `additionalData` is returned as a JSON object.
@@ -220,6 +239,7 @@ Stored value is the **sanitized** JSON string (types preserved for number and bo
 - **Metadata collection:** `secret_vault`
 - **Document fields:** `_id`, `key`, `tenant_id`, `agent_id`, `user_id`, `activation_name`, `additional_data`, `created_at`, `created_by`, `updated_at`, `updated_by`. The legacy `encrypted_value` field is read on fallback only and is no longer written by new code.
 - **Uniqueness:** The secret **key** is unique in the collection (one document per key).
+- **Indexes:** `key_tenant` (`key`, `tenant_id`) supports fetch-by-key and batch fetch-by-tenants.
 - **Value collection (database provider only):** `secret_vault_values` with `_id` matching the metadata `_id` and a `ciphertext` field. Lookup is by `_id`; no extra indexes required.
 
 ## Security Considerations

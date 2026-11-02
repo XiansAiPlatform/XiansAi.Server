@@ -301,7 +301,16 @@ public class MongoIndexSynchronizer(
 
     private async Task<Dictionary<string, List<MongoIndexDefinition>>> GetIndexDefinitionsAsync()
     {
-        var assembly = Assembly.GetExecutingAssembly();
+        var definitions = await ReadEmbeddedIndexDefinitionsAsync();
+        return ApplyExpireAfterOverrides(definitions, configuration, logger);
+    }
+
+    /// <summary>
+    /// Reads the index definitions embedded from mongodb-indexes.yaml, before configuration overrides.
+    /// </summary>
+    public static async Task<Dictionary<string, List<MongoIndexDefinition>>> ReadEmbeddedIndexDefinitionsAsync()
+    {
+        var assembly = typeof(MongoIndexSynchronizer).Assembly;
         var assemblyName = assembly.GetName().Name!;
         var embeddedResourceName = $"{assemblyName}.{EmbeddedResourceFileName}";
         await using var stream = assembly.GetManifestResourceStream(embeddedResourceName) ??
@@ -315,8 +324,7 @@ public class MongoIndexSynchronizer(
             .WithTypeConverter(new TimeSpanTypeConverter())
             .Build();
 
-        var definitions = deserializer.Deserialize<Dictionary<string, List<MongoIndexDefinition>>>(yamlContent);
-        return ApplyExpireAfterOverrides(definitions, configuration, logger);
+        return deserializer.Deserialize<Dictionary<string, List<MongoIndexDefinition>>>(yamlContent);
     }
 
     /// <summary>

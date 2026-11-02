@@ -43,9 +43,9 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
         Assert.Equal(2, result!.MarkedCount);
         Assert.Equal(1, result.UnreadCount);
 
-        Assert.Equal(MessageStatus.Read, (await GetMessageByIdAsync(msg1.Id))!.Status);
-        Assert.Equal(MessageStatus.Read, (await GetMessageByIdAsync(msg2.Id))!.Status);
-        Assert.Equal(MessageStatus.Unread, (await GetMessageByIdAsync(msg3.Id))!.Status);
+        Assert.Equal(MessageStatus.Read, (await GetStoredMessageAsync(msg1.Id))!.Status);
+        Assert.Equal(MessageStatus.Read, (await GetStoredMessageAsync(msg2.Id))!.Status);
+        Assert.Equal(MessageStatus.Unread, (await GetStoredMessageAsync(msg3.Id))!.Status);
     }
 
     [Fact]
@@ -84,17 +84,17 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
         Assert.Equal(2, result!.MarkedCount);
         Assert.Equal(1, result.UnreadCount);
 
-        Assert.Equal(MessageStatus.Read, (await GetMessageByIdAsync(userBeforeCutoff.Id))!.Status);
-        Assert.Equal(MessageStatus.Read, (await GetMessageByIdAsync(agentChat.Id))!.Status);
-        Assert.Equal(MessageStatus.Read, (await GetMessageByIdAsync(agentFile.Id))!.Status);
-        Assert.Equal(MessageStatus.Unread, (await GetMessageByIdAsync(userStillUnread.Id))!.Status);
-        Assert.Equal(MessageStatus.Unread, (await GetMessageByIdAsync(tool.Id))!.Status);
-        Assert.Equal(MessageStatus.Unread, (await GetMessageByIdAsync(reasoning.Id))!.Status);
-        Assert.Equal(MessageStatus.Unread, (await GetMessageByIdAsync(agentChatAfterCutoff.Id))!.Status);
+        Assert.Equal(MessageStatus.Read, (await GetStoredMessageAsync(userBeforeCutoff.Id))!.Status);
+        Assert.Equal(MessageStatus.Read, (await GetStoredMessageAsync(agentChat.Id))!.Status);
+        Assert.Equal(MessageStatus.Read, (await GetStoredMessageAsync(agentFile.Id))!.Status);
+        Assert.Equal(MessageStatus.Unread, (await GetStoredMessageAsync(userStillUnread.Id))!.Status);
+        Assert.Equal(MessageStatus.Unread, (await GetStoredMessageAsync(tool.Id))!.Status);
+        Assert.Equal(MessageStatus.Unread, (await GetStoredMessageAsync(reasoning.Id))!.Status);
+        Assert.Equal(MessageStatus.Unread, (await GetStoredMessageAsync(agentChatAfterCutoff.Id))!.Status);
     }
 
     [Fact]
-    public async Task GetHistory_BackfillStoresLegacyUserMessagesAsReadAndHistoryReturnsThatStatus()
+    public async Task GetHistory_ReportsLegacyRowsThatCannotBeUnreadAsReadWithoutRewritingThem()
     {
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
         await ConfigureAdminApiClientAsync(tenantId);
@@ -119,17 +119,6 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
             tenantId, seeded.ThreadId, seeded.WorkflowId, seeded.WorkflowType, participantId,
             MessageDirection.Outgoing, MessageType.Chat, MessageStatus.Unread, "agent reply");
 
-        using (var scope = _factory.Services.CreateScope())
-        {
-            var repository = scope.ServiceProvider.GetRequiredService<IConversationRepository>();
-            await repository.BackfillMessagesThatCannotBeUnreadAsync();
-        }
-
-        Assert.Equal(MessageStatus.Read, (await GetMessageByIdAsync(legacyUnread.Id))!.Status);
-        Assert.Equal(MessageStatus.Read, (await GetMessageByIdAsync(legacyNull.Id))!.Status);
-        Assert.Equal(MessageStatus.Read, (await GetMessageByIdAsync(legacyTool.Id))!.Status);
-        Assert.Equal(MessageStatus.Unread, (await GetMessageByIdAsync(agentChat.Id))!.Status);
-
         var query = $"agentName={Uri.EscapeDataString(agent.Name)}&activationName={Uri.EscapeDataString(activation.Name)}&participantId={Uri.EscapeDataString(participantId)}";
         var historyResponse = await GetAsync($"/api/v1/admin/tenants/{tenantId}/messaging/history?{query}");
         Assert.Equal(HttpStatusCode.OK, historyResponse.StatusCode);
@@ -140,78 +129,18 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
         Assert.Equal(MessageStatus.Read, history.Single(m => m.Id == legacyNull.Id).Status);
         Assert.Equal(MessageStatus.Read, history.Single(m => m.Id == legacyTool.Id).Status);
         Assert.Equal(MessageStatus.Unread, history.Single(m => m.Id == agentChat.Id).Status);
-    }
 
-    [Fact]
-    public async Task BackfillOnce_SecondRunLeavesALaterLegacyUserMessageUnread()
-    {
-        var tenantId = $"test-tenant-{Guid.NewGuid()}";
-        await ConfigureAdminApiClientAsync(tenantId);
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var repository = scope.ServiceProvider.GetRequiredService<IConversationRepository>();
+            Assert.Equal(MessageStatus.Read, (await repository.GetMessageByIdAsync(legacyUnread.Id, tenantId))!.Status);
+            Assert.Equal(MessageStatus.Read, (await repository.GetMessageByIdAsync(legacyNull.Id, tenantId))!.Status);
+            Assert.Equal(MessageStatus.Unread, (await repository.GetMessageByIdAsync(agentChat.Id, tenantId))!.Status);
+        }
 
-        using var scope = _factory.Services.CreateScope();
-        var database = await scope.ServiceProvider.GetRequiredService<IDatabaseService>().GetDatabaseAsync();
-        var migrations = database.GetCollection<BsonDocument>("data_migrations");
-        await migrations.DeleteOneAsync(
-            Builders<BsonDocument>.Filter.Eq("_id", ConversationRepository.ReadStatusBackfillMigrationId));
-
-        var repository = scope.ServiceProvider.GetRequiredService<IConversationRepository>();
-        var threadId = ObjectId.GenerateNewId().ToString();
-        var first = await CreateTestMessageAsync(
-            tenantId, threadId, DateTime.UtcNow, MessageDirection.Incoming, MessageType.Chat, MessageStatus.Unread);
-
-        var updated = await repository.BackfillMessagesThatCannotBeUnreadOnceAsync();
-        Assert.True(updated >= 1);
-        Assert.Equal(MessageStatus.Read, (await GetMessageByIdAsync(first.Id))!.Status);
-
-        var later = await CreateTestMessageAsync(
-            tenantId, threadId, DateTime.UtcNow, MessageDirection.Incoming, MessageType.Chat, MessageStatus.Unread);
-        var skipped = await repository.BackfillMessagesThatCannotBeUnreadOnceAsync();
-        Assert.Equal(0, skipped);
-        Assert.Equal(MessageStatus.Unread, (await GetMessageByIdAsync(later.Id))!.Status);
-
-        var repaired = await repository.BackfillMessagesThatCannotBeUnreadAsync();
-        Assert.True(repaired >= 1);
-        Assert.Equal(MessageStatus.Read, (await GetMessageByIdAsync(later.Id))!.Status);
-    }
-
-    [Fact]
-    public async Task BackfillOnce_FreshClaimSkipsTheScan()
-    {
-        var tenantId = $"test-tenant-{Guid.NewGuid()}";
-        await ConfigureAdminApiClientAsync(tenantId);
-
-        using var scope = _factory.Services.CreateScope();
-        var database = await scope.ServiceProvider.GetRequiredService<IDatabaseService>().GetDatabaseAsync();
-        await ReplaceReadStatusBackfillClaimAsync(database, DateTime.UtcNow);
-
-        var repository = scope.ServiceProvider.GetRequiredService<IConversationRepository>();
-        var message = await CreateTestMessageAsync(
-            tenantId, ObjectId.GenerateNewId().ToString(), DateTime.UtcNow,
-            MessageDirection.Incoming, MessageType.Chat, MessageStatus.Unread);
-
-        var skipped = await repository.BackfillMessagesThatCannotBeUnreadOnceAsync();
-        Assert.Equal(0, skipped);
-        Assert.Equal(MessageStatus.Unread, (await GetMessageByIdAsync(message.Id))!.Status);
-    }
-
-    [Fact]
-    public async Task BackfillOnce_StaleClaimIsTakenOverAndBackfills()
-    {
-        var tenantId = $"test-tenant-{Guid.NewGuid()}";
-        await ConfigureAdminApiClientAsync(tenantId);
-
-        using var scope = _factory.Services.CreateScope();
-        var database = await scope.ServiceProvider.GetRequiredService<IDatabaseService>().GetDatabaseAsync();
-        await ReplaceReadStatusBackfillClaimAsync(database, DateTime.UtcNow.AddHours(-1));
-
-        var repository = scope.ServiceProvider.GetRequiredService<IConversationRepository>();
-        var message = await CreateTestMessageAsync(
-            tenantId, ObjectId.GenerateNewId().ToString(), DateTime.UtcNow,
-            MessageDirection.Incoming, MessageType.Chat, MessageStatus.Unread);
-
-        var updated = await repository.BackfillMessagesThatCannotBeUnreadOnceAsync();
-        Assert.True(updated >= 1);
-        Assert.Equal(MessageStatus.Read, (await GetMessageByIdAsync(message.Id))!.Status);
+        Assert.Equal(MessageStatus.Unread, (await GetStoredMessageAsync(legacyUnread.Id))!.Status);
+        Assert.Null((await GetStoredMessageAsync(legacyNull.Id))!.Status);
+        Assert.Equal(MessageStatus.Unread, (await GetStoredMessageAsync(legacyTool.Id))!.Status);
     }
 
     [Fact]
@@ -240,9 +169,9 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
         Assert.Equal(2, result!.MarkedCount);
         Assert.Equal(1, result.UnreadCount);
 
-        Assert.Equal(MessageStatus.Read, (await GetMessageByIdAsync(msg1.Id))!.Status);
-        Assert.Equal(MessageStatus.Read, (await GetMessageByIdAsync(msg2.Id))!.Status);
-        Assert.Equal(MessageStatus.Unread, (await GetMessageByIdAsync(msg3.Id))!.Status);
+        Assert.Equal(MessageStatus.Read, (await GetStoredMessageAsync(msg1.Id))!.Status);
+        Assert.Equal(MessageStatus.Read, (await GetStoredMessageAsync(msg2.Id))!.Status);
+        Assert.Equal(MessageStatus.Unread, (await GetStoredMessageAsync(msg3.Id))!.Status);
     }
 
     [Fact]
@@ -542,25 +471,17 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
         return message;
     }
 
-    private async Task<ConversationMessage?> GetMessageByIdAsync(string messageId)
+    /// <summary>
+    /// Reads the stored document directly, so assertions see the persisted status rather than
+    /// the read-time status the repository reports.
+    /// </summary>
+    private async Task<ConversationMessage?> GetStoredMessageAsync(string messageId)
     {
         using var scope = _factory.Services.CreateScope();
-        var conversationRepository = scope.ServiceProvider.GetRequiredService<IConversationRepository>();
-        return await conversationRepository.GetMessageByIdAsync(messageId, _adminTenantId!);
-    }
-
-    private static async Task ReplaceReadStatusBackfillClaimAsync(IMongoDatabase database, DateTime claimedAt)
-    {
-        var migrations = database.GetCollection<BsonDocument>("data_migrations");
-        await migrations.ReplaceOneAsync(
-            Builders<BsonDocument>.Filter.Eq("_id", ConversationRepository.ReadStatusBackfillMigrationId),
-            new BsonDocument
-            {
-                { "_id", ConversationRepository.ReadStatusBackfillMigrationId },
-                { "completed", false },
-                { "claimed_at", claimedAt }
-            },
-            new ReplaceOptions { IsUpsert = true });
+        var database = await scope.ServiceProvider.GetRequiredService<IDatabaseService>().GetDatabaseAsync();
+        return await database.GetCollection<ConversationMessage>("conversation_message")
+            .Find(m => m.Id == messageId)
+            .FirstOrDefaultAsync();
     }
 }
 

@@ -14,6 +14,7 @@ public interface IUserRepository
     Task<List<User>> GetSystemAdminAsync();
     Task<List<User>> GetUsersWithUnapprovedTenantAsync(string tenantId);
     Task<List<User>> GetUsersByRoleAsync(string roleName, string tenantId);
+    Task<List<User>> GetByTenantIdAsync(string tenantId);
     Task<User?> GetByUserIdAsync(string userId);
     Task<User?> GetByIdAsync(string id);
     Task<User?> GetByUserEmailAsync(string email);
@@ -277,6 +278,12 @@ public class UserRepository : IUserRepository
                 tr => tr.Tenant == tenantId && tr.IsApproved == false
             )
         );
+        return await _users.Find(filter).ToListAsync();
+    }
+
+    public async Task<List<User>> GetByTenantIdAsync(string tenantId)
+    {
+        var filter = Builders<User>.Filter.ElemMatch(u => u.TenantRoles, tr => tr.Tenant == tenantId);
         return await _users.Find(filter).ToListAsync();
     }
 

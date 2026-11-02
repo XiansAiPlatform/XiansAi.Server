@@ -124,6 +124,34 @@ public class DatabaseSecretStoreProvider : ISecretStoreProvider
         return null;
     }
 
+    public async Task<IReadOnlyDictionary<string, string>> GetManyAsync(
+        IReadOnlyCollection<string> secretIds, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(secretIds);
+
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        if (secretIds.Count == 0)
+            return result;
+
+        var docs = await _values
+            .Find(Builders<SecretValueDocument>.Filter.In(x => x.Id, secretIds))
+            .ToListAsync(cancellationToken);
+        foreach (var doc in docs)
+        {
+            result[doc.Id] = _encryption.Decrypt(doc.Ciphertext, doc.Id);
+        }
+
+        // Ids without a value document are either missing or legacy rows (upgrade window only);
+        // resolve those one by one through the legacy fallback.
+        foreach (var secretId in secretIds.Where(id => !result.ContainsKey(id)).ToList())
+        {
+            if (await GetAsync(secretId, cancellationToken) is { } value)
+                result[secretId] = value;
+        }
+
+        return result;
+    }
+
     public async Task DeleteAsync(string secretId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(secretId))

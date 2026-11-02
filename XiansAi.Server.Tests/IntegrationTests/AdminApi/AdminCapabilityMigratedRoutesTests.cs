@@ -78,6 +78,7 @@ public class AdminCapabilityMigratedRoutesTests : AdminApiIntegrationTestBase
         ("schedules.delete", t => DeleteAsync($"/api/v1/admin/tenants/{t}/agents/test-agent/schedules/by-id?scheduleId=unknown-schedule")),
 
         ("stats.get", t => GetAsync($"/api/v1/admin/tenants/{t}/stats")),
+        ("stats.users.get", t => GetAsync($"/api/v1/admin/tenants/{t}/stats/users?startDate=2024-01-01&endDate=2024-01-02")),
 
         ("tasks.list", t => GetAsync($"/api/v1/admin/tenants/{t}/tasks")),
         ("tasks.updateDraft", t => PutAsJsonAsync($"/api/v1/admin/tenants/{t}/tasks/draft?taskId=unknown", new { updatedDraft = new { } })),

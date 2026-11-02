@@ -52,5 +52,29 @@ public class SecretVaultEndpointsTests : IntegrationTestBase
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
+    [Fact]
+    public async Task FetchByTenants_ReturnsValuePerTenant_AndNullForMisses()
+    {
+        var key = $"batch-secret-{Guid.NewGuid()}";
+        foreach (var (tenantId, value) in new[] { (TestTenantId, "sk_live_aaa"), ("99x.io", "sk_live_bbb") })
+        {
+            var create = await _client.PostAsJsonAsync("/api/agent/secrets",
+                new AgentSecretVaultCreateRequest { Key = key, Value = value, TenantId = tenantId });
+            Assert.True(create.IsSuccessStatusCode, $"Create failed with {create.StatusCode}");
+        }
+
+        var response = await _client.PostAsJsonAsync("/api/agent/secrets/fetch/by-tenants",
+            new AgentSecretVaultFetchByTenantsRequest { Key = key, TenantIds = [TestTenantId, "99x.io", "missing-tenant"] });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.True(response.Headers.CacheControl?.NoStore);
+        var body = await response.Content.ReadFromJsonAsync<Dictionary<string, string?>>();
+        Assert.NotNull(body);
+        Assert.Equal(3, body!.Count);
+        Assert.Equal("sk_live_aaa", body[TestTenantId]);
+        Assert.Equal("sk_live_bbb", body["99x.io"]);
+        Assert.Null(body["missing-tenant"]);
+    }
+
     private sealed record SecretFetchResponse(string Value, object? AdditionalData);
 }

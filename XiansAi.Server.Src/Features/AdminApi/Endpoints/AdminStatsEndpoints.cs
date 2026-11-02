@@ -46,5 +46,21 @@ public static class AdminStatsEndpoints
         .Produces(StatusCodes.Status500InternalServerError)
         .WithName("GetAdminStatistics")
         .RequireCapability(CapabilityActions.TenantStatsGet);
+
+        // Get per-user agent and task counts for a tenant (user = creator of the agent activation)
+        statsGroup.MapGet("/stats/users", async (
+            string tenantId,
+            [FromQuery] DateTime startDate,
+            [FromQuery] DateTime endDate,
+            [FromServices] IAdminStatsService statsService) =>
+        {
+            var result = await statsService.GetUserStatsAsync(tenantId, startDate, endDate);
+            return result.ToHttpResult();
+        })
+        .Produces<UserUsageStatsResponse>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status500InternalServerError)
+        .WithName("GetAdminUserStatistics")
+        .RequireCapability(CapabilityActions.TenantStatsUsersGet);
     }
 }

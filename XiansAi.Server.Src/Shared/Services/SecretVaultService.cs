@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Shared.Auditing;
 using Shared.Data.Models;
 using Shared.Providers;
 using Shared.Repositories;
@@ -82,6 +83,13 @@ public interface ISecretVaultService
     Task<ServiceResult<SecretVaultFetchResponse?>> FetchByKeyAsync(string key, string? tenantId, string? agentId, string? userId, string? activationName);
 
     /// <summary>
+    /// Fetches the secret with <paramref name="key"/> for each tenant in <paramref name="tenantIds"/> using a
+    /// bounded number of queries. Returns a map with every requested tenant id; the value is null when the
+    /// secret does not exist or its value is missing from the store. Callers must enforce tenant scope first.
+    /// </summary>
+    Task<ServiceResult<Dictionary<string, string?>>> FetchByTenantsAsync(string key, IReadOnlyList<string>? tenantIds, string? agentId, string? userId);
+
+    /// <summary>
     /// Returns metadata for a secret without ever loading or returning the secret value.
     /// The store provider is not consulted, so this is also cheaper than <see cref="GetByIdAsync"/>.
     /// Intended for the Admin API.
@@ -97,6 +105,9 @@ public interface ISecretVaultService
 
 public class SecretVaultService : ISecretVaultService
 {
+    /// <summary>Maximum number of tenant ids accepted by <see cref="FetchByTenantsAsync"/>.</summary>
+    public const int MaxBatchTenantIds = 100;
+
     private const int AdditionalDataMaxKeys = 50;
     private const int AdditionalDataMaxKeyLength = 128;
     private const int AdditionalDataMaxValueLength = 2048;
@@ -402,6 +413,59 @@ public class SecretVaultService : ISecretVaultService
         {
             _logger.LogError(ex, "Error fetching secret vault key {Key}", LogSanitizer.Sanitize(key));
             return ServiceResult<SecretVaultFetchResponse?>.InternalServerError("Failed to fetch secret");
+        }
+    }
+
+    public async Task<ServiceResult<Dictionary<string, string?>>> FetchByTenantsAsync(string key, IReadOnlyList<string>? tenantIds, string? agentId, string? userId)
+    {
+        if (string.IsNullOrWhiteSpace(key))
+            return ServiceResult<Dictionary<string, string?>>.BadRequest("Key is required");
+        if (tenantIds == null || tenantIds.Count == 0)
+            return ServiceResult<Dictionary<string, string?>>.BadRequest("tenantIds must contain at least one tenant id");
+        if (tenantIds.Count > MaxBatchTenantIds)
+            return ServiceResult<Dictionary<string, string?>>.BadRequest($"tenantIds must not contain more than {MaxBatchTenantIds} entries");
+        if (tenantIds.Any(string.IsNullOrWhiteSpace))
+            return ServiceResult<Dictionary<string, string?>>.BadRequest("tenantIds must not contain empty values");
+
+        var distinctTenantIds = tenantIds.Distinct(StringComparer.Ordinal).ToList();
+
+        try
+        {
+            var entities = await _repository.FindManyForAccessAsync(key, distinctTenantIds, agentId, userId);
+            var entityByTenant = entities
+                .GroupBy(e => e.TenantId!, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+
+            var values = await _secretStore.GetManyAsync(entityByTenant.Values.Select(e => e.Id).ToList());
+
+            // Every requested tenant is present in the response; null = not found or value missing in store.
+            var response = new Dictionary<string, string?>(StringComparer.Ordinal);
+            foreach (var tenantId in distinctTenantIds)
+            {
+                string? value = null;
+                if (entityByTenant.TryGetValue(tenantId, out var entity) && !values.TryGetValue(entity.Id, out value))
+                {
+                    _logger.LogError(
+                        "Secret value missing in store for key {Key} id {SecretId} (provider={Provider})",
+                        LogSanitizer.Sanitize(key), LogSanitizer.Sanitize(entity.Id), LogSanitizer.Sanitize(_secretStore.Name));
+                }
+                response[tenantId] = value;
+            }
+
+            // Bulk reads of plaintext secrets are audited (never with values). Multi-tenant reads are platform-scoped.
+            var auditTenantId = distinctTenantIds.Count == 1 ? distinctTenantIds[0] : AuditLogTenants.Platform;
+            _ = _auditLogService.RecordEntryAsync(
+                action: DomainEventTypes.SecretBatchFetched,
+                description: $"Vault secret '{key}' was batch-fetched for {distinctTenantIds.Count} tenant(s).",
+                details: new { key, tenantIds = distinctTenantIds, agentId, userId, found = entityByTenant.Count },
+                tenantId: auditTenantId);
+
+            return ServiceResult<Dictionary<string, string?>>.Success(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error batch-fetching secret vault key {Key}", LogSanitizer.Sanitize(key));
+            return ServiceResult<Dictionary<string, string?>>.InternalServerError("Failed to fetch secrets");
         }
     }
 

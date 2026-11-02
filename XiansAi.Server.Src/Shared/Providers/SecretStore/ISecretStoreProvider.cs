@@ -34,6 +34,25 @@ public interface ISecretStoreProvider
     Task<string?> GetAsync(string secretId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Returns the stored plaintext values for the given ids. Ids with no stored value are omitted
+    /// from the result. The default implementation calls <see cref="GetAsync"/> per id; providers
+    /// that support batch reads should override it.
+    /// </summary>
+    async Task<IReadOnlyDictionary<string, string>> GetManyAsync(
+        IReadOnlyCollection<string> secretIds, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(secretIds);
+
+        var result = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var secretId in secretIds)
+        {
+            if (await GetAsync(secretId, cancellationToken) is { } value)
+                result[secretId] = value;
+        }
+        return result;
+    }
+
+    /// <summary>
     /// Removes the value for the given id. No-op if it does not exist.
     /// </summary>
     Task DeleteAsync(string secretId, CancellationToken cancellationToken = default);
