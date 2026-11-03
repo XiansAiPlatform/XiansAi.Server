@@ -164,7 +164,7 @@ Same management operations as Admin API, under base path `/api/agent/secrets`. *
 
 **Agent batch fetch by tenants** (POST `/api/agent/secrets/fetch/by-tenants`)
 
-Fetches the secret with `key` for each tenant in one request (one metadata query + one value lookup). `agentId` and `userId` are optional and use the same strict scope match as `GET /fetch`. Activation-scoped secrets are not returned.
+Fetches the secret with `key` for each tenant in one request (one metadata query + one value lookup). `agentId`, `userId` and `activationName` are optional and use the same strict scope match as `GET /fetch`: a supplied value must equal the stored value, an omitted value only matches secrets where that scope is null (so activation-scoped secrets are returned only when `activationName` is supplied).
 
 ```json
 { "key": "openai-api-key", "tenantIds": ["tenant-a", "tenant-b", "tenant-c"] }

@@ -11,7 +11,7 @@ public interface ISecretVaultRepository
     Task<SecretVault?> GetByKeyAsync(string key, string? tenantId);
     Task<bool> ExistsByKeyAsync(string key, string? tenantId);
     Task<SecretVault?> FindForAccessAsync(string key, string? tenantId, string? agentId, string? userId, string? activationName);
-    Task<List<SecretVault>> FindManyForAccessAsync(string key, IReadOnlyCollection<string> tenantIds, string? agentId, string? userId);
+    Task<List<SecretVault>> FindManyForAccessAsync(string key, IReadOnlyCollection<string> tenantIds, string? agentId, string? userId, string? activationName);
     Task<List<SecretVault>> ListAsync(string? tenantId, string? agentId, string? activationName);
     Task CreateAsync(SecretVault entity);
     Task<bool> UpdateAsync(SecretVault entity);
@@ -143,10 +143,11 @@ public class SecretVaultRepository : ISecretVaultRepository
 
     /// <summary>
     /// Batch variant of <see cref="FindForAccessAsync"/> for a set of tenants in a single query. Same strict
-    /// scope matching for agentId and userId; activation-scoped secrets are never matched. Unlike the other
-    /// methods, exceptions are not swallowed so that a database failure is not mistaken for "no secrets found".
+    /// scope matching for agentId, userId and activationName (a null/blank request value only matches documents
+    /// where that scope is null). Unlike the other methods, exceptions are not swallowed so that a database
+    /// failure is not mistaken for "no secrets found".
     /// </summary>
-    public async Task<List<SecretVault>> FindManyForAccessAsync(string key, IReadOnlyCollection<string> tenantIds, string? agentId, string? userId)
+    public async Task<List<SecretVault>> FindManyForAccessAsync(string key, IReadOnlyCollection<string> tenantIds, string? agentId, string? userId, string? activationName)
     {
         var builder = Builders<SecretVault>.Filter;
         var filters = new List<FilterDefinition<SecretVault>>
@@ -163,7 +164,9 @@ public class SecretVaultRepository : ISecretVaultRepository
             ? builder.Eq(x => x.UserId, userId)
             : builder.Eq(x => x.UserId, (string?)null));
 
-        filters.Add(builder.Eq(x => x.ActivationName, (string?)null));
+        filters.Add(!string.IsNullOrWhiteSpace(activationName)
+            ? builder.Eq(x => x.ActivationName, activationName)
+            : builder.Eq(x => x.ActivationName, (string?)null));
 
         return await _collection.Find(builder.And(filters)).ToListAsync();
     }
