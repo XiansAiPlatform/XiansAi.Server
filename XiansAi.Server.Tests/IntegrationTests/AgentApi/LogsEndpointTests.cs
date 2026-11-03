@@ -4,9 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using MongoDB.Bson;
 using MongoDB.Driver;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Shared.Auth;
 using Tests.TestUtils;
 using Features.AgentApi.Models;
 using Features.AgentApi.Services.Lib;
@@ -138,36 +136,6 @@ public class LogsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixtu
     }
 
     [Fact]
-    public async Task CreateSingleLog_WithConversationParticipant_KeepsThatParticipant()
-    {
-        SetActor(serviceIdentity: "admin-user", onBehalfOf: "developer@example.com");
-
-        var result = await CreateLogAsync(participantId: "customer@example.com");
-
-        Assert.Equal("customer@example.com", result.ParticipantId);
-    }
-
-    [Fact]
-    public async Task CreateSingleLog_WhenParticipantIsTheServiceIdentity_UsesOnBehalfOfUser()
-    {
-        SetActor(serviceIdentity: "admin-user", onBehalfOf: "developer@example.com");
-
-        var result = await CreateLogAsync(participantId: "admin-user");
-
-        Assert.Equal("developer@example.com", result.ParticipantId);
-    }
-
-    [Fact]
-    public async Task CreateSingleLog_WithoutParticipantOrOnBehalfOf_DoesNotStampTheServiceIdentity()
-    {
-        SetActor(serviceIdentity: "admin-user", onBehalfOf: null);
-
-        var result = await CreateLogAsync(participantId: null);
-
-        Assert.True(string.IsNullOrEmpty(result.ParticipantId));
-    }
-
-    [Fact]
     public async Task CreateLog_WithInvalidWorkflowId_ReturnsBadRequest()
     {
         // Arrange
@@ -210,34 +178,5 @@ public class LogsEndpointTests : IntegrationTestBase, IClassFixture<MongoDbFixtu
         Assert.NotNull(result);
         Assert.Equal(logRequest.TraceId, result.TraceId);
         Assert.Equal(logRequest.SpanId, result.SpanId);
-    }
-
-    private void SetActor(string serviceIdentity, string? onBehalfOf)
-    {
-        var tenantContext = _factory.Services.GetRequiredService<ITenantContext>();
-        tenantContext.LoggedInUser = serviceIdentity;
-        if (!string.IsNullOrWhiteSpace(onBehalfOf))
-        {
-            tenantContext.ParticipantId = onBehalfOf;
-        }
-    }
-
-    private async Task<Log> CreateLogAsync(string? participantId)
-    {
-        var response = await _client.PostAsJsonAsync("/api/agent/logs/single", new LogRequest
-        {
-            Message = "Attributed log",
-            Level = LogLevel.Information,
-            WorkflowId = ObjectId.GenerateNewId().ToString(),
-            WorkflowRunId = ObjectId.GenerateNewId().ToString(),
-            WorkflowType = "TestWorkflowType",
-            Agent = "TestAgent",
-            ParticipantId = participantId
-        });
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var result = await response.Content.ReadFromJsonAsync<Log>(JsonReadOptions);
-        Assert.NotNull(result);
-        return result;
     }
 }

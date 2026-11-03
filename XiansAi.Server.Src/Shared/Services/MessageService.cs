@@ -568,9 +568,7 @@ public class MessageService : IMessageService
             TargetWorkflowId = request.WorkflowId,
             TargetWorkflowType = request.WorkflowType,            
             SourceAgent = agent,
-            // A heartbeat's participant is the literal "heartbeat", not a person. Leave it out so a
-            // workflow started by the ping is stamped with the on-behalf-of user instead.
-            ParticipantId = messageType == MessageType.Heartbeat ? null : request.ParticipantId,
+            ParticipantId = request.ParticipantId,
             Payload = new {
                  Agent = agent,
                  ThreadId = threadId,

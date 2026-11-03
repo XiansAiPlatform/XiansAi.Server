@@ -97,9 +97,6 @@ public class ScheduleToolsTests
         _permissions.Setup(x => x.HasWritePermission("agent")).ReturnsAsync(ServiceResult<bool>.Success(true));
         _permissions.Setup(x => x.HasReadPermission("agent")).ReturnsAsync(ServiceResult<bool>.Success(true));
         _tenant.SetupGet(x => x.LoggedInUser).Returns("user");
-        // NewWorkflowOptions stamps the workflow user from ParticipantId, which the real
-        // tenant context falls back to LoggedInUser when no X-On-Behalf-Of header is sent.
-        _tenant.SetupGet(x => x.ParticipantId).Returns("user");
         _tenant.SetupGet(x => x.UserRoles).Returns([]);
         _agents.Setup(x => x.GetByNameAsync("agent", "tenant", "user", It.IsAny<string[]>()))
             .ReturnsAsync(new Agent { Id = "id", Name = "agent", Tenant = "tenant", CreatedBy = "user" });
