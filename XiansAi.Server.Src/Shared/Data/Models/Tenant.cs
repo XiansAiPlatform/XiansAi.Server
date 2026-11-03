@@ -34,7 +34,7 @@ public class Tenant : ModelValidatorBase<Tenant>
 
     [BsonElement("description")]
     [StringLength(500, ErrorMessage = "Description cannot exceed 500 characters")]
-    [RegularExpression(@"^[a-zA-Z0-9\s._@-]*$", ErrorMessage = "Description contains invalid characters")]
+    [RegularExpression(ValidationHelpers.SafeFreeTextPattern, ErrorMessage = "Description contains invalid characters")]
     public string? Description { get; set; }
 
     [BsonElement("logo")]

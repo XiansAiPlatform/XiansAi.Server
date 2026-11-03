@@ -87,7 +87,7 @@ public interface ISecretVaultService
     /// bounded number of queries. Returns a map with every requested tenant id; the value is null when the
     /// secret does not exist or its value is missing from the store. Callers must enforce tenant scope first.
     /// </summary>
-    Task<ServiceResult<Dictionary<string, string?>>> FetchByTenantsAsync(string key, IReadOnlyList<string>? tenantIds, string? agentId, string? userId);
+    Task<ServiceResult<Dictionary<string, string?>>> FetchByTenantsAsync(string key, IReadOnlyList<string>? tenantIds, string? agentId, string? userId, string? activationName);
 
     /// <summary>
     /// Returns metadata for a secret without ever loading or returning the secret value.
@@ -416,7 +416,7 @@ public class SecretVaultService : ISecretVaultService
         }
     }
 
-    public async Task<ServiceResult<Dictionary<string, string?>>> FetchByTenantsAsync(string key, IReadOnlyList<string>? tenantIds, string? agentId, string? userId)
+    public async Task<ServiceResult<Dictionary<string, string?>>> FetchByTenantsAsync(string key, IReadOnlyList<string>? tenantIds, string? agentId, string? userId, string? activationName)
     {
         if (string.IsNullOrWhiteSpace(key))
             return ServiceResult<Dictionary<string, string?>>.BadRequest("Key is required");
@@ -431,7 +431,7 @@ public class SecretVaultService : ISecretVaultService
 
         try
         {
-            var entities = await _repository.FindManyForAccessAsync(key, distinctTenantIds, agentId, userId);
+            var entities = await _repository.FindManyForAccessAsync(key, distinctTenantIds, agentId, userId, activationName);
             var entityByTenant = entities
                 .GroupBy(e => e.TenantId!, StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
@@ -457,7 +457,7 @@ public class SecretVaultService : ISecretVaultService
             _ = _auditLogService.RecordEntryAsync(
                 action: DomainEventTypes.SecretBatchFetched,
                 description: $"Vault secret '{key}' was batch-fetched for {distinctTenantIds.Count} tenant(s).",
-                details: new { key, tenantIds = distinctTenantIds, agentId, userId, found = entityByTenant.Count },
+                details: new { key, tenantIds = distinctTenantIds, agentId, userId, activationName, found = entityByTenant.Count },
                 tenantId: auditTenantId);
 
             return ServiceResult<Dictionary<string, string?>>.Success(response);
