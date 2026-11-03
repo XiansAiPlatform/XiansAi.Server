@@ -25,6 +25,12 @@ public static class SharedServices
         // Register privacy request services when privacy features are enabled.
         services.AddPrivacyServices(configuration);
 
+        // Bind and validate options for recording calls received by builtin webhooks
+        services.AddOptions<WebhookIncomingsOptions>()
+            .Bind(configuration.GetSection(WebhookIncomingsOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+
         // Register cache services using the combined factory
         RegisterCacheProviders(services, configuration);
 
