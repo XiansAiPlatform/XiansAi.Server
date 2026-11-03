@@ -200,6 +200,10 @@ public static class CapabilityActions
     public const string TenantWebhooksList = "tenant.webhooks.list";
     public const string TenantWebhooksDeleteByActivation = "tenant.webhooks.deleteByActivation";
     public const string TenantWebhooksDelete = "tenant.webhooks.delete";
+    public const string TenantWebhookIncomingsList = "tenant.webhookIncomings.list";
+    public const string TenantWebhookIncomingsGet = "tenant.webhookIncomings.get";
+    public const string TenantWebhookIncomingsDelete = "tenant.webhookIncomings.delete";
+    public const string TenantWebhookIncomingsDeleteAll = "tenant.webhookIncomings.deleteAll";
 
     // AdminAppIntegrationEndpoints: /tenants/{tenantId}/integrations
     public const string TenantIntegrationsList = "tenant.integrations.list";
@@ -562,6 +566,14 @@ public static class CapabilityActions
             "Delete all builtin webhooks for one agent activation."),
         new(TenantWebhooksDelete, [SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
             "Delete a single builtin webhook integration."),
+        new(TenantWebhookIncomingsList, [SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
+            "List the calls a builtin webhook has received."),
+        new(TenantWebhookIncomingsGet, [SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
+            "Read one call a builtin webhook received, including its headers and body."),
+        new(TenantWebhookIncomingsDelete, [SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
+            "Delete one recorded call of a builtin webhook."),
+        new(TenantWebhookIncomingsDeleteAll, [SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
+            "Delete every recorded call of a builtin webhook."),
 
         new(TenantIntegrationsList, [SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
             "List app integrations for a tenant."),

@@ -22,6 +22,7 @@ public class AppIntegrationServiceFilteringTests
             Mock.Of<IActivationValidationService>(),
             Mock.Of<IWebhookEventPublisher>(),
             Mock.Of<IAuditLogService>(),
+            Mock.Of<IWebhookIncomingRepository>(),
             NullLogger<AppIntegrationService>.Instance);
 
         var result = await service.GetIntegrationsAsync("tenant", "builtin_webhook", "agent", "activation");
@@ -49,6 +50,7 @@ public class AppIntegrationServiceFilteringTests
             Mock.Of<IWebhookEventPublisher>(publisher => publisher.PublishAsync(
                 It.IsAny<string>(), It.IsAny<object>(), It.IsAny<string>()) == Task.CompletedTask),
             Mock.Of<IAuditLogService>(),
+            Mock.Of<IWebhookIncomingRepository>(),
             NullLogger<AppIntegrationService>.Instance);
 
         var result = await service.DeleteBuiltinWebhookAsync(integration.Id, "tenant");
@@ -80,12 +82,119 @@ public class AppIntegrationServiceFilteringTests
             Mock.Of<IWebhookEventPublisher>(publisher => publisher.PublishAsync(
                 It.IsAny<string>(), It.IsAny<object>(), It.IsAny<string>()) == Task.CompletedTask),
             Mock.Of<IAuditLogService>(),
+            Mock.Of<IWebhookIncomingRepository>(),
             NullLogger<AppIntegrationService>.Instance);
 
         var result = await service.DeleteBuiltinWebhookAsync(integration.Id, "tenant");
 
         Assert.True(result.IsSuccess);
         apiKeyService.Verify(value => value.RevokeApiKeyAsync("key-id", "tenant"), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeleteWebhookDeletesItsIncomingCallsBeforeTheIntegration()
+    {
+        var repository = new Mock<IAppIntegrationRepository>();
+        var incomings = new Mock<IWebhookIncomingRepository>();
+        var calls = new List<string>();
+        var integration = Integration("builtin_webhook");
+        repository.Setup(value => value.GetByIdAsync(integration.Id)).ReturnsAsync(integration);
+        repository.Setup(value => value.DeleteAsync(integration.Id, "tenant"))
+            .Callback(() => calls.Add("integration"))
+            .ReturnsAsync(true);
+        incomings.Setup(value => value.DeleteByIntegrationAsync("tenant", integration.Id))
+            .Callback(() => calls.Add("incomings"))
+            .ReturnsAsync(2);
+        var service = new AppIntegrationService(
+            repository.Object,
+            Mock.Of<IApiKeyService>(),
+            Mock.Of<IActivationValidationService>(),
+            Mock.Of<IWebhookEventPublisher>(publisher => publisher.PublishAsync(
+                It.IsAny<string>(), It.IsAny<object>(), It.IsAny<string>()) == Task.CompletedTask),
+            Mock.Of<IAuditLogService>(),
+            incomings.Object,
+            NullLogger<AppIntegrationService>.Instance);
+
+        var result = await service.DeleteBuiltinWebhookAsync(integration.Id, "tenant");
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("incomings", calls[0]);
+        Assert.Equal("integration", calls[^1]);
+    }
+
+    [Fact]
+    public async Task DeleteWebhookKeepsItsApiKeyWhenIncomingCallsCannotBeDeleted()
+    {
+        var repository = new Mock<IAppIntegrationRepository>();
+        var apiKeyService = new Mock<IApiKeyService>();
+        var incomings = new Mock<IWebhookIncomingRepository>();
+        var integration = Integration("builtin_webhook");
+        integration.Configuration["apiKeyId"] = "key-id";
+        repository.Setup(value => value.GetByIdAsync(integration.Id)).ReturnsAsync(integration);
+        incomings.Setup(value => value.DeleteByIntegrationAsync("tenant", integration.Id))
+            .ThrowsAsync(new TimeoutException("mongo unavailable"));
+        var service = new AppIntegrationService(
+            repository.Object,
+            apiKeyService.Object,
+            Mock.Of<IActivationValidationService>(),
+            Mock.Of<IWebhookEventPublisher>(),
+            Mock.Of<IAuditLogService>(),
+            incomings.Object,
+            NullLogger<AppIntegrationService>.Instance);
+
+        var result = await service.DeleteBuiltinWebhookAsync(integration.Id, "tenant");
+
+        Assert.False(result.IsSuccess);
+        apiKeyService.Verify(value => value.RevokeApiKeyAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+        repository.Verify(value => value.DeleteAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteWebhookKeepsTheIntegrationWhenIncomingCallsCannotBeDeleted()
+    {
+        var repository = new Mock<IAppIntegrationRepository>();
+        var incomings = new Mock<IWebhookIncomingRepository>();
+        var integration = Integration("builtin_webhook");
+        repository.Setup(value => value.GetByIdAsync(integration.Id)).ReturnsAsync(integration);
+        incomings.Setup(value => value.DeleteByIntegrationAsync("tenant", integration.Id))
+            .ThrowsAsync(new TimeoutException("mongo unavailable"));
+        var service = new AppIntegrationService(
+            repository.Object,
+            Mock.Of<IApiKeyService>(),
+            Mock.Of<IActivationValidationService>(),
+            Mock.Of<IWebhookEventPublisher>(),
+            Mock.Of<IAuditLogService>(),
+            incomings.Object,
+            NullLogger<AppIntegrationService>.Instance);
+
+        var result = await service.DeleteIntegrationAsync(integration.Id, "tenant");
+
+        Assert.False(result.IsSuccess);
+        repository.Verify(value => value.DeleteAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeleteOtherIntegrationLeavesIncomingCallsAlone()
+    {
+        var repository = new Mock<IAppIntegrationRepository>();
+        var incomings = new Mock<IWebhookIncomingRepository>();
+        var integration = Integration("slack");
+        repository.Setup(value => value.GetByIdAsync(integration.Id)).ReturnsAsync(integration);
+        repository.Setup(value => value.DeleteAsync(integration.Id, "tenant")).ReturnsAsync(true);
+        var service = new AppIntegrationService(
+            repository.Object,
+            Mock.Of<IApiKeyService>(),
+            Mock.Of<IActivationValidationService>(),
+            Mock.Of<IWebhookEventPublisher>(publisher => publisher.PublishAsync(
+                It.IsAny<string>(), It.IsAny<object>(), It.IsAny<string>()) == Task.CompletedTask),
+            Mock.Of<IAuditLogService>(),
+            incomings.Object,
+            NullLogger<AppIntegrationService>.Instance);
+
+        var result = await service.DeleteIntegrationAsync(integration.Id, "tenant");
+
+        Assert.True(result.IsSuccess);
+        incomings.Verify(value => value.DeleteByIntegrationAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
     }
 
     private static AppIntegration Integration(string platformId) => new()

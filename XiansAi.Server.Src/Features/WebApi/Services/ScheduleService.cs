@@ -290,8 +290,15 @@ public class ScheduleService : IScheduleService
                 var listQuery = $"TemporalScheduledById = '{escapedId}'";
                 var scheduledStartKey = Temporalio.Common.SearchAttributeKey.CreateDateTimeOffset("TemporalScheduledStartTime");
 
-                await foreach (var workflow in client.ListWorkflowsAsync(listQuery, new WorkflowListOptions { Limit = count }))
+                // Child workflows can inherit the parent's TemporalScheduledById search attribute,
+                // so skip them to keep only the runs the schedule started. Filtering here (rather
+                // than via ParentWorkflowId in the query) works on every visibility store; the
+                // limit is applied after filtering so children don't crowd out schedule runs.
+                await foreach (var workflow in client.ListWorkflowsAsync(listQuery))
                 {
+                    if (!string.IsNullOrEmpty(workflow.ParentId))
+                        continue;
+
                     var scheduledAt = workflow.TypedSearchAttributes.TryGetValue(scheduledStartKey, out var scheduledStart)
                         ? scheduledStart.UtcDateTime
                         : workflow.StartTime;
@@ -306,6 +313,9 @@ public class ScheduleService : IScheduleService
                         WorkflowRunId = workflow.RunId,
                         WorkflowId = workflow.Id
                     });
+
+                    if (historyRuns.Count >= count)
+                        break;
                 }
 
                 _logger.LogInformation("Retrieved {Count} history runs for schedule {ScheduleId}", historyRuns.Count, LogSanitizer.Sanitize(scheduleId));

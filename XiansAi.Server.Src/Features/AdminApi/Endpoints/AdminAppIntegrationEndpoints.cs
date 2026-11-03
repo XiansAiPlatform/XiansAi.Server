@@ -188,6 +188,81 @@ public static class AdminAppIntegrationEndpoints
         .Produces(StatusCodes.Status404NotFound)
         .RequireCapability(CapabilityActions.TenantWebhooksDelete);
 
+        webhookGroup.MapGet("{integrationId}/incomings", async (
+            string tenantId,
+            string integrationId,
+            [FromQuery] DateTime? afterReceivedAt,
+            [FromQuery] Guid? afterId,
+            [FromServices] IWebhookIncomingService incomingService,
+            [FromQuery] int limit = 50) =>
+        {
+            if (afterReceivedAt.HasValue != afterId.HasValue)
+            {
+                return Results.BadRequest("afterReceivedAt and afterId must be passed together");
+            }
+            var after = afterReceivedAt.HasValue ? new WebhookIncomingCursor(afterReceivedAt.Value, afterId!.Value) : null;
+            var result = await incomingService.ListAsync(tenantId, integrationId, after, limit);
+            return result.ToHttpResult();
+        })
+        .WithName("ListWebhookIncomings")
+
+        .Produces<WebhookIncomingPage>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status400BadRequest)
+        .Produces(StatusCodes.Status404NotFound)
+        .RequireCapability(CapabilityActions.TenantWebhookIncomingsList);
+
+        webhookGroup.MapGet("{integrationId}/incomings/{incomingId:guid}", async (
+            string tenantId,
+            string integrationId,
+            Guid incomingId,
+            [FromServices] IWebhookIncomingService incomingService) =>
+        {
+            var result = await incomingService.GetAsync(tenantId, integrationId, incomingId);
+            return result.ToHttpResult();
+        })
+        .WithName("GetWebhookIncoming")
+
+        .Produces<WebhookIncoming>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status404NotFound)
+        .RequireCapability(CapabilityActions.TenantWebhookIncomingsGet);
+
+        webhookGroup.MapDelete("{integrationId}/incomings/{incomingId:guid}", async (
+            string tenantId,
+            string integrationId,
+            Guid incomingId,
+            [FromServices] IWebhookIncomingService incomingService) =>
+        {
+            var result = await incomingService.DeleteAsync(tenantId, integrationId, incomingId);
+            if (!result.IsSuccess)
+            {
+                return result.ToHttpResult();
+            }
+            return Results.Ok(new { message = "Incoming call deleted successfully" });
+        })
+        .WithName("DeleteWebhookIncoming")
+
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status404NotFound)
+        .RequireCapability(CapabilityActions.TenantWebhookIncomingsDelete);
+
+        webhookGroup.MapDelete("{integrationId}/incomings", async (
+            string tenantId,
+            string integrationId,
+            [FromServices] IWebhookIncomingService incomingService) =>
+        {
+            var result = await incomingService.DeleteAllAsync(tenantId, integrationId);
+            if (!result.IsSuccess)
+            {
+                return result.ToHttpResult();
+            }
+            return Results.Ok(new { message = $"Deleted {result.Data} incoming call(s)", deletedCount = result.Data });
+        })
+        .WithName("DeleteWebhookIncomings")
+
+        .Produces(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status404NotFound)
+        .RequireCapability(CapabilityActions.TenantWebhookIncomingsDeleteAll);
+
         // Tenant-specific integration endpoints
         var integrationGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/integrations")
             .WithTags("AdminAPI - App Integrations")
