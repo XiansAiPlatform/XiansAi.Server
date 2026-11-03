@@ -34,7 +34,12 @@ public class ScheduleRunModel
     /// Workflow run ID if execution started
     /// </summary>
     public string? WorkflowRunId { get; set; }
-    
+
+    /// <summary>
+    /// Workflow ID of the started execution, used to link to its activity log stream
+    /// </summary>
+    public string? WorkflowId { get; set; }
+
     /// <summary>
     /// Error details if execution failed
     /// </summary>

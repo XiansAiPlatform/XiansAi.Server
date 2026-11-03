@@ -261,6 +261,10 @@ public interface IConversationRepository
     /// </summary>
     Task<string?> TryGetThreadIdAsync(string tenantId, string workflowId, string participantId);
 
+    /// <summary>Distinct workflow IDs of the threads held by any of the participants within the tenants.</summary>
+    Task<List<string>> GetWorkflowIdsForParticipantsAsync(
+        IReadOnlyCollection<string> tenantIds, IReadOnlyCollection<string> participantIds);
+
 
     // Message operations
     Task<string> SaveMessageAsync(ConversationMessage message);
@@ -516,6 +520,24 @@ public class ConversationRepository : IConversationRepository
 
             return results;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetByTenantAndActivation");
+    }
+
+    public async Task<List<string>> GetWorkflowIdsForParticipantsAsync(
+        IReadOnlyCollection<string> tenantIds, IReadOnlyCollection<string> participantIds)
+    {
+        if (tenantIds.Count == 0 || participantIds.Count == 0)
+        {
+            return [];
+        }
+
+        var filter = Builders<ConversationThread>.Filter.In(x => x.TenantId, tenantIds)
+                     & Builders<ConversationThread>.Filter.In(x => x.ParticipantId, participantIds);
+
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var cursor = await _threadsCollection.DistinctAsync(x => x.WorkflowId, filter);
+            return await cursor.ToListAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetWorkflowIdsForParticipants");
     }
 
     public async Task<bool> DeleteThreadAsync(string id, string? tenantId = null)
