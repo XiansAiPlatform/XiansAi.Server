@@ -49,6 +49,11 @@ public interface IAppIntegrationRepository
     Task<List<AppIntegration>> GetEnabledIntegrationsAsync(string tenantId);
 
     /// <summary>
+    /// Distinct, lowercased default participant IDs configured on the tenants' integrations, enabled or not.
+    /// </summary>
+    Task<List<string>> GetDefaultParticipantIdsAsync(IReadOnlyCollection<string> tenantIds);
+
+    /// <summary>
     /// Check if an integration with the same name exists for the tenant, agent, and activation
     /// </summary>
     Task<bool> ExistsByNameAsync(string tenantId, string agentName, string activationName, string name, string? excludeId = null);
@@ -112,6 +117,29 @@ public class AppIntegrationRepository : IAppIntegrationRepository
             }
             return integration;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetAppIntegrationById");
+    }
+
+    public async Task<List<string>> GetDefaultParticipantIdsAsync(IReadOnlyCollection<string> tenantIds)
+    {
+        if (tenantIds.Count == 0)
+        {
+            return [];
+        }
+
+        var filter = Builders<AppIntegration>.Filter.In(x => x.TenantId, tenantIds)
+                     & Builders<AppIntegration>.Filter.Ne(x => x.MappingConfig.DefaultParticipantId, null);
+
+        var values = await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var cursor = await _integrations.DistinctAsync(x => x.MappingConfig.DefaultParticipantId, filter);
+            return await cursor.ToListAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetDefaultParticipantIds");
+
+        return values
+            .Where(value => !string.IsNullOrWhiteSpace(value))
+            .Select(value => value!.Trim().ToLowerInvariant())
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
     }
 
     public async Task<List<AppIntegration>> GetByTenantIdAsync(string tenantId)
