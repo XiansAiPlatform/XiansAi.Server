@@ -30,6 +30,7 @@ public static class WebhookEndpoints
             [FromServices] IApiKeyService apiKeyService,
             [FromServices] IActivationValidationService activationValidationService,
             [FromServices] IFlowDefinitionRepository flowDefinitionRepository,
+            [FromServices] IWebhookIncomingService webhookIncomingService,
             [FromServices] ILogger<SyncMessageHandler> logger,
             [FromQuery] int timeoutSeconds = 60,
             [FromQuery] string? participantId = null,
@@ -111,6 +112,12 @@ public static class WebhookEndpoints
 
                 // Generate unique request ID for correlation
                 var requestId = MessageRequestProcessor.GenerateRequestId(workflowId, resolvedParticipantId);
+
+                // Record the call before the workflow runs, so it is kept even if the workflow
+                // times out or fails. Recording never throws.
+                await webhookIncomingService.RecordAsync(new BuiltinWebhookCall(
+                    tenantId, agentName, activationName, workflowName, webhookName, apikeyId,
+                    workflowId, requestId, httpContext.Request.ContentType, httpContext.Request.Headers, body));
 
                 var inboundMetadata = WebhookHeaderCapture.Capture(httpContext.Request.Headers);
 

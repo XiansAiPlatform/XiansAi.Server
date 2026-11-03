@@ -1,3 +1,4 @@
+using System.Text;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
@@ -20,6 +21,12 @@ public class WebhookIncoming
         "Cookie",
         "X-Api-Key"
     };
+
+    /// <summary>
+    /// Largest document MongoDB accepts (16 MB). Covers the whole row; when a call is bigger, its
+    /// body is truncated to fit.
+    /// </summary>
+    public const int MaxDocumentBytes = 16 * 1024 * 1024;
 
     /// <summary>Delivery id. A UUID v7, so ids sort in the order they were created.</summary>
     [BsonId]
@@ -51,13 +58,42 @@ public class WebhookIncoming
     [BsonElement("headers")]
     public List<WebhookIncomingHeader> Headers { get; set; } = new();
 
-    /// <summary>Raw request body, kept exactly as received so signatures still verify on redelivery.</summary>
+    /// <summary>
+    /// Raw request body, kept exactly as received so signatures still verify on redelivery,
+    /// unless <see cref="BodyTruncated"/> is set.
+    /// </summary>
     [BsonElement("body")]
     public string Body { get; set; } = string.Empty;
+
+    /// <summary>
+    /// True when the body was cut short to fit <see cref="MaxDocumentBytes"/>. A truncated call
+    /// cannot be redelivered: the stored body is not what was sent, so its signature would not verify.
+    /// </summary>
+    [BsonElement("body_truncated")]
+    public bool BodyTruncated { get; set; }
 
     /// <summary>Target workflow id: <c>{tenantId}:{agentName}:{workflowName}[:{activationName}]</c>.</summary>
     [BsonElement("workflow_id")]
     public required string WorkflowId { get; set; }
+
+    /// <summary>
+    /// Cuts the body so the whole row is at most <paramref name="maxBytes"/> when serialized,
+    /// never splitting a character, and sets <see cref="BodyTruncated"/>.
+    /// </summary>
+    /// <param name="rowBytes">The row's current serialized size.</param>
+    public void TruncateBody(int rowBytes, int maxBytes)
+    {
+        var body = Encoding.UTF8.GetBytes(Body);
+        var keep = Math.Max(0, body.Length - (rowBytes - maxBytes));
+        // Back up to the start of a character: UTF-8 continuation bytes look like 10xxxxxx.
+        while (keep > 0 && keep < body.Length && (body[keep] & 0xC0) == 0x80)
+        {
+            keep--;
+        }
+
+        Body = Encoding.UTF8.GetString(body, 0, keep);
+        BodyTruncated = true;
+    }
 
     /// <summary>Drops every header in <see cref="CredentialHeaders"/>, whatever its casing.</summary>
     /// <returns>The number of headers removed.</returns>
@@ -76,7 +112,7 @@ public class WebhookIncomingHeader
 }
 
 /// <summary>The fields shown for an incoming call in a list.</summary>
-public record WebhookIncomingSummary(Guid Id, string RequestId, DateTime ReceivedAt);
+public record WebhookIncomingSummary(Guid Id, string RequestId, DateTime ReceivedAt, bool BodyTruncated);
 
 /// <summary>
 /// Position in a list of incoming calls sorted newest first. Pass the last row of one page to get the next.

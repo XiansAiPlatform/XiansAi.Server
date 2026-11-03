@@ -61,6 +61,66 @@ public class WebhookIncomingRepositoryTests : IClassFixture<MongoDbFixture>
     }
 
     [Fact]
+    public async Task InsertTruncatesABodyOverTheDocumentLimitAndFlagsIt()
+    {
+        var tenant = NewTenant();
+        var row = Incoming(tenant, 0);
+        row.Body = new string('a', WebhookIncoming.MaxDocumentBytes + 1024);
+
+        await _repository.InsertAsync(row);
+
+        var raw = await _database.GetCollection<BsonDocument>("webhook_incomings")
+            .Find(new BsonDocument("tenant_id", tenant)).SingleAsync();
+        Assert.True(raw["body_truncated"].AsBoolean);
+        Assert.True(raw.ToBson().Length <= WebhookIncoming.MaxDocumentBytes);
+        Assert.StartsWith("aaaa", raw["body"].AsString);
+
+        var listed = Assert.Single(await _repository.ListAsync(tenant, Integration, null, 10));
+        Assert.True(listed.BodyTruncated);
+    }
+
+    [Fact]
+    public async Task InsertSavesALargeBodyThatFitsUntouched()
+    {
+        var tenant = NewTenant();
+        var row = Incoming(tenant, 0);
+        row.Body = new string('a', WebhookIncoming.MaxDocumentBytes - 64 * 1024);
+        var body = row.Body;
+
+        await _repository.InsertAsync(row);
+
+        var saved = await _repository.GetAsync(tenant, Integration, row.Id);
+        Assert.Equal(body, saved!.Body);
+        Assert.False(saved.BodyTruncated);
+    }
+
+    [Fact]
+    public void TruncateBodyNeverSplitsACharacter()
+    {
+        var row = Incoming(NewTenant(), 0);
+        row.Body = "ab€€";  // '€' is 3 bytes in UTF-8, so the body is 8 bytes
+
+        row.TruncateBody(rowBytes: 100, maxBytes: 95);  // drop 5 bytes, leaving 3: "ab" plus a partial '€'
+
+        Assert.Equal("ab", row.Body);
+        Assert.True(row.BodyTruncated);
+    }
+
+    [Fact]
+    public async Task DeleteRemovesOnlyThatCallWithinItsTenant()
+    {
+        var tenant = NewTenant();
+        var rows = await InsertMinutesAsync(tenant, 0, 1);
+
+        Assert.False(await _repository.DeleteAsync(NewTenant(), Integration, rows[0].Id));
+        Assert.True(await _repository.DeleteAsync(tenant, Integration, rows[0].Id));
+        Assert.False(await _repository.DeleteAsync(tenant, Integration, rows[0].Id));
+
+        var left = await _repository.ListAsync(tenant, Integration, null, 10);
+        Assert.Equal([rows[1].Id], left.Select(r => r.Id));
+    }
+
+    [Fact]
     public async Task InsertStoresSnakeCaseFieldsAndUuidId()
     {
         var tenant = NewTenant();
@@ -72,7 +132,7 @@ public class WebhookIncomingRepositoryTests : IClassFixture<MongoDbFixture>
         Assert.Equal(BsonType.Binary, raw["_id"].BsonType);
         Assert.Equal(BsonBinarySubType.UuidStandard, raw["_id"].AsBsonBinaryData.SubType);
         Assert.Equal(row.Id, raw["_id"].AsGuid);
-        foreach (var field in new[] { "integration_id", "request_id", "received_at", "content_type", "headers", "body", "workflow_id" })
+        foreach (var field in new[] { "integration_id", "request_id", "received_at", "content_type", "headers", "body", "body_truncated", "workflow_id" })
         {
             Assert.True(raw.Contains(field), $"missing {field}");
         }

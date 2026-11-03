@@ -1,3 +1,4 @@
+using MongoDB.Bson;
 using MongoDB.Driver;
 using Shared.Data;
 using Shared.Data.Models;
@@ -15,6 +16,8 @@ public interface IWebhookIncomingRepository
     /// Saves one incoming call. Credential headers are removed from <paramref name="incoming"/>
     /// first, so a caller cannot persist them by mistake.
     /// </summary>
+    /// A row larger than <see cref="WebhookIncoming.MaxDocumentBytes"/> is saved with its body
+    /// truncated and <see cref="WebhookIncoming.BodyTruncated"/> set.
     Task InsertAsync(WebhookIncoming incoming);
 
     /// <summary>
@@ -31,11 +34,14 @@ public interface IWebhookIncomingRepository
 
     /// <summary>
     /// Keeps the newest <paramref name="keep"/> calls for a connection and deletes the rest.
-    /// Finding the cut-off walks <paramref name="keep"/> index entries, so on a busy webhook call it
-    /// every few inserts or from a background sweep rather than after each insert.
+    /// Finding the cut-off walks <paramref name="keep"/> index entries, so keep it small (hundreds).
     /// </summary>
     /// <returns>The number of rows deleted.</returns>
     Task<long> TrimAsync(string tenantId, string integrationId, int keep);
+
+    /// <summary>Deletes one incoming call.</summary>
+    /// <returns>False when it does not exist for this tenant and connection.</returns>
+    Task<bool> DeleteAsync(string tenantId, string integrationId, Guid id);
 
     /// <summary>Deletes every incoming call for a connection.</summary>
     /// <returns>The number of rows deleted.</returns>
@@ -73,6 +79,15 @@ public class WebhookIncomingRepository : IWebhookIncomingRepository
         if (removed > 0)
         {
             _logger.LogDebug("Removed {Count} credential header(s) from webhook incoming {Id}", removed, incoming.Id);
+        }
+
+        var size = incoming.ToBson().Length;
+        if (size > WebhookIncoming.MaxDocumentBytes)
+        {
+            incoming.TruncateBody(size, WebhookIncoming.MaxDocumentBytes);
+            _logger.LogWarning(
+                "Webhook incoming {Id} is {Size} bytes, over the {Max}-byte document limit; body truncated and the call cannot be redelivered",
+                incoming.Id, size, WebhookIncoming.MaxDocumentBytes);
         }
 
         try
@@ -143,6 +158,17 @@ public class WebhookIncomingRepository : IWebhookIncomingRepository
         return result.DeletedCount;
     }
 
+    public async Task<bool> DeleteAsync(string tenantId, string integrationId, Guid id)
+    {
+        var filter = ByIntegration(tenantId, integrationId) & Filter.Eq(i => i.Id, id);
+
+        var result = await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+            await _collection.DeleteOneAsync(filter),
+            _logger, maxRetries: 3, baseDelayMs: 100, operationName: "DeleteWebhookIncoming");
+
+        return result.DeletedCount > 0;
+    }
+
     public async Task<long> DeleteByIntegrationAsync(string tenantId, string integrationId)
     {
         var result = await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
@@ -160,7 +186,7 @@ public class WebhookIncomingRepository : IWebhookIncomingRepository
             await _collection.Find(filter)
                 .Sort(NewestFirst)
                 .Limit(Math.Clamp(limit, 1, MaxPageSize))
-                .Project(i => new WebhookIncomingSummary(i.Id, i.RequestId, i.ReceivedAt))
+                .Project(i => new WebhookIncomingSummary(i.Id, i.RequestId, i.ReceivedAt, i.BodyTruncated))
                 .ToListAsync(),
             _logger, maxRetries: 3, baseDelayMs: 100, operationName: operationName);
     }
