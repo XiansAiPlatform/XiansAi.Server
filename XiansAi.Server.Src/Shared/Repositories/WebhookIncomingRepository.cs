@@ -2,6 +2,7 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 using Shared.Data;
 using Shared.Data.Models;
+using Shared.Services;
 using Shared.Utils;
 
 namespace Shared.Repositories;
@@ -13,8 +14,8 @@ namespace Shared.Repositories;
 public interface IWebhookIncomingRepository
 {
     /// <summary>
-    /// Saves one incoming call. Credential headers are removed from <paramref name="incoming"/>
-    /// first, so a caller cannot persist them by mistake.
+    /// Saves one incoming call. Credential headers in <paramref name="incoming"/> are encrypted
+    /// first, so a caller cannot persist them in plain text by mistake.
     /// </summary>
     /// A row larger than <see cref="WebhookIncoming.MaxDocumentBytes"/> is saved with its body
     /// truncated and <see cref="WebhookIncoming.BodyTruncated"/> set.
@@ -62,10 +63,15 @@ public class WebhookIncomingRepository : IWebhookIncomingRepository
         .Descending(i => i.Id);
 
     private readonly IMongoCollection<WebhookIncoming> _collection;
+    private readonly ISecretsEncryptionService _encryption;
     private readonly ILogger<WebhookIncomingRepository> _logger;
 
-    public WebhookIncomingRepository(IDatabaseService databaseService, ILogger<WebhookIncomingRepository> logger)
+    public WebhookIncomingRepository(
+        IDatabaseService databaseService,
+        ISecretsEncryptionService encryption,
+        ILogger<WebhookIncomingRepository> logger)
     {
+        _encryption = encryption ?? throw new ArgumentNullException(nameof(encryption));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         var database = databaseService.GetDatabaseAsync().GetAwaiter().GetResult();
         _collection = database.GetCollection<WebhookIncoming>(CollectionName);
@@ -75,10 +81,10 @@ public class WebhookIncomingRepository : IWebhookIncomingRepository
     {
         ArgumentNullException.ThrowIfNull(incoming);
 
-        var removed = incoming.RemoveCredentialHeaders();
-        if (removed > 0)
+        var encrypted = incoming.EncryptCredentialHeaders(value => _encryption.Encrypt(value) ?? string.Empty);
+        if (encrypted > 0)
         {
-            _logger.LogDebug("Removed {Count} credential header(s) from webhook incoming {Id}", removed, incoming.Id);
+            _logger.LogDebug("Encrypted {Count} credential header(s) of webhook incoming {Id}", encrypted, incoming.Id);
         }
 
         var size = incoming.ToBson().Length;

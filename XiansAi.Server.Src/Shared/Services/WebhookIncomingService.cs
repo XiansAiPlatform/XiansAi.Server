@@ -1,4 +1,6 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Options;
+using Shared.Configuration;
 using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Utils.Services;
@@ -29,13 +31,14 @@ public interface IWebhookIncomingService
 {
     /// <summary>
     /// Saves the call against its builtin webhook and drops calls beyond
-    /// <see cref="WebhookIncomingService.MaxPerWebhook"/>. Never throws: a call that cannot be
+    /// <see cref="WebhookIncomingsOptions.MaxPerWebhook"/>. Never throws: a call that cannot be
     /// recorded is logged and the webhook carries on.
     /// </summary>
     Task RecordAsync(BuiltinWebhookCall call);
 
     Task<ServiceResult<WebhookIncomingPage>> ListAsync(string tenantId, string integrationId, WebhookIncomingCursor? after, int limit);
 
+    /// <summary>One call. Encrypted header values are replaced by <see cref="WebhookIncomingService.MaskedValue"/>.</summary>
     Task<ServiceResult<WebhookIncoming>> GetAsync(string tenantId, string integrationId, Guid id);
 
     Task<ServiceResult<bool>> DeleteAsync(string tenantId, string integrationId, Guid id);
@@ -46,22 +49,25 @@ public interface IWebhookIncomingService
 
 public class WebhookIncomingService : IWebhookIncomingService
 {
-    /// <summary>How many calls each builtin webhook keeps; older ones are deleted as new ones arrive.</summary>
-    public const int MaxPerWebhook = 100;
+    /// <summary>Shown in place of an encrypted header value; the real value never leaves the server.</summary>
+    public const string MaskedValue = "********";
 
     private const string BuiltinWebhookPlatformId = "builtin_webhook";
 
     private readonly IWebhookIncomingRepository _incomings;
     private readonly IAppIntegrationRepository _integrations;
+    private readonly WebhookIncomingsOptions _options;
     private readonly ILogger<WebhookIncomingService> _logger;
 
     public WebhookIncomingService(
         IWebhookIncomingRepository incomings,
         IAppIntegrationRepository integrations,
+        IOptions<WebhookIncomingsOptions> options,
         ILogger<WebhookIncomingService> logger)
     {
         _incomings = incomings ?? throw new ArgumentNullException(nameof(incomings));
         _integrations = integrations ?? throw new ArgumentNullException(nameof(integrations));
+        _options = options?.Value ?? throw new ArgumentNullException(nameof(options));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -89,7 +95,7 @@ public class WebhookIncomingService : IWebhookIncomingService
                 WorkflowId = call.WorkflowId
             });
 
-            await _incomings.TrimAsync(call.TenantId, integration.Id, MaxPerWebhook);
+            await _incomings.TrimAsync(call.TenantId, integration.Id, _options.MaxPerWebhook);
         }
         catch (Exception ex)
         {
@@ -114,9 +120,14 @@ public class WebhookIncomingService : IWebhookIncomingService
             return ServiceResult<WebhookIncoming>.NotFound("Webhook not found");
 
         var incoming = await _incomings.GetAsync(tenantId, integrationId, id);
-        return incoming == null
-            ? ServiceResult<WebhookIncoming>.NotFound("Incoming call not found")
-            : ServiceResult<WebhookIncoming>.Success(incoming);
+        if (incoming == null)
+            return ServiceResult<WebhookIncoming>.NotFound("Incoming call not found");
+
+        foreach (var header in incoming.Headers.Where(h => h.Encrypted))
+        {
+            header.Value = MaskedValue;
+        }
+        return ServiceResult<WebhookIncoming>.Success(incoming);
     }
 
     public async Task<ServiceResult<bool>> DeleteAsync(string tenantId, string integrationId, Guid id)

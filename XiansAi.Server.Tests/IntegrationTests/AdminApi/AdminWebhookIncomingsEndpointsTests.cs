@@ -49,7 +49,11 @@ public class AdminWebhookIncomingsEndpointsTests : AdminApiIntegrationTestBase
             .ToList();
         Assert.Contains(("X-GitHub-Event", "issues"), headers);
         Assert.Contains(("X-Hub-Signature-256", "sha256=abc"), headers);
-        Assert.DoesNotContain(headers, h => h.Name.Equals("Cookie", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(("Cookie", "********"), headers);
+
+        var stored = await _database.GetCollection<BsonDocument>("webhook_incomings")
+            .Find(new BsonDocument("tenant_id", tenantId)).SingleAsync();
+        Assert.DoesNotContain("session=secret", stored["headers"].ToJson());
 
         var delete = await DeleteAsync($"/api/v1/admin/tenants/{tenantId}/webhooks/{webhookId}/incomings/{incomingId}");
         Assert.Equal(HttpStatusCode.OK, delete.StatusCode);

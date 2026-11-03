@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Primitives;
 using Moq;
+using Shared.Configuration;
 using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Services;
@@ -12,12 +14,18 @@ namespace XiansAi.Server.Tests.UnitTests.Shared.Services;
 public class WebhookIncomingServiceTests
 {
     private readonly Mock<IWebhookIncomingRepository> _incomings = new();
+    private const int MaxPerWebhook = 25;
+
     private readonly Mock<IAppIntegrationRepository> _integrations = new();
     private readonly WebhookIncomingService _service;
 
     public WebhookIncomingServiceTests()
     {
-        _service = new WebhookIncomingService(_incomings.Object, _integrations.Object, NullLogger<WebhookIncomingService>.Instance);
+        _service = new WebhookIncomingService(
+            _incomings.Object,
+            _integrations.Object,
+            Options.Create(new WebhookIncomingsOptions { MaxPerWebhook = MaxPerWebhook }),
+            NullLogger<WebhookIncomingService>.Instance);
     }
 
     [Fact]
@@ -46,7 +54,7 @@ public class WebhookIncomingServiceTests
         Assert.Equal(
             [("X-GitHub-Event", "pull_request"), ("X-Repeated", "a"), ("X-Repeated", "b")],
             saved.Headers.Select(h => (h.Name, h.Value)));
-        _incomings.Verify(r => r.TrimAsync("tenant", webhook.Id, WebhookIncomingService.MaxPerWebhook), Times.Once);
+        _incomings.Verify(r => r.TrimAsync("tenant", webhook.Id, MaxPerWebhook), Times.Once);
     }
 
     [Fact]
@@ -160,6 +168,32 @@ public class WebhookIncomingServiceTests
 
         Assert.Equal(StatusCode.NotFound, (await _service.GetAsync("tenant", webhook.Id, id)).StatusCode);
         Assert.Equal(StatusCode.NotFound, (await _service.DeleteAsync("tenant", webhook.Id, id)).StatusCode);
+    }
+
+    [Fact]
+    public async Task GetMasksEncryptedHeaderValues()
+    {
+        var webhook = GivenWebhookById();
+        var id = Guid.CreateVersion7();
+        _incomings.Setup(r => r.GetAsync("tenant", webhook.Id, id)).ReturnsAsync(new WebhookIncoming
+        {
+            Id = id,
+            TenantId = "tenant",
+            IntegrationId = webhook.Id,
+            RequestId = "request-1",
+            WorkflowId = "tenant:agent:Integrator Workflow:activation",
+            Headers =
+            [
+                new() { Name = "X-GitHub-Event", Value = "issues" },
+                new() { Name = "Authorization", Value = "ciphertext", Encrypted = true }
+            ]
+        });
+
+        var result = await _service.GetAsync("tenant", webhook.Id, id);
+
+        Assert.Equal(
+            [("X-GitHub-Event", "issues"), ("Authorization", WebhookIncomingService.MaskedValue)],
+            result.Data!.Headers.Select(h => (h.Name, h.Value)));
     }
 
     [Fact]

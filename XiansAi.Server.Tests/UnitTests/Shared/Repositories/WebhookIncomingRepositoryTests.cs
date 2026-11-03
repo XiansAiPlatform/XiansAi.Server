@@ -5,6 +5,7 @@ using Moq;
 using Shared.Data;
 using Shared.Data.Models;
 using Shared.Repositories;
+using Shared.Services;
 using Tests.TestUtils;
 using Xunit;
 
@@ -29,10 +30,21 @@ public class WebhookIncomingRepositoryTests : IClassFixture<MongoDbFixture>
         _database = fixture.Database;
         var databaseService = new Mock<IDatabaseService>();
         databaseService.Setup(x => x.GetDatabaseAsync()).ReturnsAsync(_database);
-        _repository = new WebhookIncomingRepository(databaseService.Object, NullLogger<WebhookIncomingRepository>.Instance);
+        _repository = new WebhookIncomingRepository(databaseService.Object, FakeEncryption().Object, NullLogger<WebhookIncomingRepository>.Instance);
     }
 
     private static string NewTenant() => $"tenant-{Guid.NewGuid():N}";
+
+    /// <summary>Reversible stand-in for AES: base64 behind a marker, so tests can see what was encrypted.</summary>
+    private static Mock<ISecretsEncryptionService> FakeEncryption()
+    {
+        var encryption = new Mock<ISecretsEncryptionService>();
+        encryption.Setup(e => e.Encrypt(It.IsAny<string?>()))
+            .Returns<string?>(s => "enc:" + Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(s ?? string.Empty)));
+        encryption.Setup(e => e.Decrypt(It.IsAny<string?>()))
+            .Returns<string?>(s => System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(s!["enc:".Length..])));
+        return encryption;
+    }
 
     private static WebhookIncoming Incoming(string tenantId, int minute, string integrationId = Integration) => new()
     {
@@ -139,7 +151,7 @@ public class WebhookIncomingRepositoryTests : IClassFixture<MongoDbFixture>
     }
 
     [Fact]
-    public async Task InsertNeverStoresCredentialHeaders()
+    public async Task InsertEncryptsCredentialHeadersAndKeepsThemForRedelivery()
     {
         var tenant = NewTenant();
         var row = Incoming(tenant, 0);
@@ -151,10 +163,50 @@ public class WebhookIncomingRepositoryTests : IClassFixture<MongoDbFixture>
 
         var raw = await _database.GetCollection<BsonDocument>("webhook_incomings")
             .Find(new BsonDocument("tenant_id", tenant)).SingleAsync();
-
         Assert.DoesNotContain("secret", raw["headers"].ToJson());
-        var stored = (await _repository.GetAsync(tenant, Integration, row.Id))!.Headers.Select(h => h.Name);
-        Assert.Equal(new[] { "X-GitHub-Event", "X-Hub-Signature-256" }, stored);
+
+        var stored = (await _repository.GetAsync(tenant, Integration, row.Id))!;
+        Assert.Equal(
+            new[] { false, false, true, true, true, true },
+            stored.Headers.Select(h => h.Encrypted));
+
+        var encryption = FakeEncryption().Object;
+        var original = stored.DecryptedHeaders(v => encryption.Decrypt(v)!).Select(h => (h.Name, h.Value));
+        Assert.Equal(
+            new[]
+            {
+                ("X-GitHub-Event", "pull_request"),
+                ("X-Hub-Signature-256", "sha256=abc"),
+                ("Authorization", "Bearer secret"),
+                ("cookie", "session=secret"),
+                ("X-API-KEY", "secret"),
+                ("Proxy-Authorization", "Basic secret")
+            },
+            original);
+    }
+
+    [Fact]
+    public async Task InsertLeavesOtherHeadersUnencryptedAndOmitsTheFlag()
+    {
+        var tenant = NewTenant();
+        await InsertMinutesAsync(tenant, 0);
+
+        var raw = await _database.GetCollection<BsonDocument>("webhook_incomings")
+            .Find(new BsonDocument("tenant_id", tenant)).SingleAsync();
+        var headers = raw["headers"].AsBsonArray.Select(h => h.AsBsonDocument).ToList();
+        Assert.Equal("sha256=abc", headers[1]["value"].AsString);
+        Assert.All(headers, h => Assert.False(h.Contains("encrypted")));
+    }
+
+    [Fact]
+    public void EncryptCredentialHeadersNeverEncryptsTwice()
+    {
+        var row = Incoming(NewTenant(), 0);
+        row.Headers.Add(new() { Name = "Authorization", Value = "Bearer secret" });
+
+        Assert.Equal(1, row.EncryptCredentialHeaders(v => "x" + v));
+        Assert.Equal(0, row.EncryptCredentialHeaders(v => "x" + v));
+        Assert.Equal("xBearer secret", row.Headers[^1].Value);
     }
 
     [Fact]
