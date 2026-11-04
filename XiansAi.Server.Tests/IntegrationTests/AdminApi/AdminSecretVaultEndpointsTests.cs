@@ -1,4 +1,5 @@
 using System.Net;
+using Features.AdminApi.Auth;
 using Features.AdminApi.Endpoints;
 using Shared.Services;
 using Tests.TestUtils;
@@ -109,5 +110,59 @@ public class AdminSecretVaultEndpointsTests : AdminApiIntegrationTestBase
 
         var getAfterDelete = await GetAsync($"/api/v1/admin/secrets/{created.Id}");
         Assert.Equal(HttpStatusCode.NotFound, getAfterDelete.StatusCode);
+    }
+
+    [Fact]
+    public async Task CreateSecret_WithOnBehalfOfHeader_RecordsHeaderIdentityAsCreatedBy()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+        const string onBehalfOf = "developer@example.com";
+        _client.HttpClient.DefaultRequestHeaders.Add(AdminOnBehalfOfBinder.HeaderName, onBehalfOf);
+
+        var create = await PostAsJsonAsync("/api/v1/admin/secrets", new SecretVaultCreateRequest
+        {
+            Key = $"vault-{Guid.NewGuid()}",
+            Value = "admin-s3cr3t",
+            TenantId = tenantId
+        });
+
+        Assert.True(create.IsSuccessStatusCode, $"Create failed with {create.StatusCode}");
+        var created = await ReadAsJsonAsync<SecretVaultMetadataResponse>(create);
+        Assert.NotNull(created);
+        Assert.Equal(onBehalfOf, created!.CreatedBy);
+        Assert.NotEqual(_adminUserId, created.CreatedBy);
+
+        var update = await PutAsJsonAsync($"/api/v1/admin/secrets/{created.Id}", new SecretVaultUpdateRequest
+        {
+            Value = "rotated-secret",
+            TenantId = tenantId
+        });
+        Assert.True(update.IsSuccessStatusCode, $"Update failed with {update.StatusCode}");
+        var updated = await ReadAsJsonAsync<SecretVaultMetadataResponse>(update);
+        Assert.NotNull(updated);
+        Assert.Equal(onBehalfOf, updated!.UpdatedBy);
+        Assert.Equal(onBehalfOf, updated.CreatedBy);
+    }
+
+    [Fact]
+    public async Task CreateSecret_WithoutOnBehalfOfHeader_RecordsApiKeyOwnerAsCreatedBy()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+
+        var create = await PostAsJsonAsync("/api/v1/admin/secrets", new SecretVaultCreateRequest
+        {
+            Key = $"vault-{Guid.NewGuid()}",
+            Value = "admin-s3cr3t",
+            TenantId = tenantId
+        });
+
+        Assert.True(create.IsSuccessStatusCode, $"Create failed with {create.StatusCode}");
+        var created = await ReadAsJsonAsync<SecretVaultMetadataResponse>(create);
+        Assert.NotNull(created);
+        Assert.Equal(_adminUserId, created!.CreatedBy);
     }
 }

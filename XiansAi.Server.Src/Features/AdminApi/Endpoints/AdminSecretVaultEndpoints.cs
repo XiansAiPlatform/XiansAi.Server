@@ -37,7 +37,7 @@ public static class AdminSecretVaultEndpoints
                 return forbiddenResult!.ToHttpResult();
             }
 
-            var actor = tenantContext.LoggedInUser ?? "system";
+            var actor = ResolveActor(tenantContext);
             var input = new SecretVaultCreateInput(
                 request.Key,
                 request.Value,
@@ -160,7 +160,7 @@ public static class AdminSecretVaultEndpoints
                 return forbiddenResult!.ToHttpResult();
             }
 
-            var actor = tenantContext.LoggedInUser ?? "system";
+            var actor = ResolveActor(tenantContext);
             var input = new SecretVaultUpdateInput(
                 request.Value,
                 effectiveTenantId,
@@ -192,6 +192,18 @@ public static class AdminSecretVaultEndpoints
         .WithName("DeleteSecret")
         .RequireCapability(CapabilityActions.TenantSecretsDelete)
         ;
+    }
+
+    /// <summary>
+    /// Audit identity for CreatedBy/UpdatedBy. Trusted clients (Agent Studio) send the signed-in
+    /// user on <c>X-On-Behalf-Of</c>, which is stored on <see cref="ITenantContext.ParticipantId"/>.
+    /// When that header is missing or invalid, ParticipantId already falls back to the API-key owner.
+    /// </summary>
+    internal static string ResolveActor(ITenantContext tenantContext)
+    {
+        return string.IsNullOrWhiteSpace(tenantContext.ParticipantId)
+            ? "system"
+            : tenantContext.ParticipantId;
     }
 
     /// <summary>

@@ -127,7 +127,7 @@ The Admin API can **manage** secrets (create / update / delete / list / probe by
 | PUT | `/{id}` | Update secret (value, scope, additionalData). Response is metadata only. |
 | DELETE | `/{id}` | Delete secret. |
 
-**CreatedBy / UpdatedBy** are set from `ITenantContext.LoggedInUser` (fallback `"system"`).
+**CreatedBy / UpdatedBy** are set from `ITenantContext.ParticipantId` (the `X-On-Behalf-Of` identity when a trusted client sends it, otherwise `LoggedInUser`; fallback `"system"`).
 
 ### Agent API (`/api/agent/secrets`)
 

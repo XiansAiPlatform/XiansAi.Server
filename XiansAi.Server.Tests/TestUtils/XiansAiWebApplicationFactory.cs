@@ -160,11 +160,22 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
                 return new CertificateGenerator(testConfig, logger, env);
             });
 
-            // Mock ITenantContext to provide test context
+            // Mock ITenantContext to provide test context.
+            // ParticipantId tracks LoggedInUser until something sets it, matching TenantContext.
+            // Admin API tests rely on that fallback when X-On-Behalf-Of is absent.
+            var loggedInUser = "test-user";
+            string? explicitParticipantId = null;
             var mockTenantContext = new Mock<ITenantContext>();
             mockTenantContext.SetupProperty<string>(x => x.TenantId, TestTenantId);
-            mockTenantContext.SetupProperty<string>(x => x.LoggedInUser, "test-user");
-            mockTenantContext.SetupProperty<string>(x => x.ParticipantId, "test-user");
+            mockTenantContext.SetupGet(x => x.LoggedInUser).Returns(() => loggedInUser);
+            mockTenantContext
+                .SetupSet(x => x.LoggedInUser = It.IsAny<string>())
+                .Callback<string>(value => loggedInUser = value);
+            mockTenantContext.SetupGet(x => x.ParticipantId)
+                .Returns(() => explicitParticipantId ?? loggedInUser);
+            mockTenantContext
+                .SetupSet(x => x.ParticipantId = It.IsAny<string>())
+                .Callback<string>(value => explicitParticipantId = value);
             // Settable so the auth handlers' value survives, and defaulted to the credential the
             // integration tests actually authenticate with.
             mockTenantContext.SetupProperty(x => x.UserType, UserType.UserApiKey);
