@@ -230,6 +230,15 @@ public class TopicsResult
     public required PaginationMetadata Pagination { get; set; }
 }
 
+/// <summary>
+/// Unread Outgoing Chat and File messages in one topic of a thread. A null Scope is the default topic.
+/// </summary>
+public class UnreadTopicCount
+{
+    public string? Scope { get; set; }
+    public long UnreadCount { get; set; }
+}
+
 public class PaginationMetadata
 {
     public int CurrentPage { get; set; }
@@ -282,16 +291,24 @@ public interface IConversationRepository
     /// <summary>
     /// Marks every message in the thread with CreatedAt &lt;= <paramref name="cutoff"/> as read.
     /// Messages already marked read are left untouched.
+    /// <paramref name="scope"/> null covers every topic; an empty string covers only the default
+    /// (null-scope) topic; any other value covers only that topic.
     /// Returns how many Outgoing Chat or File messages were included; other messages in the window
     /// are still updated, but they are not part of the count.
     /// </summary>
-    Task<long> MarkThreadMessagesAsReadAsync(string tenantId, string threadId, DateTime cutoff);
+    Task<long> MarkThreadMessagesAsReadAsync(string tenantId, string threadId, DateTime cutoff, string? scope = null);
 
     /// <summary>
     /// Counts Outgoing Chat and File messages in the thread that are not yet marked as read.
     /// Missing or null status counts as unread. Incoming, Tool, and Reasoning messages are excluded.
     /// </summary>
     Task<long> GetUnreadMessageCountAsync(string tenantId, string threadId);
+
+    /// <summary>
+    /// Counts unread messages per topic under the same rule as <see cref="GetUnreadMessageCountAsync"/>.
+    /// Only topics with at least one unread message are returned; a null Scope is the default topic.
+    /// </summary>
+    Task<List<UnreadTopicCount>> GetUnreadCountsByScopeAsync(string tenantId, string threadId);
 
     /// <summary>
     /// Collects GridFS file ids referenced by File-type messages matching the given
@@ -952,14 +969,14 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
         }
     }
 
-    public async Task<long> MarkThreadMessagesAsReadAsync(string tenantId, string threadId, DateTime cutoff)
+    public async Task<long> MarkThreadMessagesAsReadAsync(string tenantId, string threadId, DateTime cutoff, string? scope = null)
     {
         var filter = Builders<ConversationMessage>.Filter;
         var inWindow = filter.And(
             filter.Eq(x => x.TenantId, tenantId),
-            filter.Eq(x => x.ThreadId, threadId),
             filter.Lte(x => x.CreatedAt, cutoff),
-            NotReadFilter());
+            UnreadInThreadFilter(threadId),
+            ScopeFilter(scope));
         var update = Builders<ConversationMessage>.Update.Set(x => x.Status, MessageStatus.Read);
 
         // Legacy rows first. The counted update then reports its own ModifiedCount, so a message
@@ -975,8 +992,8 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
             "MarkThreadMessagesAsRead");
 
         _logger.LogInformation(
-            "Marked {MarkedCount} outgoing chat/file messages as read in thread {ThreadId} up to {Cutoff}",
-            markedCount, LogSanitizer.Sanitize(threadId), cutoff);
+            "Marked {MarkedCount} outgoing chat/file messages as read in thread {ThreadId} scope {Scope} up to {Cutoff}",
+            markedCount, LogSanitizer.Sanitize(threadId), LogSanitizer.Sanitize(scope ?? "<all>"), cutoff);
 
         return markedCount;
     }
@@ -988,12 +1005,32 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
             var filter = Builders<ConversationMessage>.Filter;
             var unread = filter.And(
                 filter.Eq(x => x.TenantId, tenantId),
-                filter.Eq(x => x.ThreadId, threadId),
-                OutgoingChatOrFileFilter(),
-                NotReadFilter());
+                UnreadInThreadFilter(threadId),
+                OutgoingChatOrFileFilter());
 
             return await _messagesCollection.CountDocumentsAsync(unread);
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetUnreadMessageCount");
+    }
+
+    public async Task<List<UnreadTopicCount>> GetUnreadCountsByScopeAsync(string tenantId, string threadId)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var filter = Builders<ConversationMessage>.Filter;
+            var unread = filter.And(
+                filter.Eq(x => x.TenantId, tenantId),
+                UnreadInThreadFilter(threadId),
+                OutgoingChatOrFileFilter());
+
+            // Match + group are answered from the thread_unread_lookup index, whose key order
+            // (tenant_id, thread_id, status, direction, message_type, scope) matches this filter.
+            return await _messagesCollection
+                .Aggregate(new AggregateOptions { MaxTime = TimeSpan.FromSeconds(30) })
+                .Match(unread)
+                .Group(x => x.Scope, g => new UnreadTopicCount { Scope = g.Key, UnreadCount = g.LongCount() })
+                .SortBy(x => x.Scope)
+                .ToListAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetUnreadCountsByScope");
     }
 
     private async Task<long> UpdateMessagesAsReadAsync(
@@ -1020,10 +1057,36 @@ string tenantId, string threadId, int? page = null, int? pageSize = null, string
 
     /// <summary>
     /// Missing status is not Read, so legacy rows with a null status are included.
+    /// Written as <c>status in [Unread, null]</c> rather than <c>status != Read</c> so the
+    /// thread_unread_lookup index can serve the predicate.
     /// </summary>
     private static FilterDefinition<ConversationMessage> NotReadFilter()
     {
-        return Builders<ConversationMessage>.Filter.Ne(x => x.Status, MessageStatus.Read);
+        return Builders<ConversationMessage>.Filter.In(x => x.Status, new MessageStatus?[] { MessageStatus.Unread, null });
+    }
+
+    /// <summary>
+    /// Thread predicate in the index's key order: thread_id, then the not-read status.
+    /// </summary>
+    private static FilterDefinition<ConversationMessage> UnreadInThreadFilter(string threadId)
+    {
+        var filter = Builders<ConversationMessage>.Filter;
+        return filter.And(
+            filter.Eq(x => x.ThreadId, threadId),
+            NotReadFilter());
+    }
+
+    /// <summary>
+    /// null: every topic (no predicate). Empty: the default topic, stored as a null or missing scope.
+    /// Otherwise: exactly that topic.
+    /// </summary>
+    private static FilterDefinition<ConversationMessage> ScopeFilter(string? scope)
+    {
+        if (scope == null)
+        {
+            return Builders<ConversationMessage>.Filter.Empty;
+        }
+        return Builders<ConversationMessage>.Filter.Eq(x => x.Scope, scope.Length == 0 ? null : scope);
     }
 
     public async Task<List<string>> GetFileIdsByWorkflowParticipantAndScopeAsync(string tenantId, string workflowId, string participantId, string? scope)

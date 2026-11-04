@@ -81,6 +81,8 @@ public static class CapabilityActions
     public const string TenantMessagingDownloadFile = "tenant.messaging.downloadFile";
     public const string TenantMessagingTopics = "tenant.messaging.topics";
     public const string TenantMessagingHistory = "tenant.messaging.history";
+    public const string TenantMessagingUnread = "tenant.messaging.unread";
+    public const string TenantMessagingMarkRead = "tenant.messaging.markRead";
     public const string TenantMessagingDeleteByTopic = "tenant.messaging.deleteByTopic";
     public const string TenantMessagingDeleteByActivation = "tenant.messaging.deleteByActivation";
 
@@ -370,6 +372,10 @@ public static class CapabilityActions
             "List conversation topics for an agent activation."),
         new(TenantMessagingHistory, [SystemRoles.TenantParticipant, SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
             "Read conversation message history."),
+        new(TenantMessagingUnread, [SystemRoles.TenantParticipant, SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
+            "Read unread message counts for a conversation, thread-wide and per topic."),
+        new(TenantMessagingMarkRead, [SystemRoles.TenantParticipant, SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
+            "Mark a conversation thread, or one of its topics, as read."),
         new(TenantMessagingDeleteByTopic, [SystemRoles.TenantParticipant, SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
             "Delete messages in a conversation topic."),
         new(TenantMessagingDeleteByActivation, [SystemRoles.TenantAdmin],

@@ -143,6 +143,18 @@ conversation_message:
     keys:
       tenant_id: asc
       status: asc
+  # perf: serves the per-thread unread count and per-topic unread group (GetUnreadMessageCountAsync,
+  # GetUnreadCountsByScopeAsync) and the scoped mark-read filter. The status predicate is written as
+  # `status in [Unread, null]` rather than `status != Read` so this index applies.
+  - name: thread_unread_lookup
+    keys:
+      tenant_id: asc
+      thread_id: asc
+      status: asc
+      direction: asc
+      message_type: asc
+      scope: asc
+    background: true
   - name: message_type_1
     keys:
       message_type: asc
