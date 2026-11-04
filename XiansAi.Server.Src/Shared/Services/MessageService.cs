@@ -125,9 +125,19 @@ public interface IMessageService
     /// Marks all messages in the thread up to and including the given cutoff as read.
     /// The cutoff is either an explicit timestamp, or resolved from a messageId's CreatedAt.
     /// Exactly one of <paramref name="timestamp"/> or <paramref name="messageId"/> must be provided.
-    /// MarkedCount and UnreadCount include only Outgoing Chat and File messages.
+    /// <paramref name="scope"/> null marks every topic; an empty string marks only the default
+    /// (null-scope) topic; any other value marks only that topic.
+    /// MarkedCount counts what this call marked; UnreadCount stays thread-wide across every topic.
+    /// Both include only Outgoing Chat and File messages.
     /// </summary>
-    Task<ServiceResult<MarkThreadReadResult>> MarkThreadAsReadAsync(string threadId, DateTime? timestamp, string? messageId);
+    Task<ServiceResult<MarkThreadReadResult>> MarkThreadAsReadAsync(string threadId, DateTime? timestamp, string? messageId, string? scope = null);
+
+    /// <summary>
+    /// Unread Outgoing Chat and File messages in the thread for a workflow and participant:
+    /// the thread-wide total and a per-topic breakdown listing only topics with unread messages.
+    /// A missing thread yields zeros with a null ThreadId.
+    /// </summary>
+    Task<ServiceResult<ThreadUnreadResult>> GetUnreadCountsAsync(string workflowId, string participantId);
 }
 
 /// <summary>
@@ -138,6 +148,19 @@ public class MarkThreadReadResult
 {
     public long MarkedCount { get; set; }
     public long UnreadCount { get; set; }
+}
+
+/// <summary>
+/// Unread Outgoing Chat and File messages in one thread, thread-wide and per topic.
+/// </summary>
+public class ThreadUnreadResult
+{
+    /// <summary>Null when no thread exists yet for the workflow and participant.</summary>
+    public string? ThreadId { get; set; }
+    public long UnreadMessages { get; set; }
+    public int UnreadTopics { get; set; }
+    /// <summary>Only topics with a non-zero count. A null Scope is the default topic.</summary>
+    public required List<UnreadTopicCount> Topics { get; set; }
 }
 
 public class MessageService : IMessageService
@@ -802,7 +825,7 @@ public class MessageService : IMessageService
         }
     }
 
-    public async Task<ServiceResult<MarkThreadReadResult>> MarkThreadAsReadAsync(string threadId, DateTime? timestamp, string? messageId)
+    public async Task<ServiceResult<MarkThreadReadResult>> MarkThreadAsReadAsync(string threadId, DateTime? timestamp, string? messageId, string? scope = null)
     {
         try
         {
@@ -839,11 +862,11 @@ public class MessageService : IMessageService
 
             // Two separate queries, so the count is a snapshot taken after the update, not atomic with it.
             // Keep the count second: a message that lands between the calls is then included, not missed.
-            var markedCount = await _conversationRepository.MarkThreadMessagesAsReadAsync(tenantId, threadId, cutoff);
+            var markedCount = await _conversationRepository.MarkThreadMessagesAsReadAsync(tenantId, threadId, cutoff, scope);
             var unreadCount = await _conversationRepository.GetUnreadMessageCountAsync(tenantId, threadId);
 
-            _logger.LogInformation("Marked {MarkedCount} messages as read in thread {ThreadId}; {UnreadCount} remain unread",
-                markedCount, LogSanitizer.Sanitize(threadId), unreadCount);
+            _logger.LogInformation("Marked {MarkedCount} messages as read in thread {ThreadId} scope {Scope}; {UnreadCount} remain unread thread-wide",
+                markedCount, LogSanitizer.Sanitize(threadId), LogSanitizer.Sanitize(scope ?? "<all>"), unreadCount);
 
             return ServiceResult<MarkThreadReadResult>.Success(new MarkThreadReadResult
             {
@@ -855,6 +878,49 @@ public class MessageService : IMessageService
         {
             _logger.LogError(ex, "Error marking thread {ThreadId} as read", LogSanitizer.Sanitize(threadId));
             return ServiceResult<MarkThreadReadResult>.InternalServerError("An error occurred while marking the thread as read");
+        }
+    }
+
+    public async Task<ServiceResult<ThreadUnreadResult>> GetUnreadCountsAsync(string workflowId, string participantId)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(workflowId) || string.IsNullOrEmpty(participantId))
+            {
+                return ServiceResult<ThreadUnreadResult>.BadRequest("WorkflowId and ParticipantId are required");
+            }
+
+            var tenantId = _tenantContext.TenantId;
+            var threadId = await _conversationRepository.TryGetThreadIdAsync(tenantId, workflowId, participantId);
+            if (threadId == null)
+            {
+                _logger.LogInformation("Thread not found for workflowId {WorkflowId}, participant {ParticipantId}; reporting no unread messages",
+                    LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId));
+                return ServiceResult<ThreadUnreadResult>.Success(new ThreadUnreadResult
+                {
+                    ThreadId = null,
+                    UnreadMessages = 0,
+                    UnreadTopics = 0,
+                    Topics = new List<UnreadTopicCount>()
+                });
+            }
+
+            // One aggregation answers both numbers, so the total always equals the sum of the topics.
+            var topics = await _conversationRepository.GetUnreadCountsByScopeAsync(tenantId, threadId);
+
+            return ServiceResult<ThreadUnreadResult>.Success(new ThreadUnreadResult
+            {
+                ThreadId = threadId,
+                UnreadMessages = topics.Sum(t => t.UnreadCount),
+                UnreadTopics = topics.Count,
+                Topics = topics
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error getting unread counts for workflowId {WorkflowId}, participant {ParticipantId}",
+                LogSanitizer.Sanitize(workflowId), LogSanitizer.Sanitize(participantId));
+            return ServiceResult<ThreadUnreadResult>.InternalServerError("An error occurred while retrieving unread counts");
         }
     }
 
