@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.Extensions.DependencyInjection;
 using MongoDB.Bson;
 using MongoDB.Driver;
+using Shared.Auth;
 using Shared.Data;
 using Shared.Repositories;
 using Shared.Services;
@@ -225,6 +226,224 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
     }
 
     [Fact]
+    public async Task MarkThreadAsRead_WithScope_MarksOnlyThatTopicAndReportsThreadWideUnread()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+
+        var threadId = ObjectId.GenerateNewId().ToString();
+        var baseTime = DateTime.UtcNow.AddMinutes(-10);
+        var billing1 = await CreateTestMessageAsync(tenantId, threadId, baseTime, scope: "billing");
+        var billing2 = await CreateTestMessageAsync(tenantId, threadId, baseTime.AddMinutes(1), scope: "billing");
+        var billingAfterCutoff = await CreateTestMessageAsync(tenantId, threadId, baseTime.AddMinutes(5), scope: "billing");
+        var sales = await CreateTestMessageAsync(tenantId, threadId, baseTime, scope: "sales");
+        var defaultTopic = await CreateTestMessageAsync(tenantId, threadId, baseTime, scope: null);
+
+        var response = await PostAsJsonAsync(
+            $"/api/v1/admin/tenants/{tenantId}/messaging/threads/{threadId}/read",
+            new { timestamp = billing2.CreatedAt, scope = "billing" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await ReadAsJsonAsync<MarkThreadReadResponse>(response);
+        Assert.NotNull(result);
+        Assert.Equal(2, result!.MarkedCount);
+        Assert.Equal(3, result.UnreadCount);
+
+        Assert.Equal(MessageStatus.Read, (await GetStoredMessageAsync(billing1.Id))!.Status);
+        Assert.Equal(MessageStatus.Read, (await GetStoredMessageAsync(billing2.Id))!.Status);
+        Assert.Equal(MessageStatus.Unread, (await GetStoredMessageAsync(billingAfterCutoff.Id))!.Status);
+        Assert.Equal(MessageStatus.Unread, (await GetStoredMessageAsync(sales.Id))!.Status);
+        Assert.Equal(MessageStatus.Unread, (await GetStoredMessageAsync(defaultTopic.Id))!.Status);
+    }
+
+    [Fact]
+    public async Task MarkThreadAsRead_WithEmptyScope_MarksOnlyTheDefaultTopic()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+
+        var threadId = ObjectId.GenerateNewId().ToString();
+        var baseTime = DateTime.UtcNow.AddMinutes(-10);
+        var defaultTopic = await CreateTestMessageAsync(tenantId, threadId, baseTime, scope: null);
+        var legacyNullStatus = await CreateTestMessageAsync(tenantId, threadId, baseTime, status: null, scope: null);
+        var billing = await CreateTestMessageAsync(tenantId, threadId, baseTime, scope: "billing");
+
+        var response = await PostAsJsonAsync(
+            $"/api/v1/admin/tenants/{tenantId}/messaging/threads/{threadId}/read",
+            new { timestamp = DateTime.UtcNow, scope = "" });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await ReadAsJsonAsync<MarkThreadReadResponse>(response);
+        Assert.NotNull(result);
+        Assert.Equal(2, result!.MarkedCount);
+        Assert.Equal(1, result.UnreadCount);
+
+        Assert.Equal(MessageStatus.Read, (await GetStoredMessageAsync(defaultTopic.Id))!.Status);
+        Assert.Equal(MessageStatus.Read, (await GetStoredMessageAsync(legacyNullStatus.Id))!.Status);
+        Assert.Equal(MessageStatus.Unread, (await GetStoredMessageAsync(billing.Id))!.Status);
+    }
+
+    [Fact]
+    public async Task MarkThreadAsRead_WithoutScope_MarksEveryTopic()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+
+        var threadId = ObjectId.GenerateNewId().ToString();
+        var baseTime = DateTime.UtcNow.AddMinutes(-10);
+        var defaultTopic = await CreateTestMessageAsync(tenantId, threadId, baseTime, scope: null);
+        var billing = await CreateTestMessageAsync(tenantId, threadId, baseTime, scope: "billing");
+        var sales = await CreateTestMessageAsync(tenantId, threadId, baseTime, scope: "sales");
+
+        var response = await PostAsJsonAsync(
+            $"/api/v1/admin/tenants/{tenantId}/messaging/threads/{threadId}/read",
+            new { timestamp = DateTime.UtcNow });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await ReadAsJsonAsync<MarkThreadReadResponse>(response);
+        Assert.NotNull(result);
+        Assert.Equal(3, result!.MarkedCount);
+        Assert.Equal(0, result.UnreadCount);
+
+        Assert.Equal(MessageStatus.Read, (await GetStoredMessageAsync(defaultTopic.Id))!.Status);
+        Assert.Equal(MessageStatus.Read, (await GetStoredMessageAsync(billing.Id))!.Status);
+        Assert.Equal(MessageStatus.Read, (await GetStoredMessageAsync(sales.Id))!.Status);
+    }
+
+    [Fact]
+    public async Task MarkThreadAsRead_AsTenantAdmin_IsAllowedByTheCapabilityMatrix()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId, SystemRoles.TenantAdmin);
+        await CreateTestTenantAsync(tenantId);
+
+        var threadId = ObjectId.GenerateNewId().ToString();
+        var msg = await CreateTestMessageAsync(tenantId, threadId, DateTime.UtcNow.AddMinutes(-1));
+
+        var response = await PostAsJsonAsync(
+            $"/api/v1/admin/tenants/{tenantId}/messaging/threads/{threadId}/read",
+            new { messageId = msg.Id });
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(MessageStatus.Read, (await GetStoredMessageAsync(msg.Id))!.Status);
+    }
+
+    [Fact]
+    public async Task GetUnread_CountsOutgoingChatAndFilePerTopic_AndIgnoresIncomingAndData()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+
+        var agent = await CreateTestAgentAsync($"agent-{Guid.NewGuid()}", tenantId);
+        await CreateBuiltInFlowDefinitionAsync(agent.Name, tenantId);
+        var activation = await CreateTestActivationAsync(agent.Name, tenantId, isActive: true, name: "inbox");
+        var participantId = "reader@example.com";
+        var seeded = await SeedConversationAsync(tenantId, agent.Name, activation.Name, participantId, "seeded chat");
+
+        // Counted: Outgoing Chat/File that are Unread or carry no status (legacy rows).
+        await InsertHistoryMessageAsync(tenantId, seeded, participantId,
+            MessageDirection.Outgoing, MessageType.Chat, MessageStatus.Unread, "acme 1", "Acme Corp");
+        await InsertHistoryMessageAsync(tenantId, seeded, participantId,
+            MessageDirection.Outgoing, MessageType.File, MessageStatus.Unread, "acme 2", "Acme Corp");
+        await InsertHistoryMessageAsync(tenantId, seeded, participantId,
+            MessageDirection.Outgoing, MessageType.Chat, null, "acme legacy", "Acme Corp");
+        await InsertHistoryMessageAsync(tenantId, seeded, participantId,
+            MessageDirection.Outgoing, MessageType.Chat, MessageStatus.Unread, "default topic", null);
+
+        // Not counted: already read, participant's own sends, Data messages, legacy Tool rows.
+        await InsertHistoryMessageAsync(tenantId, seeded, participantId,
+            MessageDirection.Outgoing, MessageType.Chat, MessageStatus.Read, "acme read", "Acme Corp");
+        await InsertHistoryMessageAsync(tenantId, seeded, participantId,
+            MessageDirection.Outgoing, MessageType.Chat, MessageStatus.Read, "quiet topic read", "Quiet");
+        await InsertHistoryMessageAsync(tenantId, seeded, participantId,
+            MessageDirection.Incoming, MessageType.Chat, MessageStatus.Unread, "user unread", "Acme Corp");
+        await InsertHistoryMessageAsync(tenantId, seeded, participantId,
+            MessageDirection.Incoming, MessageType.Chat, null, "user legacy", null);
+        await InsertHistoryMessageAsync(tenantId, seeded, participantId,
+            MessageDirection.Outgoing, MessageType.Data, MessageStatus.Unread, "data", "Acme Corp");
+        await InsertHistoryMessageAsync(tenantId, seeded, participantId,
+            MessageDirection.Outgoing, MessageType.Tool, null, "tool", null);
+
+        var query = $"agentName={Uri.EscapeDataString(agent.Name)}&activationName={Uri.EscapeDataString(activation.Name)}&participantId={Uri.EscapeDataString(participantId)}";
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/messaging/unread?{query}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await ReadAsJsonAsync<ThreadUnreadResponse>(response);
+        Assert.NotNull(result);
+        Assert.Equal(seeded.ThreadId, result!.ThreadId);
+        Assert.Equal(4, result.UnreadMessages);
+        Assert.Equal(2, result.UnreadTopics);
+        Assert.Equal(2, result.Topics.Count);
+        Assert.Equal(1, result.Topics.Single(t => t.Scope == null).UnreadCount);
+        Assert.Equal(3, result.Topics.Single(t => t.Scope == "Acme Corp").UnreadCount);
+    }
+
+    [Fact]
+    public async Task GetUnread_ThreadWithNoUnreadMessages_ReturnsZerosAndNoTopics()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+
+        var agent = await CreateTestAgentAsync($"agent-{Guid.NewGuid()}", tenantId);
+        await CreateBuiltInFlowDefinitionAsync(agent.Name, tenantId);
+        var activation = await CreateTestActivationAsync(agent.Name, tenantId, isActive: true, name: "inbox");
+        var participantId = "reader@example.com";
+        // Seeds the thread with one Incoming (participant-sent) message only.
+        var seeded = await SeedConversationAsync(tenantId, agent.Name, activation.Name, participantId, "seeded chat");
+
+        var query = $"agentName={Uri.EscapeDataString(agent.Name)}&activationName={Uri.EscapeDataString(activation.Name)}&participantId={Uri.EscapeDataString(participantId)}";
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/messaging/unread?{query}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await ReadAsJsonAsync<ThreadUnreadResponse>(response);
+        Assert.NotNull(result);
+        Assert.Equal(seeded.ThreadId, result!.ThreadId);
+        Assert.Equal(0, result.UnreadMessages);
+        Assert.Equal(0, result.UnreadTopics);
+        Assert.Empty(result.Topics);
+    }
+
+    [Fact]
+    public async Task GetUnread_WhenNoThreadExists_ReturnsZerosWithNullThreadId()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+
+        var agent = await CreateTestAgentAsync($"agent-{Guid.NewGuid()}", tenantId);
+        await CreateBuiltInFlowDefinitionAsync(agent.Name, tenantId);
+        var activation = await CreateTestActivationAsync(agent.Name, tenantId, isActive: true, name: "inbox");
+
+        var query = $"agentName={Uri.EscapeDataString(agent.Name)}&activationName={Uri.EscapeDataString(activation.Name)}&participantId=nobody%40example.com";
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/messaging/unread?{query}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await ReadAsJsonAsync<ThreadUnreadResponse>(response);
+        Assert.NotNull(result);
+        Assert.Null(result!.ThreadId);
+        Assert.Equal(0, result.UnreadMessages);
+        Assert.Equal(0, result.UnreadTopics);
+        Assert.Empty(result.Topics);
+    }
+
+    [Fact]
+    public async Task GetUnread_WithMissingQuery_ReturnsBadRequest()
+    {
+        var tenantId = $"test-tenant-{Guid.NewGuid()}";
+        await ConfigureAdminApiClientAsync(tenantId);
+        await CreateTestTenantAsync(tenantId);
+
+        var response = await GetAsync($"/api/v1/admin/tenants/{tenantId}/messaging/unread?agentName=only-agent");
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
     public async Task GetHistory_WithMissingQuery_ReturnsBadRequest()
     {
         var tenantId = $"test-tenant-{Guid.NewGuid()}";
@@ -399,16 +618,31 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
         public long UnreadCount { get; set; }
     }
 
+    private class ThreadUnreadResponse
+    {
+        public string? ThreadId { get; set; }
+        public long UnreadMessages { get; set; }
+        public int UnreadTopics { get; set; }
+        public List<UnreadTopicResponse> Topics { get; set; } = new();
+    }
+
+    private class UnreadTopicResponse
+    {
+        public string? Scope { get; set; }
+        public long UnreadCount { get; set; }
+    }
+
     private async Task<ConversationMessage> CreateTestMessageAsync(
         string tenantId,
         string threadId,
         DateTime createdAt,
         MessageDirection direction = MessageDirection.Outgoing,
         MessageType messageType = MessageType.Chat,
-        MessageStatus? status = MessageStatus.Unread)
+        MessageStatus? status = MessageStatus.Unread,
+        string? scope = null)
     {
-        using var scope = _factory.Services.CreateScope();
-        var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
+        using var serviceScope = _factory.Services.CreateScope();
+        var databaseService = serviceScope.ServiceProvider.GetRequiredService<IDatabaseService>();
 
         var message = new ConversationMessage
         {
@@ -424,7 +658,8 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
             Direction = direction,
             MessageType = messageType,
             Text = "Test message",
-            Status = status
+            Status = status,
+            Scope = scope
         };
 
         var database = await databaseService.GetDatabaseAsync();
@@ -433,6 +668,19 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
 
         return message;
     }
+
+    private Task<ConversationMessage> InsertHistoryMessageAsync(
+        string tenantId,
+        (string ThreadId, string WorkflowId, string WorkflowType, ConversationMessage Message) seeded,
+        string participantId,
+        MessageDirection direction,
+        MessageType messageType,
+        MessageStatus? status,
+        string text,
+        string? scope)
+        => InsertHistoryMessageAsync(
+            tenantId, seeded.ThreadId, seeded.WorkflowId, seeded.WorkflowType, participantId,
+            direction, messageType, status, text, scope);
 
     private async Task<ConversationMessage> InsertHistoryMessageAsync(
         string tenantId,
@@ -443,10 +691,11 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
         MessageDirection direction,
         MessageType messageType,
         MessageStatus? status,
-        string text)
+        string text,
+        string? scope = null)
     {
-        using var scope = _factory.Services.CreateScope();
-        var databaseService = scope.ServiceProvider.GetRequiredService<IDatabaseService>();
+        using var serviceScope = _factory.Services.CreateScope();
+        var databaseService = serviceScope.ServiceProvider.GetRequiredService<IDatabaseService>();
 
         var message = new ConversationMessage
         {
@@ -462,7 +711,8 @@ public class AdminMessagingEndpointsTests : AdminApiIntegrationTestBase
             Direction = direction,
             MessageType = messageType,
             Text = text,
-            Status = status
+            Status = status,
+            Scope = scope
         };
 
         var database = await databaseService.GetDatabaseAsync();

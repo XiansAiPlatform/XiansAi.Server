@@ -48,6 +48,11 @@ public class AdminMarkThreadReadRequest
 {
     public DateTime? Timestamp { get; set; }
     public string? MessageId { get; set; }
+    /// <summary>
+    /// Optional topic. Omitted marks every topic in the thread; an empty string marks only the
+    /// default (null) topic, as the /history topic parameter does; any other value marks only that topic.
+    /// </summary>
+    public string? Scope { get; set; }
 }
 
 /// <summary>
@@ -620,6 +625,54 @@ public static class AdminMessagingEndpoints
         .RequireCapability(CapabilityActions.TenantMessagingTopics)
         ;
 
+        // Unread agent messages in the thread for an agent activation and participant: the
+        // thread-wide total plus a per-topic breakdown listing only topics with unread messages.
+        // A message is unread when it is Outgoing, Chat or File, and its status is not Read
+        // (legacy rows with no status count as unread).
+        adminMessagingGroup.MapGet("/unread", async (
+            string tenantId,
+            [FromQuery] string agentName,
+            [FromQuery] string activationName,
+            [FromQuery] string participantId,
+            [FromServices] IActivationValidationService activationValidationService,
+            [FromServices] IMessageService messageService,
+            [FromQuery] string? workflowType = null) =>
+        {
+            // Validate required parameters
+            if (string.IsNullOrWhiteSpace(agentName))
+            {
+                return Results.BadRequest("agentName query parameter is required");
+            }
+
+            if (string.IsNullOrWhiteSpace(activationName))
+            {
+                return Results.BadRequest("activationName query parameter is required");
+            }
+
+            if (string.IsNullOrWhiteSpace(participantId))
+            {
+                return Results.BadRequest("participantId query parameter is required");
+            }
+
+            var resolved = await ResolveConversationalActivationAsync(
+                activationValidationService, tenantId, agentName, activationName, workflowType);
+            if (!resolved.IsSuccess)
+            {
+                return resolved.ToHttpResult();
+            }
+            var effectiveWorkflowType = resolved.Data!;
+
+            // Normalize participantId to lowercase (typically an email)
+            participantId = participantId.ToLowerInvariant();
+            var workflowId = WorkflowIdentifier.BuildWorkflowId(tenantId, agentName, effectiveWorkflowType, activationName);
+
+            var result = await messageService.GetUnreadCountsAsync(workflowId, participantId);
+            return result.ToHttpResult();
+        })
+        .WithName("GetUnreadCountsForAdminApi")
+        .RequireCapability(CapabilityActions.TenantMessagingUnread)
+        ;
+
         // Get message history for a specific agent activation and participant
         adminMessagingGroup.MapGet("/history", async (
             string tenantId,
@@ -679,7 +732,8 @@ public static class AdminMessagingEndpoints
         .RequireCapability(CapabilityActions.TenantMessagingHistory)
         ;
 
-        // Mark all messages in a thread as read, up to a (threadId, timestamp) or (threadId, messageId) cutoff.
+        // Mark messages in a thread as read, up to a (threadId, timestamp) or (threadId, messageId) cutoff.
+        // An optional scope restricts the update to one topic; unreadCount stays thread-wide either way.
         // markedCount and unreadCount include only Outgoing Chat and File messages.
         adminMessagingGroup.MapPost("/threads/{threadId}/read", async (
             string tenantId,
@@ -687,10 +741,16 @@ public static class AdminMessagingEndpoints
             [FromBody] AdminMarkThreadReadRequest request,
             [FromServices] IMessageService messageService) =>
         {
-            var result = await messageService.MarkThreadAsReadAsync(threadId, request.Timestamp, request.MessageId);
+            // Omitted scope: every topic. Empty or whitespace: the default (null) topic.
+            var scope = request.Scope == null
+                ? null
+                : (string.IsNullOrWhiteSpace(request.Scope) ? string.Empty : request.Scope.Trim());
+
+            var result = await messageService.MarkThreadAsReadAsync(threadId, request.Timestamp, request.MessageId, scope);
             return result.ToHttpResult();
         })
         .WithName("MarkThreadReadForAdminApi")
+        .RequireCapability(CapabilityActions.TenantMessagingMarkRead)
         ;
 
         // Delete messages by topic for a specific agent activation and participant
