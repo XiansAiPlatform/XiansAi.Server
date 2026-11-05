@@ -38,7 +38,7 @@ public interface IWebhookIncomingService
 
     Task<ServiceResult<WebhookIncomingPage>> ListAsync(string tenantId, string integrationId, WebhookIncomingCursor? after, int limit);
 
-    /// <summary>One call. Encrypted header values are replaced by <see cref="WebhookIncomingService.MaskedValue"/>.</summary>
+    /// <summary>One call. Credential header values are replaced by <see cref="WebhookIncomingService.MaskedValue"/>.</summary>
     Task<ServiceResult<WebhookIncoming>> GetAsync(string tenantId, string integrationId, Guid id);
 
     Task<ServiceResult<bool>> DeleteAsync(string tenantId, string integrationId, Guid id);
@@ -123,10 +123,7 @@ public class WebhookIncomingService : IWebhookIncomingService
         if (incoming == null)
             return ServiceResult<WebhookIncoming>.NotFound("Incoming call not found");
 
-        foreach (var header in incoming.Headers.Where(h => h.Encrypted))
-        {
-            header.Value = MaskedValue;
-        }
+        incoming.MaskCredentialHeaders(MaskedValue);
         return ServiceResult<WebhookIncoming>.Success(incoming);
     }
 

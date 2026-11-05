@@ -144,70 +144,115 @@ public class WebhookIncomingRepositoryTests : IClassFixture<MongoDbFixture>
         Assert.Equal(BsonType.Binary, raw["_id"].BsonType);
         Assert.Equal(BsonBinarySubType.UuidStandard, raw["_id"].AsBsonBinaryData.SubType);
         Assert.Equal(row.Id, raw["_id"].AsGuid);
-        foreach (var field in new[] { "integration_id", "request_id", "received_at", "content_type", "headers", "body", "body_truncated", "workflow_id" })
+        foreach (var field in new[] { "integration_id", "request_id", "received_at", "content_type", "headers_encrypted", "headers_truncated", "body", "body_truncated", "workflow_id" })
         {
             Assert.True(raw.Contains(field), $"missing {field}");
         }
     }
 
     [Fact]
-    public async Task InsertEncryptsCredentialHeadersAndKeepsThemForRedelivery()
+    public async Task InsertEncryptsEveryHeaderAsOneValueAndGetDecryptsThem()
     {
         var tenant = NewTenant();
         var row = Incoming(tenant, 0);
         row.Headers.Add(new() { Name = "Authorization", Value = "Bearer secret" });
         row.Headers.Add(new() { Name = "cookie", Value = "session=secret" });
-        row.Headers.Add(new() { Name = "X-API-KEY", Value = "secret" });
-        row.Headers.Add(new() { Name = "Proxy-Authorization", Value = "Basic secret" });
+        var sent = row.Headers.Select(h => (h.Name, h.Value)).ToList();
         await _repository.InsertAsync(row);
 
         var raw = await _database.GetCollection<BsonDocument>("webhook_incomings")
             .Find(new BsonDocument("tenant_id", tenant)).SingleAsync();
-        Assert.DoesNotContain("secret", raw["headers"].ToJson());
+        Assert.False(raw.Contains("headers"));
+        var encrypted = raw["headers_encrypted"].AsString;
+        Assert.StartsWith("enc:", encrypted);
+        foreach (var plain in new[] { "X-GitHub-Event", "pull_request", "sha256=abc", "Authorization", "secret" })
+        {
+            Assert.DoesNotContain(plain, encrypted);
+        }
+        Assert.False(raw["headers_truncated"].AsBoolean);
 
         var stored = (await _repository.GetAsync(tenant, Integration, row.Id))!;
-        Assert.Equal(
-            new[] { false, false, true, true, true, true },
-            stored.Headers.Select(h => h.Encrypted));
-
-        var encryption = FakeEncryption().Object;
-        var original = stored.DecryptedHeaders(v => encryption.Decrypt(v)!).Select(h => (h.Name, h.Value));
-        Assert.Equal(
-            new[]
-            {
-                ("X-GitHub-Event", "pull_request"),
-                ("X-Hub-Signature-256", "sha256=abc"),
-                ("Authorization", "Bearer secret"),
-                ("cookie", "session=secret"),
-                ("X-API-KEY", "secret"),
-                ("Proxy-Authorization", "Basic secret")
-            },
-            original);
+        Assert.Equal(sent, stored.Headers.Select(h => (h.Name, h.Value)));
+        Assert.All(stored.Headers, h => Assert.False(h.Masked));
     }
 
     [Fact]
-    public async Task InsertLeavesOtherHeadersUnencryptedAndOmitsTheFlag()
+    public async Task InsertTruncatesOversizedHeadersAndFlagsThem()
     {
         var tenant = NewTenant();
-        await InsertMinutesAsync(tenant, 0);
+        var row = Incoming(tenant, 0);
+        row.Headers.Add(new() { Name = "Cookie", Value = new string('c', 40 * 1024) });
+        await _repository.InsertAsync(row);
 
         var raw = await _database.GetCollection<BsonDocument>("webhook_incomings")
             .Find(new BsonDocument("tenant_id", tenant)).SingleAsync();
-        var headers = raw["headers"].AsBsonArray.Select(h => h.AsBsonDocument).ToList();
-        Assert.Equal("sha256=abc", headers[1]["value"].AsString);
-        Assert.All(headers, h => Assert.False(h.Contains("encrypted")));
+        Assert.True(raw["headers_truncated"].AsBoolean);
+
+        var stored = (await _repository.GetAsync(tenant, Integration, row.Id))!;
+        Assert.Equal("pull_request", stored.Headers.Single(h => h.Name == "X-GitHub-Event").Value);
+        Assert.Equal("sha256=abc", stored.Headers.Single(h => h.Name == "X-Hub-Signature-256").Value);
+        Assert.True(HeaderBytes(stored) <= WebhookIncoming.MaxHeadersBytes);
+
+        var listed = Assert.Single(await _repository.ListAsync(tenant, Integration, null, 10));
+        Assert.True(listed.HeadersTruncated);
+        Assert.False(listed.BodyTruncated);
     }
 
     [Fact]
-    public void EncryptCredentialHeadersNeverEncryptsTwice()
+    public void TruncateHeadersLeavesHeadersUnderTheLimitAlone()
     {
         var row = Incoming(NewTenant(), 0);
-        row.Headers.Add(new() { Name = "Authorization", Value = "Bearer secret" });
 
-        Assert.Equal(1, row.EncryptCredentialHeaders(v => "x" + v));
-        Assert.Equal(0, row.EncryptCredentialHeaders(v => "x" + v));
-        Assert.Equal("xBearer secret", row.Headers[^1].Value);
+        Assert.False(row.TruncateHeaders(WebhookIncoming.MaxHeadersBytes));
+        Assert.False(row.HeadersTruncated);
+        Assert.Equal("sha256=abc", row.Headers[1].Value);
     }
+
+    [Fact]
+    public void TruncateHeadersCutsOnlyTheLongestValuesToACommonCap()
+    {
+        var row = Incoming(NewTenant(), 0);
+        row.Headers.Add(new() { Name = "A", Value = new string('a', 600) });
+        row.Headers.Add(new() { Name = "B", Value = new string('b', 900) });
+
+        Assert.True(row.TruncateHeaders(1000));
+
+        Assert.Equal("pull_request", row.Headers[0].Value);
+        Assert.Equal("sha256=abc", row.Headers[1].Value);
+        // Names take 35 bytes and the two small values 22, leaving 943 for A and B: 471 each.
+        Assert.Equal(471, row.Headers[2].Value.Length);
+        Assert.Equal(471, row.Headers[3].Value.Length);
+        Assert.True(HeaderBytes(row) <= 1000);
+        Assert.True(row.HeadersTruncated);
+    }
+
+    [Fact]
+    public void TruncateHeadersNeverSplitsACharacter()
+    {
+        var row = Incoming(NewTenant(), 0);
+        row.Headers = [new() { Name = "X", Value = "ab€€" }];  // 1 + 8 bytes
+
+        row.TruncateHeaders(5);  // 4 bytes for the value: "ab" plus a partial '€'
+
+        Assert.Equal("ab", row.Headers[0].Value);
+    }
+
+    [Fact]
+    public void MaskCredentialHeadersHidesOnlyCredentialValues()
+    {
+        var row = Incoming(NewTenant(), 0);
+        row.Headers.Add(new() { Name = "authorization", Value = "Bearer secret" });
+        row.Headers.Add(new() { Name = "X-API-KEY", Value = "secret" });
+
+        row.MaskCredentialHeaders("***");
+
+        Assert.Equal(
+            new[] { ("pull_request", false), ("sha256=abc", false), ("***", true), ("***", true) },
+            row.Headers.Select(h => (h.Value, h.Masked)));
+    }
+
+    private static int HeaderBytes(WebhookIncoming row) =>
+        row.Headers.Sum(h => System.Text.Encoding.UTF8.GetByteCount(h.Name) + System.Text.Encoding.UTF8.GetByteCount(h.Value));
 
     [Fact]
     public async Task InsertingTheSameCallTwiceIsNotAnError()
