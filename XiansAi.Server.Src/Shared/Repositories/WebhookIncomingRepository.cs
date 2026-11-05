@@ -14,11 +14,12 @@ namespace Shared.Repositories;
 public interface IWebhookIncomingRepository
 {
     /// <summary>
-    /// Saves one incoming call. Credential headers in <paramref name="incoming"/> are encrypted
-    /// first, so a caller cannot persist them in plain text by mistake.
+    /// Saves one incoming call. Its headers are encrypted first, so a caller cannot persist them
+    /// in plain text by mistake. Headers over <see cref="WebhookIncoming.MaxHeadersBytes"/> are cut
+    /// and <see cref="WebhookIncoming.HeadersTruncated"/> set; a row larger than
+    /// <see cref="WebhookIncoming.MaxDocumentBytes"/> is saved with its body truncated and
+    /// <see cref="WebhookIncoming.BodyTruncated"/> set.
     /// </summary>
-    /// A row larger than <see cref="WebhookIncoming.MaxDocumentBytes"/> is saved with its body
-    /// truncated and <see cref="WebhookIncoming.BodyTruncated"/> set.
     Task InsertAsync(WebhookIncoming incoming);
 
     /// <summary>
@@ -27,7 +28,10 @@ public interface IWebhookIncomingRepository
     /// </summary>
     Task<List<WebhookIncomingSummary>> ListAsync(string tenantId, string integrationId, WebhookIncomingCursor? after, int limit);
 
-    /// <summary>Loads one incoming call, or null when it does not exist for this tenant and connection.</summary>
+    /// <summary>
+    /// Loads one incoming call with its headers decrypted, or null when it does not exist for this
+    /// tenant and connection.
+    /// </summary>
     Task<WebhookIncoming?> GetAsync(string tenantId, string integrationId, Guid id);
 
     /// <summary>Lists the incoming calls sent to a workflow, newest first, at most <see cref="WebhookIncomingRepository.MaxPageSize"/>.</summary>
@@ -81,11 +85,13 @@ public class WebhookIncomingRepository : IWebhookIncomingRepository
     {
         ArgumentNullException.ThrowIfNull(incoming);
 
-        var encrypted = incoming.EncryptCredentialHeaders(value => _encryption.Encrypt(value) ?? string.Empty);
-        if (encrypted > 0)
+        if (incoming.TruncateHeaders(WebhookIncoming.MaxHeadersBytes))
         {
-            _logger.LogDebug("Encrypted {Count} credential header(s) of webhook incoming {Id}", encrypted, incoming.Id);
+            _logger.LogWarning(
+                "Webhook incoming {Id} has headers over the {Max}-byte limit; values truncated and the call cannot be redelivered",
+                incoming.Id, WebhookIncoming.MaxHeadersBytes);
         }
+        incoming.EncryptHeaders(value => _encryption.Encrypt(value) ?? string.Empty);
 
         var size = incoming.ToBson().Length;
         if (size > WebhookIncoming.MaxDocumentBytes)
@@ -126,9 +132,12 @@ public class WebhookIncomingRepository : IWebhookIncomingRepository
     {
         var filter = ByIntegration(tenantId, integrationId) & Filter.Eq(i => i.Id, id);
 
-        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        var incoming = await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
             await _collection.Find(filter).FirstOrDefaultAsync(),
             _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetWebhookIncoming");
+
+        incoming?.DecryptHeaders(value => _encryption.Decrypt(value) ?? string.Empty);
+        return incoming;
     }
 
     public async Task<List<WebhookIncomingSummary>> ListByWorkflowAsync(string tenantId, string workflowId, int limit)
@@ -192,7 +201,7 @@ public class WebhookIncomingRepository : IWebhookIncomingRepository
             await _collection.Find(filter)
                 .Sort(NewestFirst)
                 .Limit(Math.Clamp(limit, 1, MaxPageSize))
-                .Project(i => new WebhookIncomingSummary(i.Id, i.RequestId, i.ReceivedAt, i.BodyTruncated))
+                .Project(i => new WebhookIncomingSummary(i.Id, i.RequestId, i.ReceivedAt, i.BodyTruncated, i.HeadersTruncated))
                 .ToListAsync(),
             _logger, maxRetries: 3, baseDelayMs: 100, operationName: operationName);
     }

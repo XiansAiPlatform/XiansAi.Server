@@ -1,4 +1,6 @@
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 
@@ -7,15 +9,15 @@ namespace Shared.Data.Models;
 /// <summary>
 /// One inbound call received by a builtin webhook (including redeliveries), persisted in the
 /// MongoDB collection <c>webhook_incomings</c>. Powers the connection's Deliveries page and
-/// holds what is needed to redeliver the call. Credential headers are encrypted by
-/// <see cref="EncryptCredentialHeaders"/>, which the repository runs on every insert.
+/// holds what is needed to redeliver the call. The headers are stored encrypted as one value by
+/// <see cref="EncryptHeaders"/>, which the repository runs on every insert.
 /// </summary>
 [BsonIgnoreExtraElements]
 public class WebhookIncoming
 {
     /// <summary>
-    /// Headers that carry the caller's credentials. They are stored encrypted, never in plain text,
-    /// so a redelivery can send them again.
+    /// Headers that carry the caller's credentials. Their values are never returned by the API
+    /// (see <see cref="WebhookIncomingHeader.Masked"/>), only used to redeliver the call.
     /// </summary>
     public static readonly IReadOnlySet<string> CredentialHeaders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
@@ -30,6 +32,13 @@ public class WebhookIncoming
     /// body is truncated to fit.
     /// </summary>
     public const int MaxDocumentBytes = 16 * 1024 * 1024;
+
+    /// <summary>
+    /// Most header bytes (names plus values, UTF-8) kept for one call: 16 KB. Kestrel accepts up to
+    /// 32 KB; a GitHub delivery sends about 2 KB. When a call is bigger, the longest values are cut
+    /// (see <see cref="TruncateHeaders"/>).
+    /// </summary>
+    public const int MaxHeadersBytes = 16 * 1024;
 
     /// <summary>Delivery id. A UUID v7, so ids sort in the order they were created.</summary>
     [BsonId]
@@ -55,11 +64,23 @@ public class WebhookIncoming
     public string ContentType { get; set; } = string.Empty;
 
     /// <summary>
-    /// Request headers in the order received. Values of <see cref="CredentialHeaders"/> are encrypted.
-    /// Kept as a list so repeated headers survive and header names never become BSON field names.
+    /// Request headers in the order received, one entry per value so repeated headers survive.
+    /// Never stored as is: it is saved encrypted in <see cref="EncryptedHeaders"/>.
     /// </summary>
-    [BsonElement("headers")]
+    [BsonIgnore]
     public List<WebhookIncomingHeader> Headers { get; set; } = new();
+
+    /// <summary>Every header of the call, serialized and encrypted as one value. Not returned by the API.</summary>
+    [BsonElement("headers_encrypted")]
+    [JsonIgnore]
+    public string? EncryptedHeaders { get; set; }
+
+    /// <summary>
+    /// True when the headers were over <see cref="MaxHeadersBytes"/> and some values were cut.
+    /// Like a truncated body, the call cannot be redelivered as sent.
+    /// </summary>
+    [BsonElement("headers_truncated")]
+    public bool HeadersTruncated { get; set; }
 
     /// <summary>
     /// Raw request body, kept exactly as received so signatures still verify on redelivery,
@@ -99,49 +120,102 @@ public class WebhookIncoming
     }
 
     /// <summary>
-    /// Encrypts the value of every header in <see cref="CredentialHeaders"/>, whatever its casing,
-    /// and marks it <see cref="WebhookIncomingHeader.Encrypted"/>. Headers already encrypted are left alone.
+    /// Cuts header values so names plus values are at most <paramref name="maxBytes"/>, and sets
+    /// <see cref="HeadersTruncated"/>. Every header is kept; only values longer than a common cap
+    /// are shortened, so one huge header cannot push out the small ones (event name, signature).
     /// </summary>
-    /// <returns>The number of headers encrypted.</returns>
-    public int EncryptCredentialHeaders(Func<string, string> encrypt)
+    /// <returns>True when anything was cut.</returns>
+    public bool TruncateHeaders(int maxBytes)
     {
-        var count = 0;
-        foreach (var header in Headers.Where(h => !h.Encrypted && IsCredential(h)))
+        var lengths = Headers.Select(h => Encoding.UTF8.GetByteCount(h.Value)).ToList();
+        var budget = maxBytes - Headers.Sum(h => Encoding.UTF8.GetByteCount(h.Name));
+        if (lengths.Sum() <= budget)
         {
-            header.Value = encrypt(header.Value);
-            header.Encrypted = true;
-            count++;
+            return false;
         }
-        return count;
+
+        var cap = ValueCap(lengths, Math.Max(0, budget));
+        for (var i = 0; i < Headers.Count; i++)
+        {
+            if (lengths[i] > cap)
+            {
+                Headers[i].Value = Utf8Prefix(Headers[i].Value, cap);
+            }
+        }
+
+        HeadersTruncated = true;
+        return true;
     }
 
-    /// <summary>The headers as received, with encrypted values decrypted. Use only to redeliver the call.</summary>
-    public List<WebhookIncomingHeader> DecryptedHeaders(Func<string, string> decrypt) =>
-        Headers
-            .Select(h => new WebhookIncomingHeader { Name = h.Name, Value = h.Encrypted ? decrypt(h.Value) : h.Value })
-            .ToList();
+    /// <summary>Encrypts <see cref="Headers"/> into <see cref="EncryptedHeaders"/>.</summary>
+    public void EncryptHeaders(Func<string, string> encrypt) =>
+        EncryptedHeaders = encrypt(JsonSerializer.Serialize(Headers));
 
-    private static bool IsCredential(WebhookIncomingHeader header) =>
-        header.Name != null && CredentialHeaders.Contains(header.Name.Trim());
+    /// <summary>Fills <see cref="Headers"/> from <see cref="EncryptedHeaders"/>. A row without headers gets an empty list.</summary>
+    public void DecryptHeaders(Func<string, string> decrypt) =>
+        Headers = string.IsNullOrEmpty(EncryptedHeaders)
+            ? new()
+            : JsonSerializer.Deserialize<List<WebhookIncomingHeader>>(decrypt(EncryptedHeaders)) ?? new();
+
+    /// <summary>Replaces the value of every credential header with <paramref name="masked"/> and marks it.</summary>
+    public void MaskCredentialHeaders(string masked)
+    {
+        foreach (var header in Headers.Where(h => CredentialHeaders.Contains(h.Name.Trim())))
+        {
+            header.Value = masked;
+            header.Masked = true;
+        }
+    }
+
+    /// <summary>The largest per-value length at which all values fit in <paramref name="budget"/> bytes.</summary>
+    private static int ValueCap(List<int> lengths, int budget)
+    {
+        var sorted = lengths.OrderBy(l => l).ToList();
+        var used = 0;
+        for (var i = 0; i < sorted.Count; i++)
+        {
+            var remaining = sorted.Count - i;
+            // Values from here on are at least sorted[i]; if they all fit at that length, keep going.
+            if (used + (long)sorted[i] * remaining > budget)
+            {
+                return (budget - used) / remaining;
+            }
+            used += sorted[i];
+        }
+        return sorted.Count == 0 ? 0 : sorted[^1];
+    }
+
+    /// <summary>The first <paramref name="maxBytes"/> UTF-8 bytes of a string, never splitting a character.</summary>
+    private static string Utf8Prefix(string value, int maxBytes)
+    {
+        var bytes = Encoding.UTF8.GetBytes(value);
+        var keep = Math.Min(maxBytes, bytes.Length);
+        // Back up to the start of a character: UTF-8 continuation bytes look like 10xxxxxx.
+        while (keep > 0 && keep < bytes.Length && (bytes[keep] & 0xC0) == 0x80)
+        {
+            keep--;
+        }
+        return Encoding.UTF8.GetString(bytes, 0, keep);
+    }
 }
 
 /// <summary>One request header line of a <see cref="WebhookIncoming"/>.</summary>
 public class WebhookIncomingHeader
 {
-    [BsonElement("name")]
+    [JsonPropertyName("name")]
     public required string Name { get; set; }
 
-    [BsonElement("value")]
+    [JsonPropertyName("value")]
     public required string Value { get; set; }
 
-    /// <summary>True when <see cref="Value"/> is encrypted (a credential header).</summary>
-    [BsonElement("encrypted")]
-    [BsonIgnoreIfDefault]
-    public bool Encrypted { get; set; }
+    /// <summary>True when <see cref="Value"/> was replaced because the header carries credentials. Never stored.</summary>
+    [JsonPropertyName("masked")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Masked { get; set; }
 }
 
 /// <summary>The fields shown for an incoming call in a list.</summary>
-public record WebhookIncomingSummary(Guid Id, string RequestId, DateTime ReceivedAt, bool BodyTruncated);
+public record WebhookIncomingSummary(Guid Id, string RequestId, DateTime ReceivedAt, bool BodyTruncated, bool HeadersTruncated);
 
 /// <summary>
 /// Position in a list of incoming calls sorted newest first. Pass the last row of one page to get the next.

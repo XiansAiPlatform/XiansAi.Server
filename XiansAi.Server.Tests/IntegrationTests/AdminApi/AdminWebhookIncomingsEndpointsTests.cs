@@ -53,7 +53,9 @@ public class AdminWebhookIncomingsEndpointsTests : AdminApiIntegrationTestBase
 
         var stored = await _database.GetCollection<BsonDocument>("webhook_incomings")
             .Find(new BsonDocument("tenant_id", tenantId)).SingleAsync();
-        Assert.DoesNotContain("session=secret", stored["headers"].ToJson());
+        Assert.False(stored.Contains("headers"));
+        Assert.DoesNotContain("session=secret", stored["headers_encrypted"].AsString);
+        Assert.DoesNotContain("X-GitHub-Event", stored["headers_encrypted"].AsString);
 
         var delete = await DeleteAsync($"/api/v1/admin/tenants/{tenantId}/webhooks/{webhookId}/incomings/{incomingId}");
         Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
