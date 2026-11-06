@@ -42,9 +42,10 @@ public class WebhookIncomingServiceTests
             ["X-GitHub-Event"] = "pull_request",
             ["X-Repeated"] = new StringValues(["a", "b"])
         };
-        await _service.RecordAsync(Call(headers: headers));
+        var id = await _service.RecordAsync(Call(headers: headers));
 
         Assert.NotNull(saved);
+        Assert.Equal(saved!.Id, id);
         Assert.Equal(webhook.Id, saved!.IntegrationId);
         Assert.Equal("tenant", saved.TenantId);
         Assert.Equal("request-1", saved.RequestId);
@@ -74,7 +75,7 @@ public class WebhookIncomingServiceTests
     {
         GivenWebhooks(Webhook(workflowName: "Another Workflow"));
 
-        await _service.RecordAsync(Call());
+        Assert.Null(await _service.RecordAsync(Call()));
 
         _incomings.Verify(r => r.InsertAsync(It.IsAny<WebhookIncoming>()), Times.Never);
     }
@@ -95,7 +96,7 @@ public class WebhookIncomingServiceTests
         _incomings.Setup(r => r.InsertAsync(It.IsAny<WebhookIncoming>()))
             .ThrowsAsync(new TimeoutException("boom"));
 
-        await _service.RecordAsync(Call());
+        Assert.Null(await _service.RecordAsync(Call()));
 
         _incomings.Verify(r => r.TrimAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>()), Times.Never);
     }
@@ -109,6 +110,62 @@ public class WebhookIncomingServiceTests
         await _service.RecordAsync(Call());
 
         _incomings.Verify(r => r.InsertAsync(It.IsAny<WebhookIncoming>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RecordStartedWorkflowsSavesTheIdsTheAgentReports()
+    {
+        var id = Guid.CreateVersion7();
+        const string reply = "{\"status\":\"success\",\"workflowIds\":[\"t:a:Processing Workflow:act:req-1\",\"t:a:Processing Workflow:act:req-2\"]}";
+
+        await _service.RecordStartedWorkflowsAsync("tenant", id, reply);
+
+        _incomings.Verify(r => r.SetStartedWorkflowIdsAsync("tenant", id,
+            It.Is<IReadOnlyList<string>>(ids => ids.SequenceEqual(new[]
+            {
+                "t:a:Processing Workflow:act:req-1",
+                "t:a:Processing Workflow:act:req-2"
+            }))), Times.Once);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("not json")]
+    [InlineData("[\"a\"]")]
+    [InlineData("{\"status\":\"ignored\"}")]
+    [InlineData("{\"workflowIds\":\"a\"}")]
+    [InlineData("{\"workflowIds\":[]}")]
+    public async Task RecordStartedWorkflowsIgnoresRepliesWithoutIds(string? reply)
+    {
+        await _service.RecordStartedWorkflowsAsync("tenant", Guid.CreateVersion7(), reply);
+
+        _incomings.Verify(r => r.SetStartedWorkflowIdsAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<IReadOnlyList<string>>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RecordStartedWorkflowsNeverThrows()
+    {
+        _incomings.Setup(r => r.SetStartedWorkflowIdsAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<IReadOnlyList<string>>()))
+            .ThrowsAsync(new TimeoutException());
+
+        await _service.RecordStartedWorkflowsAsync("tenant", Guid.CreateVersion7(), "{\"workflowIds\":[\"w\"]}");
+    }
+
+    [Fact]
+    public void ReadWorkflowIdsKeepsStringsInOrderWithoutRepeatsAndAnyCasing()
+    {
+        Assert.Equal(
+            ["b", "a"],
+            WebhookIncomingService.ReadWorkflowIds("{\"WorkflowIds\":[\"b\",1,null,\"\",\"a\",\"b\"]}"));
+    }
+
+    [Fact]
+    public void ReadWorkflowIdsCapsTheCount()
+    {
+        var reply = "{\"workflowIds\":[" + string.Join(",", Enumerable.Range(0, 80).Select(i => $"\"w{i}\"")) + "]}";
+
+        Assert.Equal(WebhookIncomingService.MaxStartedWorkflowIds, WebhookIncomingService.ReadWorkflowIds(reply).Count);
     }
 
     [Fact]

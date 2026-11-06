@@ -209,6 +209,19 @@ public class WebhookIncomingRepositoryTests : IClassFixture<MongoDbFixture>
     }
 
     [Fact]
+    public async Task StartedWorkflowIdsAreEmptyUntilSetAndSetOnlyWithinTheTenant()
+    {
+        var tenant = NewTenant();
+        var row = (await InsertMinutesAsync(tenant, 0))[0];
+        Assert.Empty((await _repository.GetAsync(tenant, Integration, row.Id))!.StartedWorkflowIds);
+
+        await _repository.SetStartedWorkflowIdsAsync(NewTenant(), row.Id, ["other-tenant"]);
+        await _repository.SetStartedWorkflowIdsAsync(tenant, row.Id, ["run-1", "run-2"]);
+
+        Assert.Equal(["run-1", "run-2"], (await _repository.GetAsync(tenant, Integration, row.Id))!.StartedWorkflowIds);
+    }
+
+    [Fact]
     public void TruncateHeadersCutsOnlyTheLongestValuesToACommonCap()
     {
         var row = Incoming(NewTenant(), 0);
