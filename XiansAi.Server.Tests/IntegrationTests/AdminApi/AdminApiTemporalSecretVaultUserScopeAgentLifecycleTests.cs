@@ -110,15 +110,15 @@ public class AdminApiTemporalSecretVaultUserScopeAgentLifecycleTests : AdminApiT
         run.UserSecretId = userSecret.Id;
 
         var shadowValue = $"sk-shadow-{Guid.NewGuid():N}";
-        var sameKeyOtherUser = await PostAsJsonAsync("/api/v1/admin/secrets", new SecretVaultCreateRequest
+        // Same key in the SAME scope (tenant-wide, no user) must still be rejected.
+        var sameKeySameScope = await PostAsJsonAsync("/api/v1/admin/secrets", new SecretVaultCreateRequest
         {
             Key = run.TenantKey,
             Value = shadowValue,
-            TenantId = run.OwnerTenant,
-            UserId = run.OtherParticipant
+            TenantId = run.OwnerTenant
         });
-        Assert.Equal(HttpStatusCode.Conflict, sameKeyOtherUser.StatusCode);
-        Assert.DoesNotContain(shadowValue, await sameKeyOtherUser.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.Conflict, sameKeySameScope.StatusCode);
+        Assert.DoesNotContain(shadowValue, await sameKeySameScope.Content.ReadAsStringAsync());
 
         await CreateSecretAsync(run.TenantKey, run.OtherTenantValue, run.OtherTenant, userId: null);
         var otherUserSecret = await CreateSecretAsync(
