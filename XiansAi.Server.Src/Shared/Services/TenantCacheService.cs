@@ -17,7 +17,10 @@ public interface ITenantCacheService
 {
     /// <summary>
     /// Gets a tenant by ID from cache or database.
-    /// Null results are cached with a shorter TTL to mitigate brute-force enumeration.
+    /// A missing tenant is never cached: with the memory cache provider each pod has its own cache
+    /// and a cached "not found" on one pod would keep failing requests for a tenant created on
+    /// another pod until the entry expired. A lookup that finds no tenant also removes any stale
+    /// entry for that id.
     /// Returns a shallow copy so callers cannot mutate the cached original.
     /// When <paramref name="bypassCache"/> is true, the cache is not read; the tenant is fetched
     /// directly from the database and the cache entry is refreshed with the fresh value.
@@ -32,12 +35,6 @@ public interface ITenantCacheService
 
 public class TenantCacheService : ITenantCacheService
 {
-    /// <summary>
-    /// Non-null wrapper so we can distinguish "cached null" from "key not present".
-    /// IMemoryCache.TryGetValue returns false for stored null because the out parameter cannot distinguish the two cases.
-    /// </summary>
-    private sealed record TenantCacheHolder(Tenant? Tenant);
-
     private const string CacheKeyPrefix = "tenant:byid:";
 
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _keyLocks = new();
@@ -47,7 +44,6 @@ public class TenantCacheService : ITenantCacheService
     private readonly ICacheInvalidationBus _invalidationBus;
     private readonly ICacheOperationMode _cacheMode;
     private readonly TimeSpan _tenantCacheExpiration;
-    private readonly TimeSpan _nullResultCacheExpiration;
 
     public TenantCacheService(
         IMemoryCache cache,
@@ -64,9 +60,7 @@ public class TenantCacheService : ITenantCacheService
         _cacheMode = cacheMode ?? throw new ArgumentNullException(nameof(cacheMode));
 
         var expirationMinutes = configuration.GetValue<int>("TenantCache:ExpirationMinutes", 5);
-        var nullResultExpirationMinutes = configuration.GetValue<int>("TenantCache:NullResultExpirationMinutes", 2);
         _tenantCacheExpiration = TimeSpan.FromMinutes(Math.Max(1, expirationMinutes));
-        _nullResultCacheExpiration = TimeSpan.FromMinutes(Math.Max(1, nullResultExpirationMinutes));
     }
 
     public async Task<Tenant?> GetByTenantIdAsync(string tenantId, CancellationToken cancellationToken = default, bool bypassCache = false)
@@ -95,26 +89,32 @@ public class TenantCacheService : ITenantCacheService
             acquired = true;
 
             // Invalidated on tenant updates, so skip caching when Cache:Provider=noop.
-            if (!bypassCache && _cache.TryGetValue(cacheKey, out TenantCacheHolder? cachedHolder))
-                return cachedHolder?.Tenant?.ShallowCopy();
+            if (!bypassCache && _cache.TryGetValue(cacheKey, out Tenant? cachedTenant) && cachedTenant != null)
+                return cachedTenant.ShallowCopy();
 
             _logger.LogDebug("Fetching tenant {TenantId} from database (bypassCache: {BypassCache})", tenantId, bypassCache);
 
             var tenant = await FetchFromDatabaseAsync(tenantId, cancellationToken);
 
-            var expiration = tenant != null ? _tenantCacheExpiration : _nullResultCacheExpiration;
-            var holder = new TenantCacheHolder(tenant);
+            if (tenant == null)
+            {
+                // Never cache a miss (see the interface doc). Drop any entry left over from before
+                // the tenant was deleted so the next lookup does not serve stale data.
+                _cache.Remove(cacheKey);
+                _logger.LogDebug("Tenant {TenantId} not found; removed any cached entry", tenantId);
+                return null;
+            }
 
             // Do not remove semaphores in post-eviction callback: any check-then-remove is racy
             // and can break per-key mutual exclusion. Bounded growth (one entry per distinct
             // tenant ID) is acceptable since the number of tenants is typically small.
             var entryOptions = new MemoryCacheEntryOptions()
                 .SetSize(1)
-                .SetAbsoluteExpiration(expiration);
-            _cache.Set(cacheKey, holder, entryOptions);
+                .SetAbsoluteExpiration(_tenantCacheExpiration);
+            _cache.Set(cacheKey, tenant, entryOptions);
 
-            _logger.LogDebug("Cached tenant result for {TenantId}", tenantId);
-            return holder.Tenant?.ShallowCopy();
+            _logger.LogDebug("Cached tenant {TenantId}", tenantId);
+            return tenant.ShallowCopy();
         }
         finally
         {
