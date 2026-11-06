@@ -103,6 +103,33 @@ public class SecretVaultServiceTests
     }
 
     [Fact]
+    public async Task CreateAsync_Returns_500_When_Uniqueness_Check_Fails()
+    {
+        _repo.Setup(r => r.ExistsByKeyAsync("k", null, null, null, null, null))
+            .ThrowsAsync(new InvalidOperationException("simulated db failure"));
+
+        var input = new SecretVaultCreateInput("k", "v", null, null, null, null, null);
+        var result = await _service.CreateAsync(input, "alice");
+
+        Assert.Equal(StatusCode.InternalServerError, result.StatusCode);
+        Assert.Empty(_store.Snapshot());
+        _repo.Verify(r => r.CreateAsync(It.IsAny<SecretVault>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CreateAsync_Returns_409_On_Mongo_Duplicate_Key_Exception()
+    {
+        _repo.Setup(r => r.ExistsByKeyAsync("k", null, null, null, null, null)).ReturnsAsync(false);
+        _repo.Setup(r => r.CreateAsync(It.IsAny<SecretVault>())).ThrowsAsync(DuplicateKeyException());
+
+        var input = new SecretVaultCreateInput("k", "v", null, null, null, null, null);
+        var result = await _service.CreateAsync(input, "alice");
+
+        Assert.Equal(StatusCode.Conflict, result.StatusCode);
+        Assert.Empty(_store.Snapshot()); // orphan value cleaned up
+    }
+
+    [Fact]
     public async Task CreateAsync_Validates_Required_Fields()
     {
         var emptyKey = new SecretVaultCreateInput("", "v", null, null, null, null, null);
@@ -170,6 +197,44 @@ public class SecretVaultServiceTests
 
         Assert.True(result.IsSuccess);
         Assert.Equal("kept", await _store.GetAsync(entity.Id));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_Empty_String_Clears_Scope_Field()
+    {
+        var entity = NewEntity("tenant-a", "k1");
+        entity.ActivationName = "act-1";
+        _repo.Setup(r => r.GetByIdAsync(entity.Id)).ReturnsAsync(entity);
+        _repo.Setup(r => r.ExistsByKeyAsync("k1", "tenant-a", null, null, null, entity.Id)).ReturnsAsync(false);
+        SecretVault? saved = null;
+        _repo.Setup(r => r.UpdateAsync(It.IsAny<SecretVault>()))
+            .Callback<SecretVault>(s => saved = s)
+            .ReturnsAsync(true);
+
+        var result = await _service.UpdateAsync(
+            entity.Id,
+            new SecretVaultUpdateInput(null, null, null, null, "", null),
+            "bob");
+
+        Assert.True(result.IsSuccess);
+        Assert.NotNull(saved);
+        Assert.Null(saved!.ActivationName);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_Returns_409_On_Mongo_Duplicate_Key_Exception()
+    {
+        var entity = NewEntity("tenant-a", "k1");
+        _repo.Setup(r => r.GetByIdAsync(entity.Id)).ReturnsAsync(entity);
+        _repo.Setup(r => r.ExistsByKeyAsync("k1", "tenant-a", null, null, "act-1", entity.Id)).ReturnsAsync(false);
+        _repo.Setup(r => r.UpdateAsync(It.IsAny<SecretVault>())).ThrowsAsync(DuplicateKeyException());
+
+        var result = await _service.UpdateAsync(
+            entity.Id,
+            new SecretVaultUpdateInput(null, null, null, null, "act-1", null),
+            "bob");
+
+        Assert.Equal(StatusCode.Conflict, result.StatusCode);
     }
 
     [Fact]
@@ -356,6 +421,23 @@ public class SecretVaultServiceTests
         Assert.Equal(StatusCode.BadRequest, (await _service.FetchByTenantsAsync("k", Array.Empty<string>(), null, null, null)).StatusCode);
         Assert.Equal(StatusCode.BadRequest, (await _service.FetchByTenantsAsync("k", new[] { "t", " " }, null, null, null)).StatusCode);
         Assert.Equal(StatusCode.BadRequest, (await _service.FetchByTenantsAsync("k", tooMany, null, null, null)).StatusCode);
+    }
+
+    /// <summary>Builds a MongoWriteException with a DuplicateKey WriteError (its constructor is internal).</summary>
+    private static MongoDB.Driver.MongoWriteException DuplicateKeyException()
+    {
+        var writeErrorCtor = typeof(MongoDB.Driver.WriteError)
+            .GetConstructors(System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+            .Single(c => c.GetParameters().Length == 4);
+        var writeError = (MongoDB.Driver.WriteError)writeErrorCtor.Invoke(new object?[]
+        {
+            MongoDB.Driver.ServerErrorCategory.DuplicateKey, 11000, "E11000 duplicate key", new MongoDB.Bson.BsonDocument()
+        });
+        var connectionId = new MongoDB.Driver.Core.Connections.ConnectionId(
+            new MongoDB.Driver.Core.Servers.ServerId(
+                new MongoDB.Driver.Core.Clusters.ClusterId(1),
+                new System.Net.DnsEndPoint("localhost", 27017)));
+        return new MongoDB.Driver.MongoWriteException(connectionId, writeError, null, null);
     }
 
     private static SecretVault NewEntity(string tenantId, string key) => new()

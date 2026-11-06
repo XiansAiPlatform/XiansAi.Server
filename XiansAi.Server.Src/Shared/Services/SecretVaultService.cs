@@ -134,6 +134,12 @@ public class SecretVaultService : ISecretVaultService
         _logger = logger;
     }
 
+    private const string DuplicateScopeMessage = "A secret with this key already exists in this scope";
+
+    private static bool IsDuplicateKey(Exception ex) =>
+        ex is MongoDB.Driver.MongoWriteException mwe
+        && mwe.WriteError?.Category == MongoDB.Driver.ServerErrorCategory.DuplicateKey;
+
     public async Task<ServiceResult<SecretVaultGetResponse>> CreateAsync(SecretVaultCreateInput input, string actorUserId)
     {
         if (string.IsNullOrWhiteSpace(input.Key))
@@ -145,7 +151,7 @@ public class SecretVaultService : ISecretVaultService
         {
             var exists = await _repository.ExistsByKeyAsync(input.Key, input.TenantId, input.AgentId, input.UserId, input.ActivationName);
             if (exists)
-                return ServiceResult<SecretVaultGetResponse>.Conflict("A secret with this key already exists in this scope");
+                return ServiceResult<SecretVaultGetResponse>.Conflict(DuplicateScopeMessage);
         }
         catch (Exception ex)
         {
@@ -198,8 +204,7 @@ public class SecretVaultService : ISecretVaultService
         }
         catch (Exception ex)
         {
-            var isDuplicateKey = ex is MongoDB.Driver.MongoWriteException mwe
-                && mwe.WriteError?.Category == MongoDB.Driver.ServerErrorCategory.DuplicateKey;
+            var isDuplicateKey = IsDuplicateKey(ex);
 
             _logger.LogError(ex,
                 "Error creating secret vault key {Key} (provider={Provider}). storeWritten={StoreWritten} duplicate={Duplicate}",
@@ -220,7 +225,7 @@ public class SecretVaultService : ISecretVaultService
             }
 
             if (isDuplicateKey)
-                return ServiceResult<SecretVaultGetResponse>.Conflict("A secret with this key already exists in this scope");
+                return ServiceResult<SecretVaultGetResponse>.Conflict(DuplicateScopeMessage);
 
             return ServiceResult<SecretVaultGetResponse>.InternalServerError("Failed to create secret");
         }
@@ -293,7 +298,7 @@ public class SecretVaultService : ISecretVaultService
             var scopeChanged = newTenant != entity.TenantId || newAgent != entity.AgentId
                 || newUser != entity.UserId || newActivation != entity.ActivationName;
             if (scopeChanged && await _repository.ExistsByKeyAsync(entity.Key, newTenant, newAgent, newUser, newActivation, entity.Id))
-                return ServiceResult<SecretVaultGetResponse>.Conflict("A secret with this key already exists in this scope");
+                return ServiceResult<SecretVaultGetResponse>.Conflict(DuplicateScopeMessage);
 
             var changedFields = new List<string>();
             string? updatedValue = null;
@@ -358,7 +363,11 @@ public class SecretVaultService : ISecretVaultService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating secret vault id {Id}", LogSanitizer.Sanitize(id));
+            // Backstop for the check-then-write race: the unique index rejects the loser.
+            var isDuplicateKey = IsDuplicateKey(ex);
+            _logger.LogError(ex, "Error updating secret vault id {Id}. duplicate={Duplicate}", LogSanitizer.Sanitize(id), isDuplicateKey);
+            if (isDuplicateKey)
+                return ServiceResult<SecretVaultGetResponse>.Conflict(DuplicateScopeMessage);
             return ServiceResult<SecretVaultGetResponse>.InternalServerError("Failed to update secret");
         }
     }

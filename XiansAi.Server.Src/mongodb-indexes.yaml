@@ -415,6 +415,8 @@ documents:
     sparse: true
 
 secret_vault:
+  # NOTE: key_tenant is a prefix of key_scope_unique below and is a candidate for removal
+  # once key_scope_unique is confirmed live everywhere (verify with explain() first).
   - name: key_tenant
     keys:
       key: asc
