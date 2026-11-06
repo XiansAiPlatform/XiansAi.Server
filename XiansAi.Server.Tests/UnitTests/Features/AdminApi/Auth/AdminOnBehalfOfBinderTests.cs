@@ -22,7 +22,24 @@ public class AdminOnBehalfOfBinderTests
         AdminOnBehalfOfBinder.Apply(request, tenantContext, NullLogger.Instance);
 
         Assert.Equal(UiUserId, tenantContext.ParticipantId);
+        Assert.Equal(UiUserId, tenantContext.OnBehalfOf);
         Assert.Equal(KeyOwnerId, tenantContext.LoggedInUser);
+    }
+
+    [Fact]
+    public void Apply_LeavesOnBehalfOfNull_WhenHeaderIsMissingOrIgnored()
+    {
+        var missing = BuildContext(UserType.UserApiKey);
+        AdminOnBehalfOfBinder.Apply(new DefaultHttpContext().Request, missing, NullLogger.Instance);
+        Assert.Null(missing.OnBehalfOf);
+
+        var notApiKey = BuildContext(UserType.UserToken);
+        AdminOnBehalfOfBinder.Apply(RequestWithHeader(UiUserId), notApiKey, NullLogger.Instance);
+        Assert.Null(notApiKey.OnBehalfOf);
+
+        var invalid = BuildContext(UserType.UserApiKey);
+        AdminOnBehalfOfBinder.Apply(RequestWithHeader("<script>alert(1)</script>"), invalid, NullLogger.Instance);
+        Assert.Null(invalid.OnBehalfOf);
     }
 
     [Fact]
