@@ -208,7 +208,7 @@ public class SecretVaultService : ISecretVaultService
 
             _logger.LogError(ex,
                 "Error creating secret vault key {Key} (provider={Provider}). storeWritten={StoreWritten} duplicate={Duplicate}",
-                input.Key, _secretStore.Name, storeWritten, isDuplicateKey);
+                LogSanitizer.Sanitize(input.Key), _secretStore.Name, storeWritten, isDuplicateKey);
 
             if (storeWritten)
             {
