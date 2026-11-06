@@ -44,6 +44,9 @@ public interface IWebhookIncomingRepository
     /// <returns>The number of rows deleted.</returns>
     Task<long> TrimAsync(string tenantId, string integrationId, int keep);
 
+    /// <summary>Saves the workflows the agent started for a call, replacing any saved before.</summary>
+    Task SetStartedWorkflowIdsAsync(string tenantId, Guid id, IReadOnlyList<string> workflowIds);
+
     /// <summary>Deletes one incoming call.</summary>
     /// <returns>False when it does not exist for this tenant and connection.</returns>
     Task<bool> DeleteAsync(string tenantId, string integrationId, Guid id);
@@ -171,6 +174,16 @@ public class WebhookIncomingRepository : IWebhookIncomingRepository
             _logger, maxRetries: 3, baseDelayMs: 100, operationName: "TrimWebhookIncomings");
 
         return result.DeletedCount;
+    }
+
+    public async Task SetStartedWorkflowIdsAsync(string tenantId, Guid id, IReadOnlyList<string> workflowIds)
+    {
+        var filter = Filter.Eq(i => i.TenantId, tenantId) & Filter.Eq(i => i.Id, id);
+        var update = Builders<WebhookIncoming>.Update.Set(i => i.StartedWorkflowIds, workflowIds.ToList());
+
+        await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+            await _collection.UpdateOneAsync(filter, update),
+            _logger, maxRetries: 3, baseDelayMs: 100, operationName: "SetWebhookIncomingStartedWorkflowIds");
     }
 
     public async Task<bool> DeleteAsync(string tenantId, string integrationId, Guid id)

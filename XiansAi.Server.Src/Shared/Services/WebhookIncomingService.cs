@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using Shared.Configuration;
@@ -34,7 +35,15 @@ public interface IWebhookIncomingService
     /// <see cref="WebhookIncomingsOptions.MaxPerWebhook"/>. Never throws: a call that cannot be
     /// recorded is logged and the webhook carries on.
     /// </summary>
-    Task RecordAsync(BuiltinWebhookCall call);
+    /// <returns>The saved call's id, or null when it was not recorded.</returns>
+    Task<Guid?> RecordAsync(BuiltinWebhookCall call);
+
+    /// <summary>
+    /// Saves the workflows the agent reports it started for a recorded call: the strings in a
+    /// top-level <c>workflowIds</c> array of its JSON reply. A reply without one is ignored.
+    /// Never throws.
+    /// </summary>
+    Task RecordStartedWorkflowsAsync(string tenantId, Guid incomingId, string? replyContent);
 
     Task<ServiceResult<WebhookIncomingPage>> ListAsync(string tenantId, string integrationId, WebhookIncomingCursor? after, int limit);
 
@@ -54,6 +63,12 @@ public class WebhookIncomingService : IWebhookIncomingService
 
     private const string BuiltinWebhookPlatformId = "builtin_webhook";
 
+    /// <summary>Most workflow ids kept for one call; the agent starts one per matched rule.</summary>
+    public const int MaxStartedWorkflowIds = 50;
+
+    /// <summary>Longest workflow id kept; longer values are not workflow ids.</summary>
+    private const int MaxWorkflowIdLength = 1024;
+
     private readonly IWebhookIncomingRepository _incomings;
     private readonly IAppIntegrationRepository _integrations;
     private readonly WebhookIncomingsOptions _options;
@@ -71,7 +86,7 @@ public class WebhookIncomingService : IWebhookIncomingService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task RecordAsync(BuiltinWebhookCall call)
+    public async Task<Guid?> RecordAsync(BuiltinWebhookCall call)
     {
         try
         {
@@ -81,10 +96,10 @@ public class WebhookIncomingService : IWebhookIncomingService
                 _logger.LogDebug(
                     "No builtin webhook matches call {RequestId} for agent {AgentName}, activation {ActivationName}, webhook {WebhookName}; not recorded",
                     call.RequestId, call.AgentName, call.ActivationName, call.WebhookName);
-                return;
+                return null;
             }
 
-            await _incomings.InsertAsync(new WebhookIncoming
+            var incoming = new WebhookIncoming
             {
                 TenantId = call.TenantId,
                 IntegrationId = integration.Id,
@@ -93,13 +108,67 @@ public class WebhookIncomingService : IWebhookIncomingService
                 Headers = ToHeaderList(call.Headers),
                 Body = call.Body,
                 WorkflowId = call.WorkflowId
-            });
+            };
+            await _incomings.InsertAsync(incoming);
 
             await _incomings.TrimAsync(call.TenantId, integration.Id, _options.MaxPerWebhook);
+            return incoming.Id;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to record builtin webhook call {RequestId}", call.RequestId);
+            return null;
+        }
+    }
+
+    public async Task RecordStartedWorkflowsAsync(string tenantId, Guid incomingId, string? replyContent)
+    {
+        try
+        {
+            var workflowIds = ReadWorkflowIds(replyContent);
+            if (workflowIds.Count > 0)
+            {
+                await _incomings.SetStartedWorkflowIdsAsync(tenantId, incomingId, workflowIds);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to record the workflows started for webhook incoming {Id}", incomingId);
+        }
+    }
+
+    /// <summary>
+    /// The strings in a top-level <c>workflowIds</c> array (any casing) of a JSON reply, in order and
+    /// without repeats. Anything else, including a reply that is not JSON, gives an empty list.
+    /// </summary>
+    internal static List<string> ReadWorkflowIds(string? replyContent)
+    {
+        if (string.IsNullOrWhiteSpace(replyContent))
+            return new();
+
+        try
+        {
+            using var reply = JsonDocument.Parse(replyContent);
+            if (reply.RootElement.ValueKind != JsonValueKind.Object)
+                return new();
+
+            var array = reply.RootElement.EnumerateObject()
+                .FirstOrDefault(p => p.Name.Equals("workflowIds", StringComparison.OrdinalIgnoreCase))
+                .Value;
+            if (array.ValueKind != JsonValueKind.Array)
+                return new();
+
+            return array.EnumerateArray()
+                .Where(item => item.ValueKind == JsonValueKind.String)
+                .Select(item => item.GetString()!)
+                .Where(id => !string.IsNullOrWhiteSpace(id) && id.Length <= MaxWorkflowIdLength)
+                .Distinct(StringComparer.Ordinal)
+                .Take(MaxStartedWorkflowIds)
+                .ToList();
+        }
+        catch (JsonException)
+        {
+            return new();
         }
     }
 

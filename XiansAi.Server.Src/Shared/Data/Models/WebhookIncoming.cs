@@ -101,6 +101,13 @@ public class WebhookIncoming
     public required string WorkflowId { get; set; }
 
     /// <summary>
+    /// Workflows the agent started for this call, as it reported them in its reply (a top-level
+    /// <c>workflowIds</c> array). Empty until the reply arrives, or when the agent reports none.
+    /// </summary>
+    [BsonElement("started_workflow_ids")]
+    public List<string> StartedWorkflowIds { get; set; } = new();
+
+    /// <summary>
     /// Cuts the body so the whole row is at most <paramref name="maxBytes"/> when serialized,
     /// never splitting a character, and sets <see cref="BodyTruncated"/>.
     /// </summary>
