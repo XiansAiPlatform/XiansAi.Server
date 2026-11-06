@@ -115,7 +115,7 @@ public static class WebhookEndpoints
 
                 // Record the call before the workflow runs, so it is kept even if the workflow
                 // times out or fails. Recording never throws.
-                await webhookIncomingService.RecordAsync(new BuiltinWebhookCall(
+                var incomingId = await webhookIncomingService.RecordAsync(new BuiltinWebhookCall(
                     tenantId, agentName, activationName, workflowName, webhookName, apikeyId,
                     workflowId, requestId, httpContext.Request.ContentType, httpContext.Request.Headers, body));
 
@@ -224,6 +224,12 @@ public static class WebhookEndpoints
                 // Apply the WebhookResponse to the HTTP context
                 if (webhookResponse != null)
                 {
+                    // Link the recorded call to the workflows the agent says it started.
+                    if (incomingId is Guid recordedId)
+                    {
+                        await webhookIncomingService.RecordStartedWorkflowsAsync(tenantId, recordedId, webhookResponse.Content);
+                    }
+
                     logger.LogInformation(
                         "Applying WebhookResponse: StatusCode={StatusCode}, ContentType={ContentType}, HeaderCount={HeaderCount}",
                         webhookResponse.StatusCode,
