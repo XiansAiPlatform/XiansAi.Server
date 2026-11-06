@@ -52,6 +52,7 @@ public static class AdminOnBehalfOfBinder
         }
 
         tenantContext.ParticipantId = sanitized;
+        tenantContext.OnBehalfOf = sanitized;
         logger.LogDebug(
             "AdminApi on-behalf-of identity set: ParticipantId={ParticipantId}, LoggedInUser={LoggedInUser}",
             LogSanitizer.RedactUserId(sanitized),
