@@ -420,6 +420,16 @@ secret_vault:
       key: asc
       tenant_id: asc
     background: true
+  # A key is unique per full scope; null/missing scope fields compare equal in a unique index.
+  - name: key_scope_unique
+    keys:
+      key: asc
+      tenant_id: asc
+      agent_id: asc
+      user_id: asc
+      activation_name: asc
+    unique: true
+    background: true
 
 # secret_vault_values: secret value documents written by DatabaseSecretStoreProvider.
 # Lookup is always by _id (the SecretVault Mongo _id) which has an implicit unique index;

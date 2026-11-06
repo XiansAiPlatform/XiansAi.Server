@@ -25,7 +25,7 @@ public class SecretVaultServiceTests
     [Fact]
     public async Task CreateAsync_Persists_Metadata_And_Value()
     {
-        _repo.Setup(r => r.ExistsByKeyAsync("api-key", "tenant-a")).ReturnsAsync(false);
+        _repo.Setup(r => r.ExistsByKeyAsync("api-key", "tenant-a", null, null, null, null)).ReturnsAsync(false);
         SecretVault? captured = null;
         _repo.Setup(r => r.CreateAsync(It.IsAny<SecretVault>()))
             .Callback<SecretVault>(s => captured = s)
@@ -51,7 +51,7 @@ public class SecretVaultServiceTests
     [Fact]
     public async Task CreateAsync_Rejects_Duplicate_Key()
     {
-        _repo.Setup(r => r.ExistsByKeyAsync("dup", null)).ReturnsAsync(true);
+        _repo.Setup(r => r.ExistsByKeyAsync("dup", null, null, null, null, null)).ReturnsAsync(true);
 
         var input = new SecretVaultCreateInput("dup", "v", null, null, null, null, null);
         var result = await _service.CreateAsync(input, "alice");
@@ -61,9 +61,35 @@ public class SecretVaultServiceTests
     }
 
     [Fact]
+    public async Task CreateAsync_Rejects_Duplicate_Key_In_Same_Activation_Scope()
+    {
+        _repo.Setup(r => r.ExistsByKeyAsync("k", "t", null, null, "act-1", null)).ReturnsAsync(true);
+
+        var input = new SecretVaultCreateInput("k", "v", "t", null, null, "act-1", null);
+        var result = await _service.CreateAsync(input, "alice");
+
+        Assert.Equal(StatusCode.Conflict, result.StatusCode);
+        Assert.Empty(_store.Snapshot());
+    }
+
+    [Fact]
+    public async Task CreateAsync_Allows_Same_Key_In_Different_Activation()
+    {
+        // act-1 already has "k"; act-2 does not.
+        _repo.Setup(r => r.ExistsByKeyAsync("k", "t", null, null, "act-1", null)).ReturnsAsync(true);
+        _repo.Setup(r => r.ExistsByKeyAsync("k", "t", null, null, "act-2", null)).ReturnsAsync(false);
+        _repo.Setup(r => r.CreateAsync(It.IsAny<SecretVault>())).Returns(Task.CompletedTask);
+
+        var input = new SecretVaultCreateInput("k", "v", "t", null, null, "act-2", null);
+        var result = await _service.CreateAsync(input, "alice");
+
+        Assert.True(result.IsSuccess);
+    }
+
+    [Fact]
     public async Task CreateAsync_RollsBack_Value_On_Metadata_Failure()
     {
-        _repo.Setup(r => r.ExistsByKeyAsync("api-key", null)).ReturnsAsync(false);
+        _repo.Setup(r => r.ExistsByKeyAsync("api-key", null, null, null, null, null)).ReturnsAsync(false);
         _repo.Setup(r => r.CreateAsync(It.IsAny<SecretVault>()))
             .ThrowsAsync(new InvalidOperationException("simulated mongo failure"));
 
@@ -135,6 +161,7 @@ public class SecretVaultServiceTests
         await _store.SetAsync(entity.Id, "kept");
         _repo.Setup(r => r.GetByIdAsync(entity.Id)).ReturnsAsync(entity);
         _repo.Setup(r => r.UpdateAsync(It.IsAny<SecretVault>())).ReturnsAsync(true);
+        _repo.Setup(r => r.ExistsByKeyAsync("k1", "tenant-a", null, null, "act-1", entity.Id)).ReturnsAsync(false);
 
         var result = await _service.UpdateAsync(
             entity.Id,
@@ -142,6 +169,23 @@ public class SecretVaultServiceTests
             "bob");
 
         Assert.True(result.IsSuccess);
+        Assert.Equal("kept", await _store.GetAsync(entity.Id));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_Rejects_Scope_Change_That_Collides()
+    {
+        var entity = NewEntity("tenant-a", "k1");
+        await _store.SetAsync(entity.Id, "kept");
+        _repo.Setup(r => r.GetByIdAsync(entity.Id)).ReturnsAsync(entity);
+        _repo.Setup(r => r.ExistsByKeyAsync("k1", "tenant-a", null, null, "act-1", entity.Id)).ReturnsAsync(true);
+
+        var result = await _service.UpdateAsync(
+            entity.Id,
+            new SecretVaultUpdateInput(null, null, null, null, "act-1", null),
+            "bob");
+
+        Assert.Equal(StatusCode.Conflict, result.StatusCode);
         Assert.Equal("kept", await _store.GetAsync(entity.Id));
     }
 
