@@ -1,5 +1,4 @@
 using System.IO.Compression;
-using System.Text;
 using Moq;
 using Shared.Data.Models;
 using Shared.Services.Privacy;
@@ -15,14 +14,13 @@ public class PrivacyExporterTests
         using var output = new AsyncOnlyOutput();
         var later = Contributor(200, (writer, ct) => writer.WriteJsonAsync("later.json", new { Value = 2 }, ct));
         var earlier = Contributor(100, (writer, ct) => writer.WriteJsonAsync("earlier.json", new { Value = 1 }, ct));
-        using var readme = new MemoryStream(Encoding.UTF8.GetBytes("export guide"));
 
-        await new PrivacyExporter([later.Object, earlier.Object]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, readme, CancellationToken.None);
+        await new PrivacyExporter([later.Object, earlier.Object]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, CancellationToken.None);
 
         using var archive = new ZipArchive(new MemoryStream(output.ToArray()), ZipArchiveMode.Read);
         Assert.Equal(["README.txt", "earlier.json", "later.json"], archive.Entries.Select(entry => entry.FullName));
         using var reader = new StreamReader(archive.Entries[0].Open());
-        Assert.Equal("export guide", await reader.ReadToEndAsync());
+        Assert.Contains("PERSONAL DATA EXPORT", await reader.ReadToEndAsync());
         earlier.VerifyAll();
         later.VerifyAll();
     }
@@ -31,11 +29,10 @@ public class PrivacyExporterTests
     public async Task ContributorFailurePropagatesAndLeavesIncompleteZip()
     {
         using var output = new AsyncOnlyOutput();
-        using var readme = new MemoryStream(Encoding.UTF8.GetBytes("guide"));
         var failing = Contributor(1, (_, _) => throw new InvalidOperationException("export failed"));
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            new PrivacyExporter([failing.Object]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, readme, CancellationToken.None));
+            new PrivacyExporter([failing.Object]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, CancellationToken.None));
 
         Assert.Equal("export failed", error.Message);
         Assert.Throws<InvalidDataException>(() => new ZipArchive(new MemoryStream(output.ToArray()), ZipArchiveMode.Read));
@@ -45,13 +42,12 @@ public class PrivacyExporterTests
     public async Task CancellationStopsBeforeContributorRuns()
     {
         using var output = new AsyncOnlyOutput();
-        using var readme = new MemoryStream(Encoding.UTF8.GetBytes("guide"));
         using var cancellation = new CancellationTokenSource();
         var contributor = Contributor(1, (_, _) => Task.CompletedTask);
         cancellation.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            new PrivacyExporter([contributor.Object]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, readme, cancellation.Token));
+            new PrivacyExporter([contributor.Object]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, cancellation.Token));
         contributor.Verify(item => item.ExportAsync(It.IsAny<PrivacySubject>(), It.IsAny<PrivacyScope>(), It.IsAny<IExportWriter>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -60,13 +56,12 @@ public class PrivacyExporterTests
     {
         const long size = 100L * 1024 * 1024;
         using var output = new AsyncOnlyOutput();
-        using var readme = new MemoryStream(Encoding.UTF8.GetBytes("guide"));
         using var generated = new GeneratedStream(size);
         var contributor = Contributor(1, (writer, ct) => writer.WriteFileAsync("large.bin", generated, ct));
         GC.Collect();
         var memoryBefore = GC.GetTotalMemory(true);
 
-        await new PrivacyExporter([contributor.Object]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, readme, CancellationToken.None);
+        await new PrivacyExporter([contributor.Object]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, CancellationToken.None);
 
         var memoryAfter = GC.GetTotalMemory(true);
         Assert.Equal(size, generated.BytesRead);

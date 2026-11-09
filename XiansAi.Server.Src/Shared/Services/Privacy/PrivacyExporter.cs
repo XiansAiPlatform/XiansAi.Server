@@ -10,9 +10,11 @@ public sealed class PrivacyExporter(IEnumerable<IPersonalDataContributor> contri
         PrivacySubject subject,
         PrivacyScope scope,
         Stream output,
-        Stream readme,
         CancellationToken cancellationToken)
     {
+        using var readme = typeof(PrivacyExporter).Assembly.GetManifestResourceStream(
+            "XiansAi.Server.Shared.Services.Privacy.PrivacyExportReadme.txt")
+            ?? throw new InvalidOperationException("The privacy export README is missing.");
         var archive = await ZipArchive.CreateAsync(new AsyncZipOutputStream(output), ZipArchiveMode.Create, false, null, cancellationToken);
         var writer = new ZipExportWriter(archive);
 

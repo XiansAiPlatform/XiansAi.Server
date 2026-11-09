@@ -172,10 +172,10 @@ in DI as `IPersonalDataContributor`:
 
 ## Export format
 
-`PrivacyExporter` writes a ZIP directly to the caller's output stream. It writes `README.txt` first from
-the README stream supplied by the caller, then calls each registered contributor in ascending `Order`.
-The README must contain the approved supporting information for the access request. Its final text is
-still pending; the exporter does not create that text.
+`PrivacyExporter` writes a ZIP directly to the caller's output stream. It writes `README.txt` first
+from the embedded `Shared/Services/Privacy/PrivacyExportReadme.txt` resource, then calls each
+registered contributor in ascending `Order`. The README has draft Article 15 sections. Its marked
+policy details must be completed and approved before the export is offered to users.
 
 Contributors use `IExportWriter.WriteJsonAsync` for indented UTF-8 JSON entries and
 `WriteFileAsync` for binary files. Each entry path uses forward slashes, has no leading slash, and
