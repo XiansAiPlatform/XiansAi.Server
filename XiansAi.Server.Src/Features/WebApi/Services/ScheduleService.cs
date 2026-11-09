@@ -459,7 +459,7 @@ public class ScheduleService : IScheduleService
                 {
                     if (memoValue is Temporalio.Converters.IEncodedRawValue encodedValue)
                     {
-                        return encodedValue?.Payload?.Data?.ToStringUtf8()?.Replace("\"", "");
+                        return TemporalMemoDecoder.Decode(encodedValue);
                     }
                 }
             }
@@ -484,7 +484,7 @@ public class ScheduleService : IScheduleService
                 {
                     if (memoValue is Temporalio.Converters.IEncodedRawValue encodedValue)
                     {
-                        return encodedValue?.Payload?.Data?.ToStringUtf8()?.Replace("\"", "");
+                        return TemporalMemoDecoder.Decode(encodedValue);
                     }
                 }
             }
@@ -517,7 +517,7 @@ public class ScheduleService : IScheduleService
                 {
                     if (memoValue is Temporalio.Converters.IEncodedRawValue encodedValue)
                     {
-                        return encodedValue?.Payload?.Data?.ToStringUtf8()?.Replace("\"", "");
+                        return TemporalMemoDecoder.Decode(encodedValue);
                     }
                 }
             }
@@ -546,7 +546,7 @@ public class ScheduleService : IScheduleService
                         {
                             if (kvp.Value is Temporalio.Converters.IEncodedRawValue encodedValue)
                             {
-                                var decodedValue = encodedValue?.Payload?.Data?.ToStringUtf8()?.Replace("\"", "") ?? "";
+                                var decodedValue = TemporalMemoDecoder.Decode(encodedValue) ?? "";
                                 metadata[kvp.Key] = decodedValue;
                             }
                             else
