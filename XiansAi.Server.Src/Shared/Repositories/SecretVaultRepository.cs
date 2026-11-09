@@ -9,7 +9,7 @@ public interface ISecretVaultRepository
 {
     Task<SecretVault?> GetByIdAsync(string id);
     Task<SecretVault?> GetByKeyAsync(string key, string? tenantId);
-    Task<bool> ExistsByKeyAsync(string key, string? tenantId);
+    Task<bool> ExistsByKeyAsync(string key, string? tenantId, string? agentId, string? userId, string? activationName, string? excludeId = null);
     Task<SecretVault?> FindForAccessAsync(string key, string? tenantId, string? agentId, string? userId, string? activationName);
     Task<List<SecretVault>> FindManyForAccessAsync(string key, IReadOnlyCollection<string> tenantIds, string? agentId, string? userId, string? activationName);
     Task<List<SecretVault>> ListAsync(string? tenantId, string? agentId, string? activationName);
@@ -69,34 +69,30 @@ public class SecretVaultRepository : ISecretVaultRepository
         }
     }
 
-    public async Task<bool> ExistsByKeyAsync(string key, string? tenantId)
+    /// <summary>
+    /// A key is unique per full scope (tenantId, agentId, userId, activationName). Null/empty scope values
+    /// match only documents where that scope field is null. <paramref name="excludeId"/> skips the secret being updated.
+    /// Exceptions propagate so a DB failure never reads as "no duplicate".
+    /// </summary>
+    public async Task<bool> ExistsByKeyAsync(string key, string? tenantId, string? agentId, string? userId, string? activationName, string? excludeId = null)
     {
-        try
+        var builder = Builders<SecretVault>.Filter;
+        var filters = new List<FilterDefinition<SecretVault>>
         {
-            var builder = Builders<SecretVault>.Filter;
-            var filter = builder.Eq(x => x.Key, key);
+            builder.Eq(x => x.Key, key),
+            builder.Eq(x => x.TenantId, NormalizeScope(tenantId)),
+            builder.Eq(x => x.AgentId, NormalizeScope(agentId)),
+            builder.Eq(x => x.UserId, NormalizeScope(userId)),
+            builder.Eq(x => x.ActivationName, NormalizeScope(activationName))
+        };
+        if (!string.IsNullOrWhiteSpace(excludeId))
+            filters.Add(builder.Ne(x => x.Id, excludeId));
 
-            // Enforce key uniqueness per tenant:
-            // - When tenantId is provided, match that exact tenantId.
-            // - When tenantId is null/empty, only consider records with TenantId == null.
-            if (!string.IsNullOrWhiteSpace(tenantId))
-            {
-                filter = builder.And(filter, builder.Eq(x => x.TenantId, tenantId));
-            }
-            else
-            {
-                filter = builder.And(filter, builder.Eq(x => x.TenantId, (string?)null));
-            }
-
-            var count = await _collection.CountDocumentsAsync(filter);
-            return count > 0;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error checking existence for key {Key}", LogSanitizer.Sanitize(key));
-            return false;
-        }
+        var count = await _collection.CountDocumentsAsync(builder.And(filters));
+        return count > 0;
     }
+
+    private static string? NormalizeScope(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
     /// <summary>
     /// Find a secret that matches key and scope. Strict match in both directions for tenantId, agentId, userId, and activationName:
