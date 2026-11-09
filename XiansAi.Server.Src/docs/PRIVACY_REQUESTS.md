@@ -170,6 +170,23 @@ in DI as `IPersonalDataContributor`:
   the person's identifiers.
 - `ExportAsync` writes entries through `IExportWriter`.
 
+## Export format
+
+`PrivacyExporter` writes a ZIP directly to the caller's output stream. It writes `README.txt` first from
+the README stream supplied by the caller, then calls each registered contributor in ascending `Order`.
+The README must contain the approved supporting information for the access request. Its final text is
+still pending; the exporter does not create that text.
+
+Contributors use `IExportWriter.WriteJsonAsync` for indented UTF-8 JSON entries and
+`WriteFileAsync` for binary files. Each entry path uses forward slashes, has no leading slash, and
+contains only letters, digits, `-`, `_`, and `.` in each nonempty segment. `.` and `..` segments and
+duplicate paths are rejected. Contributors choose their own paths within those rules.
+
+The writer copies file streams in chunks. It does not store the full export or a full file in memory.
+The output may be non-seekable and may reject synchronous writes. If a contributor fails, the exporter
+propagates the exception and does not finish the ZIP central directory; the caller must discard the
+incomplete response.
+
 ## Indexes
 
 | Index | Keys | Used by |

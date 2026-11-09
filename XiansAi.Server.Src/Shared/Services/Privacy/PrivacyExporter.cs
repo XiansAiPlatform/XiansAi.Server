@@ -13,7 +13,7 @@ public sealed class PrivacyExporter(IEnumerable<IPersonalDataContributor> contri
         Stream readme,
         CancellationToken cancellationToken)
     {
-        var archive = await ZipArchive.CreateAsync(output, ZipArchiveMode.Create, true, null, cancellationToken);
+        var archive = await ZipArchive.CreateAsync(new AsyncZipOutputStream(output), ZipArchiveMode.Create, false, null, cancellationToken);
         var writer = new ZipExportWriter(archive);
 
         await writer.WriteFileAsync("README.txt", readme, cancellationToken);
