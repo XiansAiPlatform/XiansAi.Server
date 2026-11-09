@@ -252,6 +252,22 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IWebhookEventPublisher, WebhookEventPublisher>();
         builder.Services.AddScoped<IAppIntegrationService, AppIntegrationService>();
         builder.Services.AddScoped<IWebhookIncomingService, WebhookIncomingService>();
+        builder.Services.AddSingleton<IWebhookRedeliverySigner, WebhookRedeliverySigner>();
+        builder.Services.AddScoped<IWebhookRedeliveryService, WebhookRedeliveryService>();
+        builder.Services.AddHttpClient(WebhookRedeliveryService.HttpClientName, client =>
+        {
+            // The service sets a deadline per call from the webhook's own timeout.
+            client.Timeout = Timeout.InfiniteTimeSpan;
+            client.DefaultRequestHeaders.UserAgent.ParseAdd("XiansAi-Redelivery/1.0");
+        })
+        .ConfigurePrimaryHttpMessageHandler(() => new System.Net.Http.SocketsHttpHandler
+        {
+            // The call goes to this server's own webhook URL; never follow it anywhere else.
+            AllowAutoRedirect = false,
+            // A stored Cookie header is resent as it was, not merged with a cookie jar.
+            UseCookies = false,
+            AutomaticDecompression = System.Net.DecompressionMethods.None
+        });
         builder.Services.AddHttpClient();              
         builder.Services.AddScoped<IApiKeyService, ApiKeyService>();
         builder.Services.AddScoped<IRoleCacheService, RoleCacheService>();
