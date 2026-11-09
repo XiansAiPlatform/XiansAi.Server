@@ -116,16 +116,40 @@ public class WebhookIncomingServiceTests
     public async Task RecordStartedWorkflowsSavesTheIdsTheAgentReports()
     {
         var id = Guid.CreateVersion7();
-        const string reply = "{\"status\":\"success\",\"workflowIds\":[\"t:a:Processing Workflow:act:req-1\",\"t:a:Processing Workflow:act:req-2\"]}";
+        const string reply = "{\"status\":\"success\",\"workflowIds\":[\"tenant:a:Processing Workflow:act:req-1\",\"tenant:a:Processing Workflow:act:req-2\"]}";
 
         await _service.RecordStartedWorkflowsAsync("tenant", id, reply);
 
         _incomings.Verify(r => r.SetStartedWorkflowIdsAsync("tenant", id,
             It.Is<IReadOnlyList<string>>(ids => ids.SequenceEqual(new[]
             {
-                "t:a:Processing Workflow:act:req-1",
-                "t:a:Processing Workflow:act:req-2"
+                "tenant:a:Processing Workflow:act:req-1",
+                "tenant:a:Processing Workflow:act:req-2"
             }))), Times.Once);
+    }
+
+    [Fact]
+    public async Task RecordStartedWorkflowsSavesNothingWhenEveryIdIsAnotherTenants()
+    {
+        await _service.RecordStartedWorkflowsAsync("tenant", Guid.CreateVersion7(),
+            "{\"workflowIds\":[\"other:a:Processing Workflow:req-1\",\"tenantx:a:Processing Workflow:req-1\"]}");
+
+        _incomings.Verify(r => r.SetStartedWorkflowIdsAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<IReadOnlyList<string>>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task RecordKeepsTheSavedIdWhenTheTrimFails()
+    {
+        GivenWebhooks(Webhook());
+        WebhookIncoming? saved = null;
+        _incomings.Setup(r => r.InsertAsync(It.IsAny<WebhookIncoming>())).Callback<WebhookIncoming>(i => saved = i);
+        _incomings.Setup(r => r.TrimAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>()))
+            .ThrowsAsync(new TimeoutException("boom"));
+
+        var id = await _service.RecordAsync(Call());
+
+        Assert.NotNull(saved);
+        Assert.Equal(saved!.Id, id);
     }
 
     [Theory]
@@ -149,23 +173,63 @@ public class WebhookIncomingServiceTests
         _incomings.Setup(r => r.SetStartedWorkflowIdsAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<IReadOnlyList<string>>()))
             .ThrowsAsync(new TimeoutException());
 
-        await _service.RecordStartedWorkflowsAsync("tenant", Guid.CreateVersion7(), "{\"workflowIds\":[\"w\"]}");
+        await _service.RecordStartedWorkflowsAsync("tenant", Guid.CreateVersion7(), "{\"workflowIds\":[\"tenant:w\"]}");
+
+        _incomings.Verify(r => r.SetStartedWorkflowIdsAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<IReadOnlyList<string>>()), Times.Once);
     }
 
     [Fact]
     public void ReadWorkflowIdsKeepsStringsInOrderWithoutRepeatsAndAnyCasing()
     {
         Assert.Equal(
-            ["b", "a"],
-            WebhookIncomingService.ReadWorkflowIds("{\"WorkflowIds\":[\"b\",1,null,\"\",\"a\",\"b\"]}"));
+            ["t:b", "t:a"],
+            WebhookIncomingService.ReadWorkflowIds("t", "{\"WorkflowIds\":[\"t:b\",1,null,\"\",\"t:a\",\"t:b\"]}"));
+    }
+
+    [Fact]
+    public void ReadWorkflowIdsKeepsOnlyThisTenantsIds()
+    {
+        Assert.Equal(
+            ["t:a"],
+            WebhookIncomingService.ReadWorkflowIds("t", "{\"workflowIds\":[\"other:a\",\"t:a\",\"tx:a\",\"a\"]}"));
+    }
+
+    [Fact]
+    public void ReadWorkflowIdsDropsBlankAndOverlongIds()
+    {
+        var overlong = "t:" + new string('x', 1023);
+        var longest = "t:" + new string('x', 1022);
+
+        Assert.Equal(
+            [longest],
+            WebhookIncomingService.ReadWorkflowIds("t", $"{{\"workflowIds\":[\"   \",\"{overlong}\",\"{longest}\"]}}"));
+    }
+
+    [Fact]
+    public void ReadWorkflowIdsIgnoresANestedArray()
+    {
+        Assert.Empty(WebhookIncomingService.ReadWorkflowIds("t", "{\"result\":{\"workflowIds\":[\"t:a\"]}}"));
     }
 
     [Fact]
     public void ReadWorkflowIdsCapsTheCount()
     {
-        var reply = "{\"workflowIds\":[" + string.Join(",", Enumerable.Range(0, 80).Select(i => $"\"w{i}\"")) + "]}";
+        var reply = "{\"workflowIds\":[" + string.Join(",", Enumerable.Range(0, 80).Select(i => $"\"t:w{i}\"")) + "]}";
 
-        Assert.Equal(WebhookIncomingService.MaxStartedWorkflowIds, WebhookIncomingService.ReadWorkflowIds(reply).Count);
+        Assert.Equal(WebhookIncomingService.MaxStartedWorkflowIds, WebhookIncomingService.ReadWorkflowIds("t", reply).Count);
+    }
+
+    [Fact]
+    public void ReadWorkflowIdsKeepsOnlyAsManyAsFitTheRowsReservedRoom()
+    {
+        // 50 ids of 1024 bytes would be about 51 KB, more than the 32 KB a row keeps for them.
+        var reply = "{\"workflowIds\":[" + string.Join(",", Enumerable.Range(0, 50).Select(i => $"\"t:{i:D4}{new string('x', 1018)}\"")) + "]}";
+
+        var ids = WebhookIncomingService.ReadWorkflowIds("t", reply);
+
+        Assert.InRange(ids.Count, 1, WebhookIncomingService.MaxStartedWorkflowIds - 1);
+        var stored = new MongoDB.Bson.BsonDocument("started_workflow_ids", new MongoDB.Bson.BsonArray(ids));
+        Assert.True(MongoDB.Bson.BsonExtensionMethods.ToBson(stored).Length <= WebhookIncoming.StartedWorkflowIdsReserveBytes);
     }
 
     [Fact]

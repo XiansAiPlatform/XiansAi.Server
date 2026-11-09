@@ -84,7 +84,7 @@ public class WebhookIncomingRepositoryTests : IClassFixture<MongoDbFixture>
         var raw = await _database.GetCollection<BsonDocument>("webhook_incomings")
             .Find(new BsonDocument("tenant_id", tenant)).SingleAsync();
         Assert.True(raw["body_truncated"].AsBoolean);
-        Assert.True(raw.ToBson().Length <= WebhookIncoming.MaxDocumentBytes);
+        Assert.True(raw.ToBson().Length <= WebhookIncoming.MaxInsertBytes);
         Assert.StartsWith("aaaa", raw["body"].AsString);
 
         var listed = Assert.Single(await _repository.ListAsync(tenant, Integration, null, 10));
@@ -216,9 +216,22 @@ public class WebhookIncomingRepositoryTests : IClassFixture<MongoDbFixture>
         Assert.Empty((await _repository.GetAsync(tenant, Integration, row.Id))!.StartedWorkflowIds);
 
         await _repository.SetStartedWorkflowIdsAsync(NewTenant(), row.Id, ["other-tenant"]);
-        await _repository.SetStartedWorkflowIdsAsync(tenant, row.Id, ["run-1", "run-2"]);
+        Assert.Empty((await _repository.GetAsync(tenant, Integration, row.Id))!.StartedWorkflowIds);
 
+        await _repository.SetStartedWorkflowIdsAsync(tenant, row.Id, ["run-1", "run-2"]);
         Assert.Equal(["run-1", "run-2"], (await _repository.GetAsync(tenant, Integration, row.Id))!.StartedWorkflowIds);
+    }
+
+    [Fact]
+    public async Task SettingStartedWorkflowIdsReplacesTheOnesSavedBefore()
+    {
+        var tenant = NewTenant();
+        var row = (await InsertMinutesAsync(tenant, 0))[0];
+
+        await _repository.SetStartedWorkflowIdsAsync(tenant, row.Id, ["run-1", "run-2"]);
+        await _repository.SetStartedWorkflowIdsAsync(tenant, row.Id, ["run-3"]);
+
+        Assert.Equal(["run-3"], (await _repository.GetAsync(tenant, Integration, row.Id))!.StartedWorkflowIds);
     }
 
     [Fact]
