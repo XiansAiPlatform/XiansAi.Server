@@ -201,7 +201,8 @@ public class WebhookIncomingRepository : IWebhookIncomingRepository
             await _collection.Find(filter)
                 .Sort(NewestFirst)
                 .Limit(Math.Clamp(limit, 1, MaxPageSize))
-                .Project(i => new WebhookIncomingSummary(i.Id, i.RequestId, i.ReceivedAt, i.BodyTruncated, i.HeadersTruncated))
+                .Project(i => new WebhookIncomingSummary(
+                    i.Id, i.RequestId, i.ReceivedAt, i.BodyTruncated, i.HeadersTruncated, i.RedeliveryOf, i.RedeliveryOfRequestId))
                 .ToListAsync(),
             _logger, maxRetries: 3, baseDelayMs: 100, operationName: operationName);
     }

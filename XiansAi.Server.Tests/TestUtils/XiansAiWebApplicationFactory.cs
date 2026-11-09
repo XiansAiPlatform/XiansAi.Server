@@ -65,7 +65,9 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["MongoDB:ConnectionString"] = _mongoFixture.MongoConfig.ConnectionString,
-                ["MongoDB:DatabaseName"] = _mongoFixture.MongoConfig.DatabaseName
+                ["MongoDB:DatabaseName"] = _mongoFixture.MongoConfig.DatabaseName,
+                // The test host has no listening address; redeliveries go to the in-memory server (below).
+                ["WebhookIncomings:RedeliveryBaseUrl"] = "http://localhost"
             });
 
             // Register environment variables so devs can override any test fixture
@@ -87,6 +89,10 @@ public class XiansAiWebApplicationFactory : WebApplicationFactory<Program>
 
         builder.ConfigureServices(services =>
         {
+            // A redelivery POSTs the call to this server's own webhook URL; in tests that is the TestServer.
+            services.AddHttpClient(WebhookRedeliveryService.HttpClientName)
+                .ConfigurePrimaryHttpMessageHandler(() => Server.CreateHandler());
+
             // Override MongoDB services
             RemoveService<IMongoDbClientService>(services);
             services.AddSingleton<IMongoDbClientService>(_mongoFixture.MongoClientService);

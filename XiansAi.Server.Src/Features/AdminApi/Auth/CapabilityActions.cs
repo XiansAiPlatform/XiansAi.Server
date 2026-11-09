@@ -206,6 +206,7 @@ public static class CapabilityActions
     public const string TenantWebhookIncomingsGet = "tenant.webhookIncomings.get";
     public const string TenantWebhookIncomingsDelete = "tenant.webhookIncomings.delete";
     public const string TenantWebhookIncomingsDeleteAll = "tenant.webhookIncomings.deleteAll";
+    public const string TenantWebhookIncomingsRedeliver = "tenant.webhookIncomings.redeliver";
 
     // AdminAppIntegrationEndpoints: /tenants/{tenantId}/integrations
     public const string TenantIntegrationsList = "tenant.integrations.list";
@@ -580,6 +581,8 @@ public static class CapabilityActions
             "Delete one recorded call of a builtin webhook."),
         new(TenantWebhookIncomingsDeleteAll, [SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
             "Delete every recorded call of a builtin webhook."),
+        new(TenantWebhookIncomingsRedeliver, [SystemRoles.TenantUser, SystemRoles.TenantAdmin],
+            "Send a recorded call of a builtin webhook to it again, which runs the agent again."),
 
         new(TenantIntegrationsList, [SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
             "List app integrations for a tenant."),

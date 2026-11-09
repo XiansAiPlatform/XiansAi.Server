@@ -16,4 +16,26 @@ public class WebhookIncomingsOptions
     /// </summary>
     [Range(1, 1_000)]
     public int MaxPerWebhook { get; set; } = 100;
+
+    /// <summary>
+    /// Base URL (scheme, host and port) a redelivery is sent to, e.g. <c>http://localhost:5000</c>.
+    /// When unset, the server sends it to one of its own listening addresses. Set it when those
+    /// cannot be reached from inside the server, for example behind a container port mapping.
+    /// </summary>
+    [AbsoluteHttpUrl]
+    public string? RedeliveryBaseUrl { get; set; }
+}
+
+/// <summary>Accepts null, empty or an absolute http(s) URL.</summary>
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class AbsoluteHttpUrlAttribute : ValidationAttribute
+{
+    public AbsoluteHttpUrlAttribute() : base("{0} must be an absolute http or https URL.") { }
+
+    public override bool IsValid(object? value) =>
+        value is null
+        || value is string { Length: 0 }
+        || (value is string text
+            && Uri.TryCreate(text, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps));
 }
