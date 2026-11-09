@@ -905,11 +905,7 @@ public class WorkflowFinderService : IWorkflowFinderService
     /// <returns>The extracted string value, or null if not found.</returns>
     private string? ExtractMemoValue(IReadOnlyDictionary<string, IEncodedRawValue> memo, string key)
     {
-        if (memo.TryGetValue(key, out var memoValue))
-        {
-            return memoValue?.Payload?.Data?.ToStringUtf8()?.Replace("\"", "");
-        }
-        return null;
+        return TemporalMemoDecoder.GetString(memo, key);
     }
 
     /// <summary>
