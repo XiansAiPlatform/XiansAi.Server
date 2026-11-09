@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
@@ -69,6 +70,12 @@ public class WebhookIncomingService : IWebhookIncomingService
     /// <summary>Longest workflow id kept; longer values are not workflow ids.</summary>
     private const int MaxWorkflowIdLength = 1024;
 
+    /// <summary>BSON bytes for the <c>started_workflow_ids</c> field itself (type, name, array header).</summary>
+    private const int StartedWorkflowIdsFieldOverheadBytes = 32;
+
+    /// <summary>BSON bytes per array element besides the id's own bytes (type, index key, length, terminator).</summary>
+    private const int StartedWorkflowIdElementOverheadBytes = 12;
+
     private readonly IWebhookIncomingRepository _incomings;
     private readonly IAppIntegrationRepository _integrations;
     private readonly WebhookIncomingsOptions _options;
@@ -111,7 +118,15 @@ public class WebhookIncomingService : IWebhookIncomingService
             };
             await _incomings.InsertAsync(incoming);
 
-            await _incomings.TrimAsync(call.TenantId, integration.Id, _options.MaxPerWebhook);
+            // The call is saved; a failed trim must not lose its id (it links the call to its runs).
+            try
+            {
+                await _incomings.TrimAsync(call.TenantId, integration.Id, _options.MaxPerWebhook);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to trim builtin webhook calls for webhook {IntegrationId}", integration.Id);
+            }
             return incoming.Id;
         }
         catch (Exception ex)
@@ -125,7 +140,7 @@ public class WebhookIncomingService : IWebhookIncomingService
     {
         try
         {
-            var workflowIds = ReadWorkflowIds(replyContent);
+            var workflowIds = ReadWorkflowIds(tenantId, replyContent);
             if (workflowIds.Count > 0)
             {
                 await _incomings.SetStartedWorkflowIdsAsync(tenantId, incomingId, workflowIds);
@@ -140,8 +155,11 @@ public class WebhookIncomingService : IWebhookIncomingService
     /// <summary>
     /// The strings in a top-level <c>workflowIds</c> array (any casing) of a JSON reply, in order and
     /// without repeats. Anything else, including a reply that is not JSON, gives an empty list.
+    /// Only ids of this tenant's workflows (<c>{tenantId}:…</c>) are kept, at most
+    /// <see cref="MaxStartedWorkflowIds"/> of them and only as many as fit in
+    /// <see cref="WebhookIncoming.StartedWorkflowIdsReserveBytes"/>.
     /// </summary>
-    internal static List<string> ReadWorkflowIds(string? replyContent)
+    internal static List<string> ReadWorkflowIds(string tenantId, string? replyContent)
     {
         if (string.IsNullOrWhiteSpace(replyContent))
             return new();
@@ -158,13 +176,27 @@ public class WebhookIncomingService : IWebhookIncomingService
             if (array.ValueKind != JsonValueKind.Array)
                 return new();
 
-            return array.EnumerateArray()
+            var tenantPrefix = tenantId + ":";
+            var candidates = array.EnumerateArray()
                 .Where(item => item.ValueKind == JsonValueKind.String)
                 .Select(item => item.GetString()!)
-                .Where(id => !string.IsNullOrWhiteSpace(id) && id.Length <= MaxWorkflowIdLength)
-                .Distinct(StringComparer.Ordinal)
-                .Take(MaxStartedWorkflowIds)
-                .ToList();
+                .Where(id => !string.IsNullOrWhiteSpace(id)
+                    && id.Length <= MaxWorkflowIdLength
+                    && id.StartsWith(tenantPrefix, StringComparison.Ordinal))
+                .Distinct(StringComparer.Ordinal);
+
+            // The ids are set after the row is saved, so they must fit the room the row keeps for them.
+            var ids = new List<string>();
+            var bytesLeft = WebhookIncoming.StartedWorkflowIdsReserveBytes - StartedWorkflowIdsFieldOverheadBytes;
+            foreach (var id in candidates)
+            {
+                var bytes = Encoding.UTF8.GetByteCount(id) + StartedWorkflowIdElementOverheadBytes;
+                if (ids.Count == MaxStartedWorkflowIds || bytes > bytesLeft)
+                    break;
+                ids.Add(id);
+                bytesLeft -= bytes;
+            }
+            return ids;
         }
         catch (JsonException)
         {

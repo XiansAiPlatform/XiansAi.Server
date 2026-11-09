@@ -224,12 +224,6 @@ public static class WebhookEndpoints
                 // Apply the WebhookResponse to the HTTP context
                 if (webhookResponse != null)
                 {
-                    // Link the recorded call to the workflows the agent says it started.
-                    if (incomingId is Guid recordedId)
-                    {
-                        await webhookIncomingService.RecordStartedWorkflowsAsync(tenantId, recordedId, webhookResponse.Content);
-                    }
-
                     logger.LogInformation(
                         "Applying WebhookResponse: StatusCode={StatusCode}, ContentType={ContentType}, HeaderCount={HeaderCount}",
                         webhookResponse.StatusCode,
@@ -237,6 +231,13 @@ public static class WebhookEndpoints
                         webhookResponse.Headers?.Count ?? 0);
 
                     await webhookResponse.ApplyToHttpContextAsync(httpContext);
+
+                    // Link the recorded call to the workflows the agent says it started. Done after the
+                    // reply is written so this best-effort write adds nothing to the caller's wait.
+                    if (incomingId is Guid recordedId)
+                    {
+                        await webhookIncomingService.RecordStartedWorkflowsAsync(tenantId, recordedId, webhookResponse.Content);
+                    }
                     return Results.Empty;
                 }
 

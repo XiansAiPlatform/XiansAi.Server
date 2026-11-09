@@ -97,12 +97,12 @@ public class WebhookIncomingRepository : IWebhookIncomingRepository
         incoming.EncryptHeaders(value => _encryption.Encrypt(value) ?? string.Empty);
 
         var size = incoming.ToBson().Length;
-        if (size > WebhookIncoming.MaxDocumentBytes)
+        if (size > WebhookIncoming.MaxInsertBytes)
         {
-            incoming.TruncateBody(size, WebhookIncoming.MaxDocumentBytes);
+            incoming.TruncateBody(size, WebhookIncoming.MaxInsertBytes);
             _logger.LogWarning(
-                "Webhook incoming {Id} is {Size} bytes, over the {Max}-byte document limit; body truncated and the call cannot be redelivered",
-                incoming.Id, size, WebhookIncoming.MaxDocumentBytes);
+                "Webhook incoming {Id} is {Size} bytes, over the {Max}-byte insert limit; body truncated and the call cannot be redelivered",
+                incoming.Id, size, WebhookIncoming.MaxInsertBytes);
         }
 
         try
