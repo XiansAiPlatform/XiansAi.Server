@@ -16,6 +16,7 @@ public interface IActivationService
     Task<ServiceResult<AgentActivation>> UpdateActivationAsync(string activationId, UpdateActivationRequest request, string tenantId);
     Task<ServiceResult<AgentActivation>> GetActivationByIdAsync(string id);
     Task<ServiceResult<List<AgentActivation>>> GetActivationsByTenantAsync(string tenantId, string? agentName = null);
+    Task<ServiceResult<List<AgentInstanceCount>>> GetActivationCountsByAgentAsync(string tenantId, IEnumerable<string>? agentNames);
     Task<ServiceResult<AgentActivation>> ActivateAgentAsync(string activationId, string tenantId, ActivationWorkflowConfiguration? workflowConfiguration = null);
     Task<ServiceResult<AgentActivation>> DeactivateAgentAsync(string activationId, string tenantId);
     Task<ServiceResult<bool>> DeleteActivationAsync(string activationId);
@@ -36,6 +37,16 @@ public class UpdateActivationRequest
     public string? Description { get; set; }
     public string? ParticipantId { get; set; }
     public ActivationWorkflowConfiguration? WorkflowConfiguration { get; set; }
+}
+
+/// <summary>
+/// Number of activation instances of one agent in a tenant.
+/// </summary>
+public class AgentInstanceCount
+{
+    public required string AgentName { get; set; }
+    public long InstanceCount { get; set; }
+    public long ActiveInstanceCount { get; set; }
 }
 
 /// <summary>
@@ -434,6 +445,64 @@ public class ActivationService : IActivationService
             _logger.LogError(ex, "Error retrieving activations for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
             return ServiceResult<List<AgentActivation>>.InternalServerError(
                 "An error occurred while retrieving activations");
+        }
+    }
+
+    /// <summary>Upper bound on agent names accepted by a single count request.</summary>
+    public const int MaxAgentNamesPerCountRequest = 100;
+
+    /// <summary>
+    /// Counts activation instances per agent name in a tenant.
+    /// With agent names given, returns one entry per distinct name in request order (zero counts included).
+    /// Without them, returns every agent that has at least one activation, ordered by name.
+    /// Names may be given as separate values or comma-separated.
+    /// </summary>
+    public async Task<ServiceResult<List<AgentInstanceCount>>> GetActivationCountsByAgentAsync(
+        string tenantId,
+        IEnumerable<string>? agentNames)
+    {
+        var requested = (agentNames ?? [])
+            .SelectMany(n => n.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (requested.Count > MaxAgentNamesPerCountRequest)
+        {
+            return ServiceResult<List<AgentInstanceCount>>.BadRequest(
+                $"At most {MaxAgentNamesPerCountRequest} agent names can be requested at once");
+        }
+
+        try
+        {
+            _logger.LogInformation("Counting activations for tenant {TenantId} across {Count} requested agent names",
+                LogSanitizer.Sanitize(tenantId), requested.Count);
+
+            var counts = await _activationRepository.CountByAgentNamesAsync(tenantId, requested);
+
+            var names = requested.Count > 0
+                ? requested
+                : counts.Keys.OrderBy(n => n, StringComparer.Ordinal).ToList();
+
+            var result = names
+                .Select(name =>
+                {
+                    var count = counts.GetValueOrDefault(name);
+                    return new AgentInstanceCount
+                    {
+                        AgentName = name,
+                        InstanceCount = count.Total,
+                        ActiveInstanceCount = count.Active
+                    };
+                })
+                .ToList();
+
+            return ServiceResult<List<AgentInstanceCount>>.Success(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error counting activations for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
+            return ServiceResult<List<AgentInstanceCount>>.InternalServerError(
+                "An error occurred while counting activations");
         }
     }
 
