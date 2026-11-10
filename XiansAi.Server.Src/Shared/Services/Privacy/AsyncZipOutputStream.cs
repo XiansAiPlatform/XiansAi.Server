@@ -1,6 +1,11 @@
+using System.Buffers;
+
 namespace Shared.Services.Privacy;
 
-/// <summary>Routes ZIP's synchronous writes through the response stream's async API.</summary>
+/// <summary>
+/// Routes ZIP's synchronous writes through the response stream's async API.
+/// ZIP entry disposal still blocks the current thread on those writes; callers should bound concurrent exports.
+/// </summary>
 internal sealed class AsyncZipOutputStream(Stream output) : Stream
 {
     public override bool CanRead => false;
@@ -12,8 +17,19 @@ internal sealed class AsyncZipOutputStream(Stream output) : Stream
     public override void Write(byte[] buffer, int offset, int count) =>
         output.WriteAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
 
-    public override void Write(ReadOnlySpan<byte> buffer) =>
-        output.WriteAsync(buffer.ToArray()).AsTask().GetAwaiter().GetResult();
+    public override void Write(ReadOnlySpan<byte> buffer)
+    {
+        var rented = ArrayPool<byte>.Shared.Rent(buffer.Length);
+        try
+        {
+            buffer.CopyTo(rented);
+            output.WriteAsync(rented.AsMemory(0, buffer.Length)).AsTask().GetAwaiter().GetResult();
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(rented);
+        }
+    }
 
     public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default) =>
         output.WriteAsync(buffer, cancellationToken);

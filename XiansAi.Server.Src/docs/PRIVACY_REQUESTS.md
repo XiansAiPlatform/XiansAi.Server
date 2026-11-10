@@ -183,12 +183,17 @@ review the values for its installation; the Xians source code cannot determine t
 Contributors use `IExportWriter.WriteJsonAsync` for indented UTF-8 JSON entries and
 `WriteFileAsync` for binary files. Each entry path uses forward slashes, has no leading slash, and
 contains only letters, digits, `-`, `_`, and `.` in each nonempty segment. `.` and `..` segments and
-duplicate paths are rejected. Contributors choose their own paths within those rules.
+duplicate paths (ignoring case), all-dot segments, and Windows device names are rejected.
+Contributors choose their own paths within those rules.
 
 The writer copies file streams in chunks. It does not store the full export or a full file in memory.
 The output may be non-seekable and may reject synchronous writes. If a contributor fails, the exporter
 propagates the exception and does not finish the ZIP central directory; the caller must discard the
 incomplete response.
+
+The .NET ZIP implementation still makes synchronous writes when closing entries. The output adapter
+routes them through the output stream's async API, but those calls block the current thread until
+the write completes. The endpoint that serves exports should limit concurrent requests.
 
 ## Indexes
 

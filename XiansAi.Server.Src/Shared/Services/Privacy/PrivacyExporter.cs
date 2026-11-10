@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text;
+using System.Text.RegularExpressions;
 using Shared.Data.Models;
 
 namespace Shared.Services.Privacy;
@@ -20,16 +21,20 @@ public sealed class PrivacyExporter(IEnumerable<IPersonalDataContributor> contri
             ?? throw new InvalidOperationException("The privacy export README is missing.");
         using var reader = new StreamReader(template);
         var text = await reader.ReadToEndAsync(cancellationToken);
-        text = text.Replace("{{Controller}}", disclosure.Controller)
-            .Replace("{{Contact}}", disclosure.Contact)
-            .Replace("{{Purposes}}", disclosure.Purposes)
-            .Replace("{{DataCategories}}", disclosure.DataCategories)
-            .Replace("{{Recipients}}", disclosure.Recipients)
-            .Replace("{{Retention}}", disclosure.Retention)
-            .Replace("{{DataSources}}", disclosure.DataSources)
-            .Replace("{{AutomatedDecisions}}", disclosure.AutomatedDecisions)
-            .Replace("{{InternationalTransfers}}", disclosure.InternationalTransfers)
-            .Replace("{{ComplaintAuthority}}", disclosure.ComplaintAuthority);
+        text = Regex.Replace(text, @"\{\{([A-Za-z]+)\}\}", match => match.Groups[1].Value switch
+        {
+            "Controller" => disclosure.Controller,
+            "Contact" => disclosure.Contact,
+            "Purposes" => disclosure.Purposes,
+            "DataCategories" => disclosure.DataCategories,
+            "Recipients" => disclosure.Recipients,
+            "Retention" => disclosure.Retention,
+            "DataSources" => disclosure.DataSources,
+            "AutomatedDecisions" => disclosure.AutomatedDecisions,
+            "InternationalTransfers" => disclosure.InternationalTransfers,
+            "ComplaintAuthority" => disclosure.ComplaintAuthority,
+            _ => throw new InvalidOperationException($"Unknown privacy export placeholder: {match.Value}")
+        });
         using var readme = new MemoryStream(Encoding.UTF8.GetBytes(text));
         var archive = await ZipArchive.CreateAsync(new AsyncZipOutputStream(output), ZipArchiveMode.Create, false, null, cancellationToken);
         var writer = new ZipExportWriter(archive);

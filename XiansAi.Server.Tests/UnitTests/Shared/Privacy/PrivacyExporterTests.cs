@@ -55,13 +55,36 @@ public class PrivacyExporterTests
     }
 
     [Fact]
+    public async Task CancellationBeforeReadmeWriteStopsEmptyExport()
+    {
+        using var output = new AsyncOnlyOutput();
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            new PrivacyExporter([]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, Disclosure(), cancellation.Token));
+        Assert.Empty(output.ToArray());
+    }
+
+    [Fact]
+    public async Task DisclosureValuesAreNotResubstituted()
+    {
+        using var output = new AsyncOnlyOutput();
+        var disclosure = Disclosure() with { Controller = "Example {{Retention}} controller" };
+        await new PrivacyExporter([]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, disclosure, CancellationToken.None);
+
+        using var archive = new ZipArchive(new MemoryStream(output.ToArray()), ZipArchiveMode.Read);
+        using var reader = new StreamReader(archive.GetEntry("README.txt")!.Open());
+        Assert.Contains("Example {{Retention}} controller", await reader.ReadToEndAsync());
+    }
+
+    [Fact]
     public async Task StreamsGeneratedHundredMegabyteFileWithoutWholeFileBuffer()
     {
         const long size = 100L * 1024 * 1024;
         using var output = new AsyncOnlyOutput();
         using var generated = new GeneratedStream(size);
         var contributor = Contributor(1, (writer, ct) => writer.WriteFileAsync("large.bin", generated, ct));
-        GC.Collect();
         var memoryBefore = GC.GetTotalMemory(true);
 
         await new PrivacyExporter([contributor.Object]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, Disclosure(), CancellationToken.None);
@@ -74,11 +97,34 @@ public class PrivacyExporterTests
         Assert.Equal(size, archive.GetEntry("large.bin")!.Length);
     }
 
-    [Fact]
-    public async Task MissingDisclosureFailsBeforeWritingOutput()
+    [Theory]
+    [InlineData("Controller")]
+    [InlineData("Contact")]
+    [InlineData("Purposes")]
+    [InlineData("DataCategories")]
+    [InlineData("Recipients")]
+    [InlineData("Retention")]
+    [InlineData("DataSources")]
+    [InlineData("AutomatedDecisions")]
+    [InlineData("InternationalTransfers")]
+    [InlineData("ComplaintAuthority")]
+    public async Task MissingDisclosureFailsBeforeWritingOutput(string field)
     {
         using var output = new AsyncOnlyOutput();
-        var missing = Disclosure() with { Recipients = "" };
+        var missing = field switch
+        {
+            "Controller" => Disclosure() with { Controller = "" },
+            "Contact" => Disclosure() with { Contact = "" },
+            "Purposes" => Disclosure() with { Purposes = "" },
+            "DataCategories" => Disclosure() with { DataCategories = "" },
+            "Recipients" => Disclosure() with { Recipients = "" },
+            "Retention" => Disclosure() with { Retention = "" },
+            "DataSources" => Disclosure() with { DataSources = "" },
+            "AutomatedDecisions" => Disclosure() with { AutomatedDecisions = "" },
+            "InternationalTransfers" => Disclosure() with { InternationalTransfers = "" },
+            "ComplaintAuthority" => Disclosure() with { ComplaintAuthority = "" },
+            _ => throw new ArgumentOutOfRangeException(nameof(field))
+        };
 
         await Assert.ThrowsAsync<ArgumentException>(() =>
             new PrivacyExporter([]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, missing, CancellationToken.None));

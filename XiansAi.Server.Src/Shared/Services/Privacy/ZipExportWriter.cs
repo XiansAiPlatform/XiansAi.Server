@@ -1,5 +1,6 @@
 using System.IO.Compression;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace Shared.Services.Privacy;
 
@@ -7,7 +8,7 @@ namespace Shared.Services.Privacy;
 public sealed class ZipExportWriter(ZipArchive archive) : IExportWriter
 {
     private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
-    private readonly HashSet<string> paths = new(StringComparer.Ordinal);
+    private readonly HashSet<string> paths = new(StringComparer.OrdinalIgnoreCase);
 
     public async Task WriteJsonAsync(string path, object data, CancellationToken cancellationToken)
     {
@@ -26,7 +27,8 @@ public sealed class ZipExportWriter(ZipArchive archive) : IExportWriter
     private ZipArchiveEntry CreateEntry(string path)
     {
         if (string.IsNullOrWhiteSpace(path) || path.StartsWith('/') || path.Contains('\\') ||
-            path.Split('/').Any(part => part is "" or "." or ".." ||
+            path.Split('/').Any(part => part.All(character => character == '.') ||
+                Regex.IsMatch(part, @"^(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9])(?:\.|$)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant) ||
                 part.Any(character => !char.IsAsciiLetterOrDigit(character) && character is not '-' and not '_' and not '.')))
         {
             throw new ArgumentException("Invalid export path.", nameof(path));
