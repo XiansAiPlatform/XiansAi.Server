@@ -15,12 +15,15 @@ public class PrivacyExporterTests
         var later = Contributor(200, (writer, ct) => writer.WriteJsonAsync("later.json", new { Value = 2 }, ct));
         var earlier = Contributor(100, (writer, ct) => writer.WriteJsonAsync("earlier.json", new { Value = 1 }, ct));
 
-        await new PrivacyExporter([later.Object, earlier.Object]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, CancellationToken.None);
+        await new PrivacyExporter([later.Object, earlier.Object]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, Disclosure(), CancellationToken.None);
 
         using var archive = new ZipArchive(new MemoryStream(output.ToArray()), ZipArchiveMode.Read);
         Assert.Equal(["README.txt", "earlier.json", "later.json"], archive.Entries.Select(entry => entry.FullName));
         using var reader = new StreamReader(archive.Entries[0].Open());
-        Assert.Contains("PERSONAL DATA EXPORT", await reader.ReadToEndAsync());
+        var readme = await reader.ReadToEndAsync();
+        Assert.Contains("Example controller", readme);
+        Assert.Contains("Example recipients", readme);
+        Assert.DoesNotContain("{{", readme);
         earlier.VerifyAll();
         later.VerifyAll();
     }
@@ -32,7 +35,7 @@ public class PrivacyExporterTests
         var failing = Contributor(1, (_, _) => throw new InvalidOperationException("export failed"));
 
         var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            new PrivacyExporter([failing.Object]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, CancellationToken.None));
+            new PrivacyExporter([failing.Object]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, Disclosure(), CancellationToken.None));
 
         Assert.Equal("export failed", error.Message);
         Assert.Throws<InvalidDataException>(() => new ZipArchive(new MemoryStream(output.ToArray()), ZipArchiveMode.Read));
@@ -47,7 +50,7 @@ public class PrivacyExporterTests
         cancellation.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
-            new PrivacyExporter([contributor.Object]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, cancellation.Token));
+            new PrivacyExporter([contributor.Object]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, Disclosure(), cancellation.Token));
         contributor.Verify(item => item.ExportAsync(It.IsAny<PrivacySubject>(), It.IsAny<PrivacyScope>(), It.IsAny<IExportWriter>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
@@ -61,7 +64,7 @@ public class PrivacyExporterTests
         GC.Collect();
         var memoryBefore = GC.GetTotalMemory(true);
 
-        await new PrivacyExporter([contributor.Object]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, CancellationToken.None);
+        await new PrivacyExporter([contributor.Object]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, Disclosure(), CancellationToken.None);
 
         var memoryAfter = GC.GetTotalMemory(true);
         Assert.Equal(size, generated.BytesRead);
@@ -70,6 +73,22 @@ public class PrivacyExporterTests
         using var archive = new ZipArchive(new MemoryStream(output.ToArray()), ZipArchiveMode.Read);
         Assert.Equal(size, archive.GetEntry("large.bin")!.Length);
     }
+
+    [Fact]
+    public async Task MissingDisclosureFailsBeforeWritingOutput()
+    {
+        using var output = new AsyncOnlyOutput();
+        var missing = Disclosure() with { Recipients = "" };
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            new PrivacyExporter([]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, missing, CancellationToken.None));
+        Assert.Empty(output.ToArray());
+    }
+
+    private static PrivacyExportDisclosure Disclosure() => new(
+        "Example controller", "privacy@example.com", "Example purposes", "Example categories",
+        "Example recipients", "Example retention", "Example sources", "Example decisions",
+        "Example transfers", "Example authority");
 
     private static Mock<IPersonalDataContributor> Contributor(int order, Func<IExportWriter, CancellationToken, Task> export)
     {

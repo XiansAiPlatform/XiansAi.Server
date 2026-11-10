@@ -1,41 +1,41 @@
-PERSONAL DATA EXPORT — DRAFT FOR POLICY REVIEW
+PERSONAL DATA EXPORT — SELF-HOSTED XIANS
 
-This README accompanies the copy of personal data in this ZIP. Complete and approve
-the marked items before this export is offered to users.
+The operator of this Xians installation supplies the information below. This
+ZIP contains a copy of personal data found for this access request. JSON
+files contain structured records. Other files contain stored binary content.
+The data in this ZIP is limited to the person and scope of this request.
 
-What is in this export
-The files contain the personal data found by the export contributors for the
-person and scope of this request. JSON files contain structured records. Other
-files contain uploaded or stored binary content. The export does not itself
-explain every field in those records.
+Operator responsible for this response
+{{Controller}}
+
+Contact for privacy requests
+{{Contact}}
 
 Purposes of processing
-[POLICY REVIEW: State each purpose for which the exported data is processed.]
+{{Purposes}}
 
 Categories of personal data
-[POLICY REVIEW: Confirm the categories covered by this service and export,
-such as account details, conversations, files, agent data, usage and audit entries.]
+{{DataCategories}}
 
-Recipients
-[POLICY REVIEW: State the recipients or categories of recipients, including
-any recipients outside the European Economic Area when applicable.]
+Recipients or categories of recipients
+{{Recipients}}
 
-Retention
-[POLICY REVIEW: State the retention period for each category where possible,
-or the criteria used to set that period.]
+Retention periods or criteria
+{{Retention}}
 
 Your rights
 You may request correction or erasure of your personal data, restriction of
-processing, or object to processing, where those rights apply. You may also
-lodge a complaint with a supervisory authority.
-[POLICY REVIEW: Add the contact route for these requests and the applicable
-supervisory authority information.]
+processing, or object to processing, where those rights apply. You may lodge
+a complaint with a supervisory authority.
 
-Source of data
-[POLICY REVIEW: For data not collected from the person, state any available
-information about its source.]
+Supervisory authority information
+{{ComplaintAuthority}}
 
-Automated decision-making
-[POLICY REVIEW: State whether automated decision-making or profiling covered
-by GDPR Article 22 applies. If it does, explain the logic, significance and
-expected effects for the person.]
+Sources of data not collected from you
+{{DataSources}}
+
+Automated decision-making and profiling
+{{AutomatedDecisions}}
+
+International transfers and safeguards
+{{InternationalTransfers}}
