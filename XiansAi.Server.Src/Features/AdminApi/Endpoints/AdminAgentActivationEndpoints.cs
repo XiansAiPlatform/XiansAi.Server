@@ -38,6 +38,19 @@ public static class AdminAgentActivationEndpoints
         .WithName("ListActivations")
         .RequireCapability(CapabilityActions.TenantAgentActivationsList);
 
+        // Count activation instances per agent name.
+        // ?agentNames=A&agentNames=B (or ?agentNames=A,B); omit to count every agent with activations.
+        activationGroup.MapGet("/counts", async (
+            string tenantId,
+            [FromQuery] string[]? agentNames,
+            [FromServices] IActivationService activationService) =>
+        {
+            var result = await activationService.GetActivationCountsByAgentAsync(tenantId, agentNames);
+            return result.ToHttpResult();
+        })
+        .WithName("CountActivationsByAgent")
+        .RequireCapability(CapabilityActions.TenantAgentActivationsList);
+
         // Get activation by ID
         activationGroup.MapGet("/{activationId}", async (
             string tenantId,
