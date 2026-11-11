@@ -27,10 +27,21 @@ public class WebhookRedeliveryServiceTests
     private readonly StubHandler _handler = new();
     private string? _baseUrl = "http://localhost:5000";
 
+    private readonly List<object?> _audits = new();
+
     public WebhookRedeliveryServiceTests()
     {
         _signer.Setup(s => s.Sign(It.IsAny<WebhookRedeliveryClaim>())).Returns("signed-token");
+        _auditLog
+            .Setup(a => a.RecordEntryAsync(
+                DomainEventTypes.IntegrationWebhookRedelivered, It.IsAny<string?>(), null, It.IsAny<object?>(), "tenant"))
+            .Callback<string, string?, string?, object?, string?>((_, _, _, details, _) => _audits.Add(details))
+            .ReturnsAsync(ServiceResult<AuditLogEntry>.BadRequest("not stored in tests"));
     }
+
+    /// <summary>A value from an audit entry's details (an anonymous object).</summary>
+    private static object? Detail(object? details, string name) =>
+        details!.GetType().GetProperty(name)!.GetValue(details);
 
     [Fact]
     public async Task SendsTheStoredCallToTheWebhookUrlWithTheSignedClaim()
@@ -56,7 +67,9 @@ public class WebhookRedeliveryServiceTests
         Assert.Equal("signed-token", sent.Headers[WebhookRedeliverySigner.TokenHeader]);
         Assert.Equal(original.Id.ToString(), sent.Headers[WebhookRedeliverySigner.RedeliveryOfHeader]);
         Assert.False(sent.Headers.ContainsKey("X-Forwarded-For"));
-        Assert.NotEqual("old.example.com", sent.Headers.GetValueOrDefault("Host"));
+        Assert.False(sent.Headers.ContainsKey("Host"));
+        // The stored Content-Length (999) is not resent; the client computes the real one.
+        Assert.False(sent.Headers.ContainsKey("Content-Length"));
 
         Assert.NotNull(signed);
         Assert.Equal("tenant", signed!.TenantId);
@@ -83,8 +96,11 @@ public class WebhookRedeliveryServiceTests
         Assert.NotNull(result.Data!.DeliveryId);
         Assert.Equal(original.Id, result.Data.RedeliveryOf);
         Assert.Equal(202, result.Data.StatusCode);
-        _auditLog.Verify(a => a.RecordEntryAsync(
-            DomainEventTypes.IntegrationWebhookRedelivered, It.IsAny<string?>(), null, It.IsAny<object?>(), "tenant"), Times.Once);
+        var audit = Assert.Single(_audits);
+        Assert.Equal(result.Data.DeliveryId.ToString(), Detail(audit, "deliveryId"));
+        Assert.Equal(original.Id.ToString(), Detail(audit, "redeliveryOf"));
+        Assert.Equal("answered", Detail(audit, "outcome"));
+        Assert.Equal(202, Detail(audit, "statusCode"));
     }
 
     [Fact]
@@ -99,6 +115,9 @@ public class WebhookRedeliveryServiceTests
         Assert.True(result.IsSuccess);
         Assert.Null(result.Data!.DeliveryId);
         Assert.Equal(401, result.Data.StatusCode);
+        var audit = Assert.Single(_audits);
+        Assert.Null(Detail(audit, "deliveryId"));
+        Assert.Equal(401, Detail(audit, "statusCode"));
     }
 
     [Fact]
@@ -231,6 +250,7 @@ public class WebhookRedeliveryServiceTests
         var result = await Service().RedeliverAsync("tenant", webhook.Id, original.Id, "dev@example.com");
 
         Assert.Equal(StatusCode.InternalServerError, result.StatusCode);
+        Assert.Equal("unreachable", Detail(Assert.Single(_audits), "outcome"));
     }
 
     [Fact]
@@ -239,10 +259,76 @@ public class WebhookRedeliveryServiceTests
         var webhook = GivenWebhook();
         var original = GivenIncoming(webhook);
         _handler.Respond = _ => throw new TaskCanceledException("timed out");
+        _signer.Setup(s => s.Sign(It.IsAny<WebhookRedeliveryClaim>()))
+            .Callback<WebhookRedeliveryClaim>(c => GivenStored(webhook, c.DeliveryId))
+            .Returns("signed-token");
 
         var result = await Service().RedeliverAsync("tenant", webhook.Id, original.Id, "dev@example.com");
 
         Assert.Equal(StatusCode.RequestTimeout, result.StatusCode);
+        // The call was recorded before the agent ran, so the audit still names it.
+        var audit = Assert.Single(_audits);
+        Assert.Equal("timedOut", Detail(audit, "outcome"));
+        Assert.NotNull(Detail(audit, "deliveryId"));
+    }
+
+    [Fact]
+    public async Task WhenTheCallerGoesAwayTheAttemptIsAuditedAndTheCancellationPropagates()
+    {
+        var webhook = GivenWebhook();
+        var original = GivenIncoming(webhook);
+        using var cancelled = new CancellationTokenSource();
+        _handler.Respond = _ =>
+        {
+            cancelled.Cancel();
+            throw new TaskCanceledException("caller went away");
+        };
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            Service().RedeliverAsync("tenant", webhook.Id, original.Id, "dev@example.com", cancelled.Token));
+
+        Assert.Equal("cancelled", Detail(Assert.Single(_audits), "outcome"));
+    }
+
+    [Fact]
+    public async Task ACallCannotBeRedeliveredAgainWhileItsRedeliveryIsWaiting()
+    {
+        var webhook = GivenWebhook();
+        var original = GivenIncoming(webhook);
+        using var sent = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        _handler.Respond = _ =>
+        {
+            sent.Set();
+            release.Wait(TimeSpan.FromSeconds(10));
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        };
+
+        var first = Task.Run(() => Service().RedeliverAsync("tenant", webhook.Id, original.Id, "dev@example.com"));
+        Assert.True(sent.Wait(TimeSpan.FromSeconds(10)));
+
+        var second = await Service().RedeliverAsync("tenant", webhook.Id, original.Id, "dev@example.com");
+        release.Set();
+
+        Assert.Equal(StatusCode.Conflict, second.StatusCode);
+        Assert.True((await first).IsSuccess);
+        // Once the first one is done, the call can be redelivered again.
+        Assert.True((await Service().RedeliverAsync("tenant", webhook.Id, original.Id, "dev@example.com")).IsSuccess);
+    }
+
+    [Theory]
+    [InlineData(2, 17)]      // the webhook's wait plus a 15 s margin
+    [InlineData(null, 75)]   // no timeout configured: the webhook's 60 s default
+    [InlineData(300, 290)]   // capped, so Node callers get an answer before their 300 s limit
+    public void TheWaitFollowsTheWebhooksTimeoutUpToTheCap(int? timeoutInSeconds, int expectedSeconds)
+    {
+        var webhook = GivenWebhook();
+        if (timeoutInSeconds == null)
+            webhook.Configuration.Remove("timeoutInSeconds");
+        else
+            webhook.Configuration["timeoutInSeconds"] = timeoutInSeconds.Value;
+
+        Assert.Equal(TimeSpan.FromSeconds(expectedSeconds), WebhookRedeliveryService.Wait(webhook));
     }
 
     [Theory]
@@ -330,14 +416,7 @@ public class WebhookRedeliveryServiceTests
     }
 
     private void GivenStored(AppIntegration webhook, Guid id) =>
-        _incomings.Setup(r => r.GetAsync("tenant", webhook.Id, id)).ReturnsAsync(new WebhookIncoming
-        {
-            Id = id,
-            TenantId = "tenant",
-            IntegrationId = webhook.Id,
-            RequestId = "request-2",
-            WorkflowId = webhook.WorkflowId
-        });
+        _incomings.Setup(r => r.ExistsAsync("tenant", webhook.Id, id)).ReturnsAsync(true);
 
     private sealed record SentRequest(HttpMethod Method, Uri Uri, byte[] Body, Dictionary<string, string> Headers);
 

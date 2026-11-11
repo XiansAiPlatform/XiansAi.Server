@@ -271,6 +271,25 @@ public class WebhookIncomingServiceTests
     }
 
     [Fact]
+    public async Task RecordTreatsAReusedClaimAsANewDelivery()
+    {
+        var webhook = Webhook();
+        GivenWebhooks(webhook);
+        WebhookIncoming? saved = null;
+        _incomings.Setup(r => r.InsertAsync(It.IsAny<WebhookIncoming>())).Callback<WebhookIncoming>(i => saved = i);
+        var claim = Claim(webhook.Id);
+        // The redelivery the claim was signed for is already recorded.
+        _incomings.Setup(r => r.ExistsAsync("tenant", webhook.Id, claim.DeliveryId)).ReturnsAsync(true);
+
+        await _service.RecordAsync(Call() with { Redelivery = claim });
+
+        Assert.NotNull(saved);
+        Assert.NotEqual(claim.DeliveryId, saved!.Id);
+        Assert.Null(saved.RedeliveryOf);
+        Assert.Null(saved.TriggeredBy);
+    }
+
+    [Fact]
     public async Task RecordNeverStoresTheSignedRedeliveryHeader()
     {
         GivenWebhooks(Webhook());

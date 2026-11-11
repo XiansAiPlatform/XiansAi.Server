@@ -26,16 +26,23 @@ public class WebhookIncomingsOptions
     public string? RedeliveryBaseUrl { get; set; }
 }
 
-/// <summary>Accepts null, empty or an absolute http(s) URL.</summary>
+/// <summary>
+/// Accepts null, empty or an absolute http(s) URL with no path, query or fragment. The webhook
+/// path is joined as an absolute path, so a base path such as <c>/xians</c> would be dropped
+/// silently; it is refused instead.
+/// </summary>
 [AttributeUsage(AttributeTargets.Property)]
 public sealed class AbsoluteHttpUrlAttribute : ValidationAttribute
 {
-    public AbsoluteHttpUrlAttribute() : base("{0} must be an absolute http or https URL.") { }
+    public AbsoluteHttpUrlAttribute() : base("{0} must be an absolute http or https URL with only a scheme, host and port.") { }
 
     public override bool IsValid(object? value) =>
         value is null
         || value is string { Length: 0 }
         || (value is string text
             && Uri.TryCreate(text, UriKind.Absolute, out var uri)
-            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps));
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            && uri.AbsolutePath == "/"
+            && string.IsNullOrEmpty(uri.Query)
+            && string.IsNullOrEmpty(uri.Fragment));
 }

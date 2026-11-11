@@ -133,7 +133,7 @@ public class AdminWebhookIncomingsEndpointsTests : AdminApiIntegrationTestBase
         var deliveryId = result.RootElement.GetProperty("deliveryId").GetString()!;
         Assert.Equal(originalId, result.RootElement.GetProperty("redeliveryOf").GetString());
         // No agent answers in tests, so the webhook itself times out; the call was still sent and recorded.
-        Assert.NotEqual(401, result.RootElement.GetProperty("statusCode").GetInt32());
+        Assert.Equal(408, result.RootElement.GetProperty("statusCode").GetInt32());
 
         var items = await ListIncomingsAsync(tenantId, webhookId);
         Assert.Equal(2, items.Count);
@@ -196,7 +196,8 @@ public class AdminWebhookIncomingsEndpointsTests : AdminApiIntegrationTestBase
 
         await ConfigureAdminApiClientAsync(tenantId, SystemRoles.TenantParticipantAdmin);
         var asParticipantAdmin = await PostAsJsonAsync(redeliverUrl, new { });
-        Assert.Contains(asParticipantAdmin.StatusCode, new[] { HttpStatusCode.Unauthorized, HttpStatusCode.Forbidden });
+        // The capability check answers 401 for a role without it, as elsewhere in the Admin API.
+        Assert.Equal(HttpStatusCode.Unauthorized, asParticipantAdmin.StatusCode);
     }
 
     /// <summary>Tenant, agent, active activation "hooks" and its Integrator Workflow, plus a builtin webhook on them.</summary>
