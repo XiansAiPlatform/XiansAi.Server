@@ -34,18 +34,6 @@ public class WebhookIncoming
     public const int MaxDocumentBytes = 16 * 1024 * 1024;
 
     /// <summary>
-    /// Room each row keeps for <see cref="StartedWorkflowIds"/>, which is set after the row is saved:
-    /// 32 KB. The service only stores as many ids as fit.
-    /// </summary>
-    public const int StartedWorkflowIdsReserveBytes = 32 * 1024;
-
-    /// <summary>
-    /// Largest a row may be when it is first saved, so that adding <see cref="StartedWorkflowIds"/>
-    /// later keeps it within <see cref="MaxDocumentBytes"/>.
-    /// </summary>
-    public const int MaxInsertBytes = MaxDocumentBytes - StartedWorkflowIdsReserveBytes;
-
-    /// <summary>
     /// Most header bytes (names plus values, UTF-8) kept for one call: 16 KB. Kestrel accepts up to
     /// 32 KB; a GitHub delivery sends about 2 KB. When a call is bigger, the longest values are cut
     /// (see <see cref="TruncateHeaders"/>).
@@ -111,13 +99,6 @@ public class WebhookIncoming
     /// <summary>Target workflow id: <c>{tenantId}:{agentName}:{workflowName}[:{activationName}]</c>.</summary>
     [BsonElement("workflow_id")]
     public required string WorkflowId { get; set; }
-
-    /// <summary>
-    /// Workflows the agent started for this call, as it reported them in its reply (a top-level
-    /// <c>workflowIds</c> array). Empty until the reply arrives, or when the agent reports none.
-    /// </summary>
-    [BsonElement("started_workflow_ids")]
-    public List<string> StartedWorkflowIds { get; set; } = new();
 
     /// <summary>
     /// Cuts the body so the whole row is at most <paramref name="maxBytes"/> when serialized,
