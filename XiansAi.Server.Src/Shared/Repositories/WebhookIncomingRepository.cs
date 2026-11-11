@@ -44,9 +44,6 @@ public interface IWebhookIncomingRepository
     /// <returns>The number of rows deleted.</returns>
     Task<long> TrimAsync(string tenantId, string integrationId, int keep);
 
-    /// <summary>Saves the workflows the agent started for a call, replacing any saved before.</summary>
-    Task SetStartedWorkflowIdsAsync(string tenantId, Guid id, IReadOnlyList<string> workflowIds);
-
     /// <summary>Deletes one incoming call.</summary>
     /// <returns>False when it does not exist for this tenant and connection.</returns>
     Task<bool> DeleteAsync(string tenantId, string integrationId, Guid id);
@@ -97,12 +94,12 @@ public class WebhookIncomingRepository : IWebhookIncomingRepository
         incoming.EncryptHeaders(value => _encryption.Encrypt(value) ?? string.Empty);
 
         var size = incoming.ToBson().Length;
-        if (size > WebhookIncoming.MaxInsertBytes)
+        if (size > WebhookIncoming.MaxDocumentBytes)
         {
-            incoming.TruncateBody(size, WebhookIncoming.MaxInsertBytes);
+            incoming.TruncateBody(size, WebhookIncoming.MaxDocumentBytes);
             _logger.LogWarning(
-                "Webhook incoming {Id} is {Size} bytes, over the {Max}-byte insert limit; body truncated and the call cannot be redelivered",
-                incoming.Id, size, WebhookIncoming.MaxInsertBytes);
+                "Webhook incoming {Id} is {Size} bytes, over the {Max}-byte document limit; body truncated and the call cannot be redelivered",
+                incoming.Id, size, WebhookIncoming.MaxDocumentBytes);
         }
 
         try
@@ -174,16 +171,6 @@ public class WebhookIncomingRepository : IWebhookIncomingRepository
             _logger, maxRetries: 3, baseDelayMs: 100, operationName: "TrimWebhookIncomings");
 
         return result.DeletedCount;
-    }
-
-    public async Task SetStartedWorkflowIdsAsync(string tenantId, Guid id, IReadOnlyList<string> workflowIds)
-    {
-        var filter = Filter.Eq(i => i.TenantId, tenantId) & Filter.Eq(i => i.Id, id);
-        var update = Builders<WebhookIncoming>.Update.Set(i => i.StartedWorkflowIds, workflowIds.ToList());
-
-        await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
-            await _collection.UpdateOneAsync(filter, update),
-            _logger, maxRetries: 3, baseDelayMs: 100, operationName: "SetWebhookIncomingStartedWorkflowIds");
     }
 
     public async Task<bool> DeleteAsync(string tenantId, string integrationId, Guid id)
