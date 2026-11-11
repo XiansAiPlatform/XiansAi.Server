@@ -17,7 +17,7 @@ public sealed class PrivacyExporter(IEnumerable<IPersonalDataContributor> contri
     {
         disclosure.Validate();
         using var template = typeof(PrivacyExporter).Assembly.GetManifestResourceStream(
-            "XiansAi.Server.Shared.Services.Privacy.PrivacyExportReadme.txt")
+            "XiansAi.Server.Shared.Services.Privacy.Resources.PrivacyExportReadme.txt")
             ?? throw new InvalidOperationException("The privacy export README is missing.");
         using var reader = new StreamReader(template);
         var text = await reader.ReadToEndAsync(cancellationToken);

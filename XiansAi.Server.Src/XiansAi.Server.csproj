@@ -80,7 +80,7 @@
   
   <ItemGroup>
     <EmbeddedResource Include="mongodb-indexes.yaml" />
-    <EmbeddedResource Include="Shared/Services/Privacy/PrivacyExportReadme.txt" />
+    <EmbeddedResource Include="Shared/Services/Privacy/Resources/PrivacyExportReadme.txt" />
   </ItemGroup>
 
 </Project>

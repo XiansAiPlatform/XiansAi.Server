@@ -173,7 +173,7 @@ in DI as `IPersonalDataContributor`:
 ## Export format
 
 `PrivacyExporter` writes a ZIP directly to the caller's output stream. It writes `README.txt` first
-from the embedded `Shared/Services/Privacy/PrivacyExportReadme.txt` resource, then calls each
+from the embedded `Shared/Services/Privacy/Resources/PrivacyExportReadme.txt` resource, then calls each
 registered contributor in ascending `Order`. The embedded file is a template for self-hosted Xians.
 The operator supplies `PrivacyExportDisclosure` for the request, including its contact, purposes,
 data categories, recipients, retention, sources, automated decisions, international transfers and
