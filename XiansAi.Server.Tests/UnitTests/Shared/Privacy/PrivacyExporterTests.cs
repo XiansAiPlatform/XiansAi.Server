@@ -1,0 +1,188 @@
+using System.IO.Compression;
+using Moq;
+using Shared.Data.Models;
+using Shared.Services.Privacy;
+using Xunit;
+
+namespace Tests.UnitTests.Shared.Privacy;
+
+public class PrivacyExporterTests
+{
+    [Fact]
+    public async Task StreamsReadmeFirstAndContributorsInOrderWithoutSynchronousOutputWrites()
+    {
+        using var output = new AsyncOnlyOutput();
+        var later = Contributor(200, (writer, ct) => writer.WriteJsonAsync("later.json", new { Value = 2 }, ct));
+        var earlier = Contributor(100, (writer, ct) => writer.WriteJsonAsync("earlier.json", new { Value = 1 }, ct));
+
+        await new PrivacyExporter([later.Object, earlier.Object]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, Disclosure(), CancellationToken.None);
+
+        using var archive = new ZipArchive(new MemoryStream(output.ToArray()), ZipArchiveMode.Read);
+        Assert.Equal(["README.txt", "earlier.json", "later.json"], archive.Entries.Select(entry => entry.FullName));
+        using var reader = new StreamReader(archive.Entries[0].Open());
+        var readme = await reader.ReadToEndAsync();
+        Assert.Contains("Example controller", readme);
+        Assert.Contains("Example recipients", readme);
+        Assert.DoesNotContain("{{", readme);
+        earlier.VerifyAll();
+        later.VerifyAll();
+    }
+
+    [Fact]
+    public async Task ContributorFailurePropagatesAndLeavesIncompleteZip()
+    {
+        using var output = new AsyncOnlyOutput();
+        var failing = Contributor(1, (_, _) => throw new InvalidOperationException("export failed"));
+
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            new PrivacyExporter([failing.Object]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, Disclosure(), CancellationToken.None));
+
+        Assert.Equal("export failed", error.Message);
+        Assert.Throws<InvalidDataException>(() => new ZipArchive(new MemoryStream(output.ToArray()), ZipArchiveMode.Read));
+    }
+
+    [Fact]
+    public async Task CancellationStopsBeforeContributorRuns()
+    {
+        using var output = new AsyncOnlyOutput();
+        using var cancellation = new CancellationTokenSource();
+        var contributor = Contributor(1, (_, _) => Task.CompletedTask);
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            new PrivacyExporter([contributor.Object]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, Disclosure(), cancellation.Token));
+        contributor.Verify(item => item.ExportAsync(It.IsAny<PrivacySubject>(), It.IsAny<PrivacyScope>(), It.IsAny<IExportWriter>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task CancellationBeforeReadmeWriteStopsEmptyExport()
+    {
+        using var output = new AsyncOnlyOutput();
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            new PrivacyExporter([]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, Disclosure(), cancellation.Token));
+        Assert.Empty(output.ToArray());
+    }
+
+    [Fact]
+    public async Task DisclosureValuesAreNotResubstituted()
+    {
+        using var output = new AsyncOnlyOutput();
+        var disclosure = Disclosure() with { Controller = "Example {{Retention}} controller" };
+        await new PrivacyExporter([]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, disclosure, CancellationToken.None);
+
+        using var archive = new ZipArchive(new MemoryStream(output.ToArray()), ZipArchiveMode.Read);
+        using var reader = new StreamReader(archive.GetEntry("README.txt")!.Open());
+        Assert.Contains("Example {{Retention}} controller", await reader.ReadToEndAsync());
+    }
+
+    [Fact]
+    public async Task StreamsGeneratedHundredMegabyteFileWithoutWholeFileBuffer()
+    {
+        const long size = 100L * 1024 * 1024;
+        using var output = new AsyncOnlyOutput();
+        using var generated = new GeneratedStream(size);
+        var contributor = Contributor(1, (writer, ct) => writer.WriteFileAsync("large.bin", generated, ct));
+        var memoryBefore = GC.GetTotalMemory(true);
+
+        await new PrivacyExporter([contributor.Object]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, Disclosure(), CancellationToken.None);
+
+        var memoryAfter = GC.GetTotalMemory(true);
+        Assert.Equal(size, generated.BytesRead);
+        Assert.True(generated.LargestReadRequest <= 1024 * 1024);
+        Assert.True(memoryAfter - memoryBefore < 20L * 1024 * 1024);
+        using var archive = new ZipArchive(new MemoryStream(output.ToArray()), ZipArchiveMode.Read);
+        Assert.Equal(size, archive.GetEntry("large.bin")!.Length);
+    }
+
+    [Theory]
+    [InlineData("Controller")]
+    [InlineData("Contact")]
+    [InlineData("Purposes")]
+    [InlineData("DataCategories")]
+    [InlineData("Recipients")]
+    [InlineData("Retention")]
+    [InlineData("DataSources")]
+    [InlineData("AutomatedDecisions")]
+    [InlineData("InternationalTransfers")]
+    [InlineData("ComplaintAuthority")]
+    public async Task MissingDisclosureFailsBeforeWritingOutput(string field)
+    {
+        using var output = new AsyncOnlyOutput();
+        var missing = field switch
+        {
+            "Controller" => Disclosure() with { Controller = "" },
+            "Contact" => Disclosure() with { Contact = "" },
+            "Purposes" => Disclosure() with { Purposes = "" },
+            "DataCategories" => Disclosure() with { DataCategories = "" },
+            "Recipients" => Disclosure() with { Recipients = "" },
+            "Retention" => Disclosure() with { Retention = "" },
+            "DataSources" => Disclosure() with { DataSources = "" },
+            "AutomatedDecisions" => Disclosure() with { AutomatedDecisions = "" },
+            "InternationalTransfers" => Disclosure() with { InternationalTransfers = "" },
+            "ComplaintAuthority" => Disclosure() with { ComplaintAuthority = "" },
+            _ => throw new ArgumentOutOfRangeException(nameof(field))
+        };
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            new PrivacyExporter([]).ExportAsync(new PrivacySubject(), new PrivacyScope(), output, missing, CancellationToken.None));
+        Assert.Empty(output.ToArray());
+    }
+
+    private static PrivacyExportDisclosure Disclosure() => new(
+        "Example controller", "privacy@example.com", "Example purposes", "Example categories",
+        "Example recipients", "Example retention", "Example sources", "Example decisions",
+        "Example transfers", "Example authority");
+
+    private static Mock<IPersonalDataContributor> Contributor(int order, Func<IExportWriter, CancellationToken, Task> export)
+    {
+        var mock = new Mock<IPersonalDataContributor>();
+        mock.SetupGet(item => item.Order).Returns(order);
+        mock.Setup(item => item.ExportAsync(It.IsAny<PrivacySubject>(), It.IsAny<PrivacyScope>(), It.IsAny<IExportWriter>(), It.IsAny<CancellationToken>()))
+            .Returns<PrivacySubject, PrivacyScope, IExportWriter, CancellationToken>((_, _, writer, ct) => export(writer, ct));
+        return mock;
+    }
+
+    private sealed class AsyncOnlyOutput : MemoryStream
+    {
+        public override bool CanSeek => false;
+        public override void Write(byte[] buffer, int offset, int count) => throw new InvalidOperationException("Synchronous write");
+        public override void Write(ReadOnlySpan<byte> buffer) => throw new InvalidOperationException("Synchronous write");
+        public override void WriteByte(byte value) => throw new InvalidOperationException("Synchronous write");
+        public override void Flush() => throw new InvalidOperationException("Synchronous flush");
+        public override Task FlushAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+        public override ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            var bytes = buffer.ToArray();
+            base.Write(bytes, 0, bytes.Length);
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class GeneratedStream(long length) : Stream
+    {
+        public long BytesRead { get; private set; }
+        public int LargestReadRequest { get; private set; }
+        public override bool CanRead => true;
+        public override bool CanSeek => false;
+        public override bool CanWrite => false;
+        public override long Length => length;
+        public override long Position { get => BytesRead; set => throw new NotSupportedException(); }
+        public override ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            LargestReadRequest = Math.Max(LargestReadRequest, buffer.Length);
+            var count = (int)Math.Min(buffer.Length, length - BytesRead);
+            buffer.Span[..count].Clear();
+            BytesRead += count;
+            return ValueTask.FromResult(count);
+        }
+        public override int Read(byte[] buffer, int offset, int count) => throw new InvalidOperationException("Synchronous read");
+        public override void Flush() => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
+        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+    }
+}
