@@ -28,6 +28,21 @@ public class WebhookIncomingsOptionsTests
         Assert.Equal(valid, Validate(new WebhookIncomingsOptions { MaxPerWebhook = value }).Succeeded);
     }
 
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData("", true)]
+    [InlineData("http://localhost:5000", true)]
+    [InlineData("https://xians.internal/", true)]
+    [InlineData("ftp://localhost", false)]
+    [InlineData("localhost:5000", false)]
+    // A path would be dropped when the webhook path is joined, so it is refused.
+    [InlineData("https://host/xians", false)]
+    [InlineData("http://localhost:5000/?x=1", false)]
+    public void RedeliveryBaseUrlMustBeOnlyASchemeHostAndPort(string? value, bool valid)
+    {
+        Assert.Equal(valid, Validate(new WebhookIncomingsOptions { RedeliveryBaseUrl = value }).Succeeded);
+    }
+
     [Fact]
     public void MaxPerWebhookBindsFromTheEnvironmentVariableKey()
     {

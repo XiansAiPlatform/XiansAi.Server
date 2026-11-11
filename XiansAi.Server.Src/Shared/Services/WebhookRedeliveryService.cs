@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -43,6 +44,13 @@ public class WebhookRedeliveryService : IWebhookRedeliveryService
 
     /// <summary>Added to the webhook's own wait, so the webhook answers (with its timeout) before we give up.</summary>
     private static readonly TimeSpan TimeoutMargin = TimeSpan.FromSeconds(15);
+
+    /// <summary>
+    /// Longest the admin call waits in all. Callers such as Agent Studio run on Node, whose fetch
+    /// gives up after 300 s without response headers, so this answers before that. A webhook that
+    /// waits longer is reported as timed out; its call is still recorded and runs the agent.
+    /// </summary>
+    internal static readonly TimeSpan MaxWait = TimeSpan.FromSeconds(290);
 
     /// <summary>
     /// Headers that describe the original connection rather than the call, or that the client sets
@@ -141,32 +149,69 @@ public class WebhookRedeliveryService : IWebhookRedeliveryService
             return ServiceResult<WebhookRedeliveryResult>.InternalServerError("Redelivery is not configured on this server");
         }
 
-        using var request = BuildRequest(new Uri(baseUrl, path), original, claim, token);
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(TimeSpan.FromSeconds(WebhookTimeoutSeconds(integration)) + TimeoutMargin);
+        // One redelivery of a call at a time: a second click while the first is still waiting on
+        // the agent would run it twice.
+        var inFlightKey = $"{tenantId}|{integrationId}|{incomingId}";
+        if (!InFlight.TryAdd(inFlightKey, 0))
+            return ServiceResult<WebhookRedeliveryResult>.Conflict("This call is already being redelivered");
 
-        int statusCode;
+        try
+        {
+            return await SendAsync(integration, original, incomingId, claim, token, new Uri(baseUrl, path), cancellationToken);
+        }
+        finally
+        {
+            InFlight.TryRemove(inFlightKey, out _);
+        }
+    }
+
+    /// <summary>Redeliveries currently waiting on the webhook, keyed by tenant, webhook and call.</summary>
+    private static readonly ConcurrentDictionary<string, byte> InFlight = new();
+
+    private async Task<ServiceResult<WebhookRedeliveryResult>> SendAsync(
+        AppIntegration integration, WebhookIncoming original, Guid incomingId, WebhookRedeliveryClaim claim,
+        string token, Uri target, CancellationToken cancellationToken)
+    {
+        using var request = BuildRequest(target, original, claim, token);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(Wait(integration));
+
+        int? statusCode = null;
+        string outcome;
+        ServiceResult<WebhookRedeliveryResult>? failure = null;
         var stopwatch = Stopwatch.StartNew();
         try
         {
             using var response = await _httpClientFactory.CreateClient(HttpClientName)
                 .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
             statusCode = (int)response.StatusCode;
+            outcome = "answered";
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
-            return ServiceResult<WebhookRedeliveryResult>.RequestTimeout("The webhook did not answer in time");
+            outcome = "timedOut";
+            failure = ServiceResult<WebhookRedeliveryResult>.RequestTimeout("The webhook did not answer in time");
+        }
+        catch (OperationCanceledException)
+        {
+            // The caller went away. The call may already be running the agent, so it is audited.
+            await AuditAsync(integration, claim, "cancelled", statusCode: null);
+            throw;
         }
         catch (HttpRequestException ex)
         {
-            _logger.LogError(ex, "Redelivery of webhook call {IncomingId} could not reach {BaseUrl}", incomingId, baseUrl);
-            return ServiceResult<WebhookRedeliveryResult>.InternalServerError("Could not reach the webhook URL");
+            _logger.LogError(ex, "Redelivery of webhook call {IncomingId} could not reach {Target}", incomingId, target.GetLeftPart(UriPartial.Authority));
+            outcome = "unreachable";
+            failure = ServiceResult<WebhookRedeliveryResult>.InternalServerError("Could not reach the webhook URL");
         }
         stopwatch.Stop();
 
-        // The endpoint records a call before it runs the agent, so the row exists by now unless the
-        // call was turned away first (bad key, inactive activation).
-        var recorded = await _incomings.GetAsync(tenantId, integrationId, claim.DeliveryId) != null;
+        // Every outcome is audited: a call that timed out was still recorded and may still be
+        // running the agent. The deliveryId says whether the webhook recorded it.
+        var recorded = await AuditAsync(integration, claim, outcome, statusCode);
+        if (failure != null)
+            return failure;
+
         if (!recorded)
         {
             _logger.LogWarning(
@@ -174,20 +219,35 @@ public class WebhookRedeliveryService : IWebhookRedeliveryService
                 incomingId, statusCode);
         }
 
+        return ServiceResult<WebhookRedeliveryResult>.Success(new WebhookRedeliveryResult(
+            recorded ? claim.DeliveryId : null, claim.RedeliveryOf, statusCode!.Value, stopwatch.ElapsedMilliseconds));
+    }
+
+    /// <summary>
+    /// Writes the audit entry for a redelivery attempt and returns whether the webhook recorded the
+    /// call. The endpoint records a call before it runs the agent, so the row exists unless the call
+    /// was turned away first (bad key, inactive activation) or never arrived.
+    /// </summary>
+    private async Task<bool> AuditAsync(AppIntegration integration, WebhookRedeliveryClaim claim, string outcome, int? statusCode)
+    {
+        var recorded = await _incomings.ExistsAsync(claim.TenantId, claim.IntegrationId, claim.DeliveryId);
+
+        // Builds the entry here and writes it in the background, by the audit service's contract.
         _ = _auditLog.RecordEntryAsync(
             action: DomainEventTypes.IntegrationWebhookRedelivered,
             description: $"Call {claim.RedeliveryOfRequestId} was redelivered to builtin webhook '{integration.Name}'.",
             details: new
             {
-                integrationId,
-                redeliveryOf = claim.RedeliveryOf,
-                deliveryId = recorded ? claim.DeliveryId : (Guid?)null,
+                integrationId = claim.IntegrationId,
+                // As strings: the audit store cannot serialize a Guid in the free-form details.
+                redeliveryOf = claim.RedeliveryOf.ToString(),
+                deliveryId = recorded ? claim.DeliveryId.ToString() : null,
+                outcome,
                 statusCode
             },
-            tenantId: tenantId);
+            tenantId: claim.TenantId);
 
-        return ServiceResult<WebhookRedeliveryResult>.Success(new WebhookRedeliveryResult(
-            recorded ? claim.DeliveryId : null, claim.RedeliveryOf, statusCode, stopwatch.ElapsedMilliseconds));
+        return recorded;
     }
 
     /// <summary>The stored call as an HTTP request: the body byte for byte, its headers, and the signed claim.</summary>
@@ -246,6 +306,13 @@ public class WebhookRedeliveryService : IWebhookRedeliveryService
         }
 
         return Uri.TryCreate($"{address[..schemeEnd]}://{host}{port}", UriKind.Absolute, out var uri) ? uri : null;
+    }
+
+    /// <summary>How long to wait for the webhook: its own wait plus a margin, at most <see cref="MaxWait"/>.</summary>
+    internal static TimeSpan Wait(AppIntegration integration)
+    {
+        var wait = TimeSpan.FromSeconds(WebhookTimeoutSeconds(integration)) + TimeoutMargin;
+        return wait < MaxWait ? wait : MaxWait;
     }
 
     /// <summary>How long the webhook waits for the agent: its URL's <c>timeoutSeconds</c> (stored as <c>timeoutInSeconds</c>).</summary>

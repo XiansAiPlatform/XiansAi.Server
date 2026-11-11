@@ -108,6 +108,15 @@ public class WebhookIncomingService : IWebhookIncomingService
                     call.RequestId);
                 redelivery = null;
             }
+            // A claim is good for one call. A replayed one would clash with the row already saved
+            // under its id and go unrecorded, so record the replay as a new delivery instead.
+            if (redelivery != null && await _incomings.ExistsAsync(call.TenantId, integration.Id, redelivery.DeliveryId))
+            {
+                _logger.LogWarning(
+                    "Call {RequestId} reuses a redelivery claim that was already used; recorded as a new delivery",
+                    call.RequestId);
+                redelivery = null;
+            }
             if (redelivery != null)
             {
                 incoming.Id = redelivery.DeliveryId;
