@@ -123,4 +123,34 @@ public class WorkflowIdentifierTests
         Assert.Equal("env:prod:v2",
             WorkflowIdentifier.GetIdPostfix("acme:My Agent:Router Bot:env:prod:v2"));
     }
+
+    [Fact]
+    public void WithRequestId_AddsTheRequestIdAfterTheActivation()
+    {
+        var workflowId = WorkflowIdentifier.WithRequestId("acme:My Agent:Integrator Workflow:Raven", "Raven", "req-1");
+
+        Assert.Equal("acme:My Agent:Integrator Workflow:Raven:req-1", workflowId);
+        Assert.Equal("acme:My Agent:Integrator Workflow:Raven",
+            WorkflowIdentifier.WithoutRequestId(workflowId, "req-1"));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void WithRequestId_LeavesTheActivationSegmentEmptyWithoutAnActivation(string? activation)
+    {
+        var workflowId = WorkflowIdentifier.WithRequestId("acme:My Agent:Integrator Workflow", activation, "req-1");
+
+        Assert.Equal("acme:My Agent:Integrator Workflow::req-1", workflowId);
+        Assert.Null(WorkflowIdentifier.GetIdPostfix(WorkflowIdentifier.WithoutRequestId(workflowId, "req-1")));
+    }
+
+    [Theory]
+    [InlineData("acme:My Agent:Router Bot:Raven", "req-1")]
+    [InlineData("acme:My Agent:Router Bot:Raven", null)]
+    [InlineData("acme:My Agent:Router Bot:Raven-req-1", "req-1")]
+    public void WithoutRequestId_LeavesOtherIdsUnchanged(string workflowId, string? requestId)
+    {
+        Assert.Equal(workflowId, WorkflowIdentifier.WithoutRequestId(workflowId, requestId));
+    }
 }

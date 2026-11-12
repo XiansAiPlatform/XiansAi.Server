@@ -146,4 +146,26 @@ public class WorkflowIdentifier
         var postfix = string.Join(':', parts.Skip(3)).Trim();
         return string.IsNullOrEmpty(postfix) ? null : postfix;
     }
+
+    /// <summary>
+    /// Workflow id for one request, so each request runs in a workflow of its own:
+    /// <c>tenant:Agent:Flow:Postfix:RequestId</c>. Without a postfix that segment is left empty
+    /// (<c>tenant:Agent:Flow::RequestId</c>), so agents never read the request ID as the postfix.
+    /// </summary>
+    public static string WithRequestId(string workflowId, string? idPostfix, string requestId)
+        => string.IsNullOrEmpty(idPostfix) ? $"{workflowId}::{requestId}" : $"{workflowId}:{requestId}";
+
+    /// <summary>
+    /// The workflow id without the request ID added by <see cref="WithRequestId"/>, or the id
+    /// unchanged when it does not end with that request ID.
+    /// </summary>
+    public static string WithoutRequestId(string workflowId, string? requestId)
+    {
+        if (string.IsNullOrEmpty(requestId) || !workflowId.EndsWith($":{requestId}", StringComparison.Ordinal))
+        {
+            return workflowId;
+        }
+
+        return workflowId[..^(requestId.Length + 1)];
+    }
 }
