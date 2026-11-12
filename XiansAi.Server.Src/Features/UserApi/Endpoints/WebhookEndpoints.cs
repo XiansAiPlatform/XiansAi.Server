@@ -131,6 +131,8 @@ public static class WebhookEndpoints
                     RequestId = requestId,
                     ParticipantId = resolvedParticipantId,
                     WorkflowId = workflowId,
+                    // The call's own workflow belongs to the connection's activation.
+                    ActivationWorkflowId = webhookWorkflowId,
                     Text = webhookName,
                     Data = body,
                     Scope = scope,
