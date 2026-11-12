@@ -142,4 +142,15 @@ public class WorkflowIdentifierTests
         // Agents read the activation from the fourth segment, so it must stay empty.
         Assert.Equal(string.Empty, workflowId.Split(':')[3]);
     }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("Raven:req-1")]
+    public void WithRequestId_RejectsARequestIdThatIsNotOneSegment(string requestId)
+    {
+        var exception = Assert.Throws<ArgumentException>(
+            () => WorkflowIdentifier.WithRequestId("acme:My Agent:Integrator Workflow:Raven", "Raven", requestId));
+
+        Assert.Equal("requestId", exception.ParamName);
+    }
 }
