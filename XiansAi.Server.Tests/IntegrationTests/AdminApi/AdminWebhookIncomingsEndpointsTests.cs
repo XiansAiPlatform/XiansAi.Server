@@ -41,8 +41,10 @@ public class AdminWebhookIncomingsEndpointsTests : AdminApiIntegrationTestBase
         Assert.Equal(Payload, root.GetProperty("body").GetString());
         Assert.Equal(webhookId, root.GetProperty("integrationId").GetString());
         Assert.StartsWith("application/json", root.GetProperty("contentType").GetString());
-        Assert.EndsWith(":Integrator Workflow:hooks", root.GetProperty("workflowId").GetString());
-        Assert.False(string.IsNullOrEmpty(root.GetProperty("requestId").GetString()));
+        // Each call runs in its own workflow, keyed by the call's request ID.
+        var requestId = root.GetProperty("requestId").GetString();
+        Assert.False(string.IsNullOrEmpty(requestId));
+        Assert.EndsWith($":Integrator Workflow:hooks:{requestId}", root.GetProperty("workflowId").GetString());
 
         var headers = root.GetProperty("headers").EnumerateArray()
             .Select(h => (Name: h.GetProperty("name").GetString()!, Value: h.GetProperty("value").GetString()!))

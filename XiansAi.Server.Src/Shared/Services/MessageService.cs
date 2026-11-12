@@ -466,8 +466,12 @@ public class MessageService : IMessageService
         if (_validateActivation)
         {
             var segment = Stopwatch.StartNew();
+            // A workflow keyed by its request ID (one per webhook call) belongs to the activation
+            // named before that ID, not to "activation:requestId".
             var validation = await _activationValidationService.ValidateWorkflowTargetAsync(
-                _tenantContext.TenantId, request.WorkflowId!, request.WorkflowType!);
+                _tenantContext.TenantId,
+                WorkflowIdentifier.WithoutRequestId(request.WorkflowId!, request.RequestId),
+                request.WorkflowType!);
             validationMs = segment.ElapsedMilliseconds;
             if (!validation.IsSuccess)
             {
