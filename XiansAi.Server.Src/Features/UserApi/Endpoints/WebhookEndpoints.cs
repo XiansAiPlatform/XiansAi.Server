@@ -31,6 +31,7 @@ public static class WebhookEndpoints
             [FromServices] IActivationValidationService activationValidationService,
             [FromServices] IFlowDefinitionRepository flowDefinitionRepository,
             [FromServices] IWebhookIncomingService webhookIncomingService,
+            [FromServices] IWebhookRedeliverySigner redeliverySigner,
             [FromServices] ILogger<SyncMessageHandler> logger,
             [FromQuery] int timeoutSeconds = 60,
             [FromQuery] string? participantId = null,
@@ -113,13 +114,24 @@ public static class WebhookEndpoints
                 // Generate unique request ID for correlation
                 var requestId = MessageRequestProcessor.GenerateRequestId(workflowId, resolvedParticipantId);
 
+                // A redelivery the server sent itself carries a signed claim; anything else that
+                // sends the header is recorded as an ordinary call.
+                var redelivery = redeliverySigner.Verify(
+                    httpContext.Request.Headers[WebhookRedeliverySigner.TokenHeader].FirstOrDefault(), tenantId);
+
                 // Record the call before the workflow runs, so it is kept even if the workflow
                 // times out or fails. Recording never throws.
                 await webhookIncomingService.RecordAsync(new BuiltinWebhookCall(
                     tenantId, agentName, activationName, workflowName, webhookName, apikeyId,
-                    workflowId, requestId, httpContext.Request.ContentType, httpContext.Request.Headers, body));
+                    workflowId, requestId, httpContext.Request.ContentType, httpContext.Request.Headers, body,
+                    redelivery));
 
+                // The agent sees X-Xians-Redelivery-Of, but not the signed claim, which is only for this endpoint.
                 var inboundMetadata = WebhookHeaderCapture.Capture(httpContext.Request.Headers);
+                inboundMetadata?.Keys
+                    .Where(k => k.Equals(WebhookRedeliverySigner.TokenHeader, StringComparison.OrdinalIgnoreCase))
+                    .ToList()
+                    .ForEach(k => inboundMetadata.Remove(k));
 
                 // Create the chat request for the message service
                 var chatRequest = new ChatOrDataRequest

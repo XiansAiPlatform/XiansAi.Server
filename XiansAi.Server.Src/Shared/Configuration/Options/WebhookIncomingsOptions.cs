@@ -16,4 +16,40 @@ public class WebhookIncomingsOptions
     /// </summary>
     [Range(1, 1_000)]
     public int MaxPerWebhook { get; set; } = 100;
+
+    /// <summary>
+    /// Base URL (scheme, host and port) a redelivery is sent to, e.g. <c>http://localhost:5000</c>.
+    /// When unset, the server sends it to one of its own listening addresses. Set it when those
+    /// cannot be reached from inside the server, for example behind a container port mapping.
+    /// </summary>
+    [AbsoluteHttpUrl]
+    public string? RedeliveryBaseUrl { get; set; }
+
+    /// <summary>
+    /// Most redeliveries this server instance runs at once, across all tenants. Each can hold a
+    /// request and an outbound connection for minutes while the agent runs; more are refused with 429.
+    /// </summary>
+    [Range(1, 1_000)]
+    public int MaxConcurrentRedeliveries { get; set; } = 10;
+}
+
+/// <summary>
+/// Accepts null, empty or an absolute http(s) URL with no path, query or fragment. The webhook
+/// path is joined as an absolute path, so a base path such as <c>/xians</c> would be dropped
+/// silently; it is refused instead.
+/// </summary>
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class AbsoluteHttpUrlAttribute : ValidationAttribute
+{
+    public AbsoluteHttpUrlAttribute() : base("{0} must be an absolute http or https URL with only a scheme, host and port.") { }
+
+    public override bool IsValid(object? value) =>
+        value is null
+        || value is string { Length: 0 }
+        || (value is string text
+            && Uri.TryCreate(text, UriKind.Absolute, out var uri)
+            && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            && uri.AbsolutePath == "/"
+            && string.IsNullOrEmpty(uri.Query)
+            && string.IsNullOrEmpty(uri.Fragment));
 }

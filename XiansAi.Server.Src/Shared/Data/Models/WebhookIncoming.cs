@@ -52,9 +52,31 @@ public class WebhookIncoming
     [BsonElement("integration_id")]
     public required string IntegrationId { get; set; }
 
-    /// <summary>Label shown for the delivery. A redelivery copies the original's value.</summary>
+    /// <summary>
+    /// Request id the server gave this call when it arrived. A redelivery gets its own; the
+    /// original's is in <see cref="RedeliveryOfRequestId"/>.
+    /// </summary>
     [BsonElement("request_id")]
     public required string RequestId { get; set; }
+
+    /// <summary>
+    /// For a redelivery, the id of the delivery first received from the source. A redelivery of a
+    /// redelivery points at that first delivery too. Null for a call that came from the source.
+    /// </summary>
+    [BsonElement("redelivery_of")]
+    [BsonGuidRepresentation(GuidRepresentation.Standard)]
+    [BsonIgnoreIfNull]
+    public Guid? RedeliveryOf { get; set; }
+
+    /// <summary>For a redelivery, the request id of the first delivery (<see cref="RedeliveryOf"/>), shown as its label.</summary>
+    [BsonElement("redelivery_of_request_id")]
+    [BsonIgnoreIfNull]
+    public string? RedeliveryOfRequestId { get; set; }
+
+    /// <summary>For a redelivery, the user who triggered it.</summary>
+    [BsonElement("triggered_by")]
+    [BsonIgnoreIfNull]
+    public string? TriggeredBy { get; set; }
 
     /// <summary>When the call arrived (UTC). Drives the list order and the per-webhook cap.</summary>
     [BsonElement("received_at")]
@@ -215,7 +237,14 @@ public class WebhookIncomingHeader
 }
 
 /// <summary>The fields shown for an incoming call in a list.</summary>
-public record WebhookIncomingSummary(Guid Id, string RequestId, DateTime ReceivedAt, bool BodyTruncated, bool HeadersTruncated);
+public record WebhookIncomingSummary(
+    Guid Id,
+    string RequestId,
+    DateTime ReceivedAt,
+    bool BodyTruncated,
+    bool HeadersTruncated,
+    Guid? RedeliveryOf = null,
+    string? RedeliveryOfRequestId = null);
 
 /// <summary>
 /// Position in a list of incoming calls sorted newest first. Pass the last row of one page to get the next.

@@ -34,6 +34,9 @@ public interface IWebhookIncomingRepository
     /// </summary>
     Task<WebhookIncoming?> GetAsync(string tenantId, string integrationId, Guid id);
 
+    /// <summary>Whether an incoming call exists for this tenant and connection, without loading its body.</summary>
+    Task<bool> ExistsAsync(string tenantId, string integrationId, Guid id);
+
     /// <summary>Lists the incoming calls sent to a workflow, newest first, at most <see cref="WebhookIncomingRepository.MaxPageSize"/>.</summary>
     Task<List<WebhookIncomingSummary>> ListByWorkflowAsync(string tenantId, string workflowId, int limit);
 
@@ -140,6 +143,15 @@ public class WebhookIncomingRepository : IWebhookIncomingRepository
         return incoming;
     }
 
+    public async Task<bool> ExistsAsync(string tenantId, string integrationId, Guid id)
+    {
+        var filter = ByIntegration(tenantId, integrationId) & Filter.Eq(i => i.Id, id);
+
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+            await _collection.CountDocumentsAsync(filter, new CountOptions { Limit = 1 }) > 0,
+            _logger, maxRetries: 3, baseDelayMs: 100, operationName: "WebhookIncomingExists");
+    }
+
     public async Task<List<WebhookIncomingSummary>> ListByWorkflowAsync(string tenantId, string workflowId, int limit)
     {
         var filter = Filter.Eq(i => i.TenantId, tenantId) & Filter.Eq(i => i.WorkflowId, workflowId);
@@ -201,7 +213,8 @@ public class WebhookIncomingRepository : IWebhookIncomingRepository
             await _collection.Find(filter)
                 .Sort(NewestFirst)
                 .Limit(Math.Clamp(limit, 1, MaxPageSize))
-                .Project(i => new WebhookIncomingSummary(i.Id, i.RequestId, i.ReceivedAt, i.BodyTruncated, i.HeadersTruncated))
+                .Project(i => new WebhookIncomingSummary(
+                    i.Id, i.RequestId, i.ReceivedAt, i.BodyTruncated, i.HeadersTruncated, i.RedeliveryOf, i.RedeliveryOfRequestId))
                 .ToListAsync(),
             _logger, maxRetries: 3, baseDelayMs: 100, operationName: operationName);
     }
