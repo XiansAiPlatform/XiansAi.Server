@@ -8,7 +8,8 @@ namespace Shared.Services;
 
 /// <summary>
 /// What a redelivery tells the builtin webhook endpoint about itself: which recorded call it
-/// repeats, the id to save it under and who asked for it.
+/// repeats, the id to save it under, who asked for it, and a hash of the body it is sent with
+/// (<see cref="WebhookRedeliverySigner.HashBody"/>), so the claim cannot be put on another body.
 /// </summary>
 public record WebhookRedeliveryClaim(
     [property: JsonPropertyName("t")] string TenantId,
@@ -17,10 +18,11 @@ public record WebhookRedeliveryClaim(
     [property: JsonPropertyName("r")] string RedeliveryOfRequestId,
     [property: JsonPropertyName("n")] Guid DeliveryId,
     [property: JsonPropertyName("u")] string? TriggeredBy,
-    [property: JsonPropertyName("e")] long ExpiresAtUnixSeconds);
+    [property: JsonPropertyName("e")] long ExpiresAtUnixSeconds,
+    [property: JsonPropertyName("b")] string BodySha256);
 
 /// <summary>
-/// Signs and checks the <see cref="TokenHeader"/> value a redelivery is sent with. Anyone can POST
+/// Signs and checks the <see cref="WebhookRedeliverySigner.TokenHeader"/> value a redelivery is sent with. Anyone can POST
 /// to a webhook URL, so the endpoint trusts a redelivery's claim only when its signature verifies.
 /// </summary>
 public interface IWebhookRedeliverySigner
@@ -71,6 +73,13 @@ public class WebhookRedeliverySigner : IWebhookRedeliverySigner
             : HKDF.DeriveKey(HashAlgorithmName.SHA256, Encoding.UTF8.GetBytes(secret.Trim()), 32,
                 info: Encoding.UTF8.GetBytes("xians-webhook-redelivery-v1"));
     }
+
+    /// <summary>
+    /// SHA-256 of the body as UTF-8, base64url. The redelivery sends the stored body as UTF-8 and the
+    /// endpoint reads it back as a string, so both ends hash the same text.
+    /// </summary>
+    public static string HashBody(string body) =>
+        WebEncoders.Base64UrlEncode(SHA256.HashData(Encoding.UTF8.GetBytes(body)));
 
     public string Sign(WebhookRedeliveryClaim claim)
     {

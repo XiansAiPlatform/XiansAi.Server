@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using Shared.Configuration;
@@ -105,6 +107,18 @@ public class WebhookIncomingService : IWebhookIncomingService
             {
                 _logger.LogWarning(
                     "Call {RequestId} carries a redelivery claim for another webhook; recorded as a new delivery",
+                    call.RequestId);
+                redelivery = null;
+            }
+            // The claim was signed for one body. Any other body with it is not the redelivery,
+            // even if it arrives first, so record it as a new delivery.
+            if (redelivery != null
+                && !CryptographicOperations.FixedTimeEquals(
+                    Encoding.ASCII.GetBytes(redelivery.BodySha256 ?? string.Empty),
+                    Encoding.ASCII.GetBytes(WebhookRedeliverySigner.HashBody(call.Body))))
+            {
+                _logger.LogWarning(
+                    "Call {RequestId} carries a redelivery claim signed for a different body; recorded as a new delivery",
                     call.RequestId);
                 redelivery = null;
             }
