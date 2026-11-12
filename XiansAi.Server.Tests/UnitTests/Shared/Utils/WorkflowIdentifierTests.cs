@@ -123,4 +123,34 @@ public class WorkflowIdentifierTests
         Assert.Equal("env:prod:v2",
             WorkflowIdentifier.GetIdPostfix("acme:My Agent:Router Bot:env:prod:v2"));
     }
+
+    [Fact]
+    public void WithRequestId_AddsTheRequestIdAfterTheActivation()
+    {
+        Assert.Equal("acme:My Agent:Integrator Workflow:Raven:req-1",
+            WorkflowIdentifier.WithRequestId("acme:My Agent:Integrator Workflow:Raven", "Raven", "req-1"));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    public void WithRequestId_LeavesTheActivationSegmentEmptyWithoutAnActivation(string? activation)
+    {
+        var workflowId = WorkflowIdentifier.WithRequestId("acme:My Agent:Integrator Workflow", activation, "req-1");
+
+        Assert.Equal("acme:My Agent:Integrator Workflow::req-1", workflowId);
+        // Agents read the activation from the fourth segment, so it must stay empty.
+        Assert.Equal(string.Empty, workflowId.Split(':')[3]);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("Raven:req-1")]
+    public void WithRequestId_RejectsARequestIdThatIsNotOneSegment(string requestId)
+    {
+        var exception = Assert.Throws<ArgumentException>(
+            () => WorkflowIdentifier.WithRequestId("acme:My Agent:Integrator Workflow:Raven", "Raven", requestId));
+
+        Assert.Equal("requestId", exception.ParamName);
+    }
 }

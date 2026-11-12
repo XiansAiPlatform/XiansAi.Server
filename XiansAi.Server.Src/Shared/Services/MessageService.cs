@@ -31,6 +31,14 @@ public class ChatOrDataRequest
     // unique identifier for the agent's workflow, used to identify the workflow in the message thread
     public string? WorkflowId { get; set; }
 
+    /// <summary>
+    /// The workflow id whose activation is validated, when it is not <see cref="WorkflowId"/> itself:
+    /// a builtin webhook call runs in a workflow of its own (keyed by its request ID) under its
+    /// connection's activation. Set only by server code; never read from a request body.
+    /// </summary>
+    [JsonIgnore]
+    public string? ActivationWorkflowId { get; set; }
+
     // Scope for the message, used to identify the scope of the message thread
     public string? Scope { get; set; }
 
@@ -467,7 +475,7 @@ public class MessageService : IMessageService
         {
             var segment = Stopwatch.StartNew();
             var validation = await _activationValidationService.ValidateWorkflowTargetAsync(
-                _tenantContext.TenantId, request.WorkflowId!, request.WorkflowType!);
+                _tenantContext.TenantId, request.ActivationWorkflowId ?? request.WorkflowId!, request.WorkflowType!);
             validationMs = segment.ElapsedMilliseconds;
             if (!validation.IsSuccess)
             {
