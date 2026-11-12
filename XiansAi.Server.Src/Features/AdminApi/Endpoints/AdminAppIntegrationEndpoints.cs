@@ -265,6 +265,7 @@ public static class AdminAppIntegrationEndpoints
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status408RequestTimeout)
         .Produces(StatusCodes.Status409Conflict)
+        .Produces(StatusCodes.Status429TooManyRequests)
         .RequireCapability(CapabilityActions.TenantWebhookIncomingsRedeliver);
 
         webhookGroup.MapDelete("{integrationId}/incomings", async (

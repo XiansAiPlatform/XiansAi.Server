@@ -271,6 +271,23 @@ public class WebhookIncomingServiceTests
     }
 
     [Fact]
+    public async Task RecordIgnoresAClaimSignedForADifferentBody()
+    {
+        var webhook = Webhook();
+        GivenWebhooks(webhook);
+        WebhookIncoming? saved = null;
+        _incomings.Setup(r => r.InsertAsync(It.IsAny<WebhookIncoming>())).Callback<WebhookIncoming>(i => saved = i);
+        var claim = Claim(webhook.Id, body: "{\"action\":\"closed\"}");
+
+        await _service.RecordAsync(Call() with { Redelivery = claim });
+
+        Assert.NotNull(saved);
+        Assert.NotEqual(claim.DeliveryId, saved!.Id);
+        Assert.Null(saved.RedeliveryOf);
+        Assert.Null(saved.TriggeredBy);
+    }
+
+    [Fact]
     public async Task RecordTreatsAReusedClaimAsANewDelivery()
     {
         var webhook = Webhook();
@@ -306,14 +323,15 @@ public class WebhookIncomingServiceTests
         Assert.Equal([WebhookRedeliverySigner.RedeliveryOfHeader], saved!.Headers.Select(h => h.Name));
     }
 
-    private static WebhookRedeliveryClaim Claim(string integrationId) => new(
+    private static WebhookRedeliveryClaim Claim(string integrationId, string body = "{\"action\":\"opened\"}") => new(
         TenantId: "tenant",
         IntegrationId: integrationId,
         RedeliveryOf: Guid.CreateVersion7(),
         RedeliveryOfRequestId: "original-request",
         DeliveryId: Guid.CreateVersion7(),
         TriggeredBy: "dev@example.com",
-        ExpiresAtUnixSeconds: DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds());
+        ExpiresAtUnixSeconds: DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds(),
+        BodySha256: WebhookRedeliverySigner.HashBody(body));
 
     private void GivenWebhooks(params AppIntegration[] webhooks) =>
         _integrations.Setup(r => r.GetByAgentActivationAsync("tenant", "agent", "activation", "builtin_webhook"))

@@ -26,6 +26,7 @@ public class WebhookRedeliveryServiceTests
     private readonly FeatureCollection _serverFeatures = new();
     private readonly StubHandler _handler = new();
     private string? _baseUrl = "http://localhost:5000";
+    private int _maxConcurrent = 10;
 
     private readonly List<object?> _audits = new();
 
@@ -78,6 +79,7 @@ public class WebhookRedeliveryServiceTests
         Assert.Equal("request-1", signed.RedeliveryOfRequestId);
         Assert.Equal("dev@example.com", signed.TriggeredBy);
         Assert.NotEqual(original.Id, signed.DeliveryId);
+        Assert.Equal(WebhookRedeliverySigner.HashBody(Body), signed.BodySha256);
     }
 
     [Fact]
@@ -316,6 +318,49 @@ public class WebhookRedeliveryServiceTests
         Assert.True((await Service().RedeliverAsync("tenant", webhook.Id, original.Id, "dev@example.com")).IsSuccess);
     }
 
+    [Fact]
+    public async Task RedeliveriesBeyondTheServersCapAreRefusedWithoutSending()
+    {
+        _maxConcurrent = 1;
+        var webhook = GivenWebhook();
+        var busy = GivenIncoming(webhook);
+        var other = GivenIncoming(webhook);
+        using var sent = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        _handler.Respond = _ =>
+        {
+            sent.Set();
+            release.Wait(TimeSpan.FromSeconds(10));
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        };
+
+        var first = Task.Run(() => Service().RedeliverAsync("tenant", webhook.Id, busy.Id, "dev@example.com"));
+        Assert.True(sent.Wait(TimeSpan.FromSeconds(10)));
+
+        var refused = await Service().RedeliverAsync("tenant", webhook.Id, other.Id, "dev@example.com");
+        release.Set();
+
+        Assert.Equal(StatusCode.TooManyRequests, refused.StatusCode);
+        Assert.Single(_handler.Requests);
+        Assert.True((await first).IsSuccess);
+        // The slot is freed once the first one is done.
+        Assert.True((await Service().RedeliverAsync("tenant", webhook.Id, other.Id, "dev@example.com")).IsSuccess);
+    }
+
+    [Fact]
+    public async Task TheAnswerIsReadToTheEnd()
+    {
+        var webhook = GivenWebhook();
+        var original = GivenIncoming(webhook);
+        var answer = new TrackingStream(Encoding.UTF8.GetBytes("{\"status\":\"ok\"}"));
+        _handler.Respond = _ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StreamContent(answer) };
+
+        var result = await Service().RedeliverAsync("tenant", webhook.Id, original.Id, "dev@example.com");
+
+        Assert.True(result.IsSuccess);
+        Assert.True(answer.ReadToEnd);
+    }
+
     [Theory]
     [InlineData(2, 17)]      // the webhook's wait plus a 15 s margin
     [InlineData(null, 75)]   // no timeout configured: the webhook's 60 s default
@@ -357,7 +402,7 @@ public class WebhookRedeliveryServiceTests
             factory.Object,
             server.Object,
             _auditLog.Object,
-            Options.Create(new WebhookIncomingsOptions { RedeliveryBaseUrl = _baseUrl }),
+            Options.Create(new WebhookIncomingsOptions { RedeliveryBaseUrl = _baseUrl, MaxConcurrentRedeliveries = _maxConcurrent }),
             NullLogger<WebhookRedeliveryService>.Instance);
     }
 
@@ -419,6 +464,26 @@ public class WebhookRedeliveryServiceTests
         _incomings.Setup(r => r.ExistsAsync("tenant", webhook.Id, id)).ReturnsAsync(true);
 
     private sealed record SentRequest(HttpMethod Method, Uri Uri, byte[] Body, Dictionary<string, string> Headers);
+
+    /// <summary>A response body that notes whether it was read to the end.</summary>
+    private sealed class TrackingStream(byte[] data) : MemoryStream(data)
+    {
+        public bool ReadToEnd { get; private set; }
+
+        public override int Read(byte[] buffer, int offset, int count) => Track(base.Read(buffer, offset, count));
+
+        public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken cancellationToken = default) =>
+            Track(await base.ReadAsync(buffer, cancellationToken));
+
+        public override async Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            Track(await base.ReadAsync(buffer, offset, count, cancellationToken));
+
+        private int Track(int read)
+        {
+            if (read == 0) ReadToEnd = true;
+            return read;
+        }
+    }
 
     private sealed class StubHandler : HttpMessageHandler
     {

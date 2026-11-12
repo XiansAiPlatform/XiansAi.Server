@@ -182,6 +182,44 @@ public class AdminWebhookIncomingsEndpointsTests : AdminApiIntegrationTestBase
     }
 
     [Fact]
+    public async Task Redeliver_ACallStoredTruncated_IsAConflictAndSendsNothing()
+    {
+        var (tenantId, webhookId, webhookUrl) = await CreateBuiltinWebhookAsync();
+        using var inbound = InboundClient();
+        await PostInboundAsync(inbound, webhookUrl, Payload);
+        var originalId = Assert.Single(await ListIncomingsAsync(tenantId, webhookId)).GetProperty("id").GetString()!;
+        await _database.GetCollection<BsonDocument>("webhook_incomings").UpdateOneAsync(
+            new BsonDocument("tenant_id", tenantId),
+            new BsonDocument("$set", new BsonDocument("body_truncated", true)));
+
+        var redeliver = await PostAsJsonAsync(
+            $"/api/v1/admin/tenants/{tenantId}/webhooks/{webhookId}/incomings/{originalId}/redeliver", new { });
+
+        Assert.Equal(HttpStatusCode.Conflict, redeliver.StatusCode);
+        Assert.Contains("truncated", await redeliver.Content.ReadAsStringAsync());
+        Assert.Single(await ListIncomingsAsync(tenantId, webhookId));
+    }
+
+    [Fact]
+    public async Task Redeliver_AWebhookWithNoUrl_IsAConflictAndSendsNothing()
+    {
+        var (tenantId, webhookId, webhookUrl) = await CreateBuiltinWebhookAsync();
+        using var inbound = InboundClient();
+        await PostInboundAsync(inbound, webhookUrl, Payload);
+        var originalId = Assert.Single(await ListIncomingsAsync(tenantId, webhookId)).GetProperty("id").GetString()!;
+        await _database.GetCollection<BsonDocument>("app_integrations").UpdateOneAsync(
+            new BsonDocument("_id", ObjectId.Parse(webhookId)),
+            new BsonDocument("$unset", new BsonDocument("configuration.webhookUrl", "")));
+
+        var redeliver = await PostAsJsonAsync(
+            $"/api/v1/admin/tenants/{tenantId}/webhooks/{webhookId}/incomings/{originalId}/redeliver", new { });
+
+        Assert.Equal(HttpStatusCode.Conflict, redeliver.StatusCode);
+        Assert.Contains("no URL", await redeliver.Content.ReadAsStringAsync());
+        Assert.Single(await ListIncomingsAsync(tenantId, webhookId));
+    }
+
+    [Fact]
     public async Task Redeliver_IsAllowedForTenantAdminsButNotParticipantAdmins()
     {
         var (tenantId, webhookId, webhookUrl) = await CreateBuiltinWebhookAsync();

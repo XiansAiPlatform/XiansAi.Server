@@ -24,6 +24,13 @@ public class WebhookIncomingsOptions
     /// </summary>
     [AbsoluteHttpUrl]
     public string? RedeliveryBaseUrl { get; set; }
+
+    /// <summary>
+    /// Most redeliveries this server instance runs at once, across all tenants. Each can hold a
+    /// request and an outbound connection for minutes while the agent runs; more are refused with 429.
+    /// </summary>
+    [Range(1, 1_000)]
+    public int MaxConcurrentRedeliveries { get; set; } = 10;
 }
 
 /// <summary>

@@ -136,7 +136,8 @@ public class WebhookRedeliveryService : IWebhookRedeliveryService
             original.RedeliveryOfRequestId ?? original.RequestId,
             Guid.CreateVersion7(),
             triggeredBy,
-            DateTimeOffset.UtcNow.Add(WebhookRedeliverySigner.Lifetime).ToUnixTimeSeconds());
+            DateTimeOffset.UtcNow.Add(WebhookRedeliverySigner.Lifetime).ToUnixTimeSeconds(),
+            WebhookRedeliverySigner.HashBody(original.Body));
 
         string token;
         try
@@ -150,23 +151,33 @@ public class WebhookRedeliveryService : IWebhookRedeliveryService
         }
 
         // One redelivery of a call at a time: a second click while the first is still waiting on
-        // the agent would run it twice.
+        // the agent would run it twice. This guard is per process; a second instance would not see it.
         var inFlightKey = $"{tenantId}|{integrationId}|{incomingId}";
         if (!InFlight.TryAdd(inFlightKey, 0))
             return ServiceResult<WebhookRedeliveryResult>.Conflict("This call is already being redelivered");
 
         try
         {
+            if (Interlocked.Increment(ref _running) > _options.MaxConcurrentRedeliveries)
+            {
+                return ServiceResult<WebhookRedeliveryResult>.Failure(
+                    "Too many redeliveries are running on this server; try again shortly", StatusCode.TooManyRequests);
+            }
+
             return await SendAsync(integration, original, incomingId, claim, token, new Uri(baseUrl, path), cancellationToken);
         }
         finally
         {
+            Interlocked.Decrement(ref _running);
             InFlight.TryRemove(inFlightKey, out _);
         }
     }
 
     /// <summary>Redeliveries currently waiting on the webhook, keyed by tenant, webhook and call.</summary>
     private static readonly ConcurrentDictionary<string, byte> InFlight = new();
+
+    /// <summary>Redeliveries running on this instance, capped by <see cref="WebhookIncomingsOptions.MaxConcurrentRedeliveries"/>.</summary>
+    private static int _running;
 
     private async Task<ServiceResult<WebhookRedeliveryResult>> SendAsync(
         AppIntegration integration, WebhookIncoming original, Guid incomingId, WebhookRedeliveryClaim claim,
@@ -186,6 +197,16 @@ public class WebhookRedeliveryService : IWebhookRedeliveryService
                 .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
             statusCode = (int)response.StatusCode;
             outcome = "answered";
+            // Read the short answer to the end, so the connection goes back to the pool. The status
+            // is already known, so a failure here does not change the outcome.
+            try
+            {
+                await response.Content.CopyToAsync(Stream.Null, timeout.Token);
+            }
+            catch (Exception ex) when (ex is IOException or HttpRequestException or OperationCanceledException && !cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogDebug(ex, "Could not read the answer to redelivery of webhook call {IncomingId}", incomingId);
+            }
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
@@ -281,7 +302,17 @@ public class WebhookRedeliveryService : IWebhookRedeliveryService
     private Uri? ResolveBaseUrl()
     {
         if (!string.IsNullOrWhiteSpace(_options.RedeliveryBaseUrl))
-            return new Uri(_options.RedeliveryBaseUrl);
+        {
+            var configured = new Uri(_options.RedeliveryBaseUrl);
+            if (configured.Scheme == Uri.UriSchemeHttp && !configured.IsLoopback)
+            {
+                // The stored headers are resent, and may carry signatures or API keys.
+                _logger.LogWarning(
+                    "WebhookIncomings:RedeliveryBaseUrl {Host} is plain http and not loopback; redelivered headers travel unencrypted. Use https or a private network",
+                    configured.Authority);
+            }
+            return configured;
+        }
 
         var addresses = _server.Features.Get<IServerAddressesFeature>()?.Addresses ?? [];
         var address = addresses.FirstOrDefault(a => a.StartsWith("http://", StringComparison.OrdinalIgnoreCase))

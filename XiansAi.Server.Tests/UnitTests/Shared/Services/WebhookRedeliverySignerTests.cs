@@ -92,7 +92,8 @@ public class WebhookRedeliverySignerTests
         RedeliveryOfRequestId: "request-1",
         DeliveryId: Guid.Parse("0193f0a0-0000-7000-8000-000000000002"),
         TriggeredBy: "dev@example.com",
-        ExpiresAtUnixSeconds: Now.Add(WebhookRedeliverySigner.Lifetime).ToUnixTimeSeconds());
+        ExpiresAtUnixSeconds: Now.Add(WebhookRedeliverySigner.Lifetime).ToUnixTimeSeconds(),
+        BodySha256: WebhookRedeliverySigner.HashBody("{}"));
 
     private static IConfiguration Configuration(params (string Key, string Value)[] values) =>
         new ConfigurationBuilder()
