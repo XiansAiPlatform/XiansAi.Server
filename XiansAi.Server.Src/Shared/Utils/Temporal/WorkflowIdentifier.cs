@@ -154,18 +154,4 @@ public class WorkflowIdentifier
     /// </summary>
     public static string WithRequestId(string workflowId, string? idPostfix, string requestId)
         => string.IsNullOrEmpty(idPostfix) ? $"{workflowId}::{requestId}" : $"{workflowId}:{requestId}";
-
-    /// <summary>
-    /// The workflow id without the request ID added by <see cref="WithRequestId"/>, or the id
-    /// unchanged when it does not end with that request ID.
-    /// </summary>
-    public static string WithoutRequestId(string workflowId, string? requestId)
-    {
-        if (string.IsNullOrEmpty(requestId) || !workflowId.EndsWith($":{requestId}", StringComparison.Ordinal))
-        {
-            return workflowId;
-        }
-
-        return workflowId[..^(requestId.Length + 1)];
-    }
 }

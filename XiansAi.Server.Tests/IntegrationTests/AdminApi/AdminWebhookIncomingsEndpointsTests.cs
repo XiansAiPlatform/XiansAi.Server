@@ -44,7 +44,9 @@ public class AdminWebhookIncomingsEndpointsTests : AdminApiIntegrationTestBase
         // Each call runs in its own workflow, keyed by the call's request ID.
         var requestId = root.GetProperty("requestId").GetString();
         Assert.False(string.IsNullOrEmpty(requestId));
-        Assert.EndsWith($":Integrator Workflow:hooks:{requestId}", root.GetProperty("workflowId").GetString());
+        var workflowId = root.GetProperty("workflowId").GetString();
+        Assert.StartsWith($"{tenantId}:", workflowId);
+        Assert.EndsWith($":Integrator Workflow:hooks:{requestId}", workflowId);
 
         var headers = root.GetProperty("headers").EnumerateArray()
             .Select(h => (Name: h.GetProperty("name").GetString()!, Value: h.GetProperty("value").GetString()!))
@@ -64,6 +66,19 @@ public class AdminWebhookIncomingsEndpointsTests : AdminApiIntegrationTestBase
         var getAfterDelete = await GetAsync($"/api/v1/admin/tenants/{tenantId}/webhooks/{webhookId}/incomings/{incomingId}");
         Assert.Equal(HttpStatusCode.NotFound, getAfterDelete.StatusCode);
         Assert.Empty(await ListIncomingsAsync(tenantId, webhookId));
+    }
+
+    [Fact]
+    public async Task BuiltinWebhookCall_PassesActivationValidation_InItsOwnWorkflow()
+    {
+        var (_, _, webhookUrl) = await CreateBuiltinWebhookAsync();
+        using var inbound = InboundClient();
+
+        // The call's workflow ends with its request ID, yet it belongs to the active "hooks" activation:
+        // it is accepted and waits for an agent (none runs here) instead of being rejected.
+        var status = await PostInboundAsync(inbound, webhookUrl, Payload);
+
+        Assert.Equal(HttpStatusCode.RequestTimeout, status);
     }
 
     [Fact]
@@ -150,7 +165,7 @@ public class AdminWebhookIncomingsEndpointsTests : AdminApiIntegrationTestBase
     }
 
     /// <summary>Sends a GitHub-style call. Nothing answers it, so only the recording is checked.</summary>
-    private static async Task PostInboundAsync(HttpClient inbound, string webhookUrl, string payload)
+    private static async Task<HttpStatusCode> PostInboundAsync(HttpClient inbound, string webhookUrl, string payload)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, webhookUrl)
         {
@@ -162,6 +177,7 @@ public class AdminWebhookIncomingsEndpointsTests : AdminApiIntegrationTestBase
         using var response = await inbound.SendAsync(request);
         Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.NotEqual(HttpStatusCode.NotFound, response.StatusCode);
+        return response.StatusCode;
     }
 
     private async Task<List<JsonElement>> ListIncomingsAsync(string tenantId, string webhookId)
