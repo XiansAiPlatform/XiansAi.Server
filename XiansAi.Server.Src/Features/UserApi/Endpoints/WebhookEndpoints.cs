@@ -55,6 +55,12 @@ public static class WebhookEndpoints
                     return Results.BadRequest("agentName is required");
                 }
 
+                // Each name is one segment of the workflow ID, so a ':' would shift the segments after it.
+                if (agentName.Contains(':') || workflowName.Contains(':') || activationName?.Contains(':') == true)
+                {
+                    return Results.BadRequest("agentName, workflowName and activationName must not contain ':'");
+                }
+
                 // Credential validation (Authorization header preferred, ?apikey= still accepted
                 // as a deprecated fallback) is performed by EndpointAuthenticationHandler and the
                 // "EndpointAuthPolicy" requirement applied below. By the time we reach this point

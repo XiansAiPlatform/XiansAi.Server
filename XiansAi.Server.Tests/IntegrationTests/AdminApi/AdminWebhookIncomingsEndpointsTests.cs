@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using Tests.TestUtils;
@@ -45,6 +46,7 @@ public class AdminWebhookIncomingsEndpointsTests : AdminApiIntegrationTestBase
         var requestId = root.GetProperty("requestId").GetString();
         Assert.False(string.IsNullOrEmpty(requestId));
         var workflowId = root.GetProperty("workflowId").GetString();
+        Assert.NotNull(workflowId);
         Assert.StartsWith($"{tenantId}:", workflowId);
         Assert.EndsWith($":Integrator Workflow:hooks:{requestId}", workflowId);
 
@@ -79,6 +81,24 @@ public class AdminWebhookIncomingsEndpointsTests : AdminApiIntegrationTestBase
         var status = await PostInboundAsync(inbound, webhookUrl, Payload);
 
         Assert.Equal(HttpStatusCode.RequestTimeout, status);
+    }
+
+    [Theory]
+    [InlineData("agentName")]
+    [InlineData("workflowName")]
+    [InlineData("activationName")]
+    public async Task BuiltinWebhookCall_WithAColonInAName_IsRejectedAndNotRecorded(string parameter)
+    {
+        var (tenantId, webhookId, webhookUrl) = await CreateBuiltinWebhookAsync();
+        using var inbound = InboundClient();
+
+        // A ':' in a name would add a segment to the workflow ID and shift the activation after it.
+        var url = Regex.Replace(webhookUrl, $"([?&]{parameter}=)([^&]*)", "$1$2%3Aextra");
+        Assert.NotEqual(webhookUrl, url);
+        var status = await PostInboundAsync(inbound, url, Payload);
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
+        Assert.Empty(await ListIncomingsAsync(tenantId, webhookId));
     }
 
     [Fact]

@@ -151,7 +151,17 @@ public class WorkflowIdentifier
     /// Workflow id for one request, so each request runs in a workflow of its own:
     /// <c>tenant:Agent:Flow:Postfix:RequestId</c>. Without a postfix that segment is left empty
     /// (<c>tenant:Agent:Flow::RequestId</c>), so agents never read the request ID as the postfix.
+    /// The request ID must be a single segment: one containing <c>:</c> is rejected.
     /// </summary>
     public static string WithRequestId(string workflowId, string? idPostfix, string requestId)
-        => string.IsNullOrEmpty(idPostfix) ? $"{workflowId}::{requestId}" : $"{workflowId}:{requestId}";
+    {
+        if (string.IsNullOrEmpty(requestId) || requestId.Contains(':'))
+        {
+            throw new ArgumentException(
+                $"A request ID must be a non-empty single workflow ID segment, without ':'; got `{requestId}`.",
+                nameof(requestId));
+        }
+
+        return string.IsNullOrEmpty(idPostfix) ? $"{workflowId}::{requestId}" : $"{workflowId}:{requestId}";
+    }
 }
