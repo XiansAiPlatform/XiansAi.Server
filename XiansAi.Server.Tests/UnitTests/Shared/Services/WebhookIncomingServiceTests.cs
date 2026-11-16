@@ -117,8 +117,8 @@ public class WebhookIncomingServiceTests
         var webhook = GivenWebhookById();
         var rows = new List<WebhookIncomingSummary>
         {
-            new(Guid.CreateVersion7(), "request-2", DateTime.UtcNow, false),
-            new(Guid.CreateVersion7(), "request-1", DateTime.UtcNow.AddMinutes(-1), false)
+            new(Guid.CreateVersion7(), "request-2", DateTime.UtcNow, false, false),
+            new(Guid.CreateVersion7(), "request-1", DateTime.UtcNow.AddMinutes(-1), false, false)
         };
         _incomings.Setup(r => r.ListAsync("tenant", webhook.Id, null, 2)).ReturnsAsync(rows);
         _incomings.Setup(r => r.ListAsync("tenant", webhook.Id, null, 3)).ReturnsAsync(rows);
@@ -171,7 +171,7 @@ public class WebhookIncomingServiceTests
     }
 
     [Fact]
-    public async Task GetMasksEncryptedHeaderValues()
+    public async Task GetMasksCredentialHeaderValues()
     {
         var webhook = GivenWebhookById();
         var id = Guid.CreateVersion7();
@@ -185,7 +185,7 @@ public class WebhookIncomingServiceTests
             Headers =
             [
                 new() { Name = "X-GitHub-Event", Value = "issues" },
-                new() { Name = "Authorization", Value = "ciphertext", Encrypted = true }
+                new() { Name = "Authorization", Value = "Bearer secret" }
             ]
         });
 
@@ -194,6 +194,7 @@ public class WebhookIncomingServiceTests
         Assert.Equal(
             [("X-GitHub-Event", "issues"), ("Authorization", WebhookIncomingService.MaskedValue)],
             result.Data!.Headers.Select(h => (h.Name, h.Value)));
+        Assert.Equal([false, true], result.Data.Headers.Select(h => h.Masked));
     }
 
     [Fact]

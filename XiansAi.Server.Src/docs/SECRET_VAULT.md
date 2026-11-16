@@ -120,7 +120,7 @@ The Admin API can **manage** secrets (create / update / delete / list / probe by
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/` | Create secret. Key must be unique. Body: key, value, tenantId?, agentId?, userId?, activationName?, additionalData?. Response is **metadata only** (no value echo). |
+| POST | `/` | Create secret. Key must be unique within its scope (tenantId, agentId, userId, activationName); the same key may be reused in a different scope. A duplicate in the same scope returns 409. Body: key, value, tenantId?, agentId?, userId?, activationName?, additionalData?. Response is **metadata only** (no value echo). |
 | GET | `/` | List secrets metadata. Query: tenantId?, agentId?, activationName? (optional filters). |
 | GET | `/fetch?key=&tenantId=&agentId=&userId=&activationName=` | Probe by key with strict scope. Returns metadata only — no value. Useful to confirm a scoped secret exists. |
 | GET | `/{id}` | Get secret metadata by id. **Value is never returned to admin callers.** |
@@ -238,7 +238,7 @@ Stored value is the **sanitized** JSON string (types preserved for number and bo
 
 - **Metadata collection:** `secret_vault`
 - **Document fields:** `_id`, `key`, `tenant_id`, `agent_id`, `user_id`, `activation_name`, `additional_data`, `created_at`, `created_by`, `updated_at`, `updated_by`. The legacy `encrypted_value` field is read on fallback only and is no longer written by new code.
-- **Uniqueness:** The secret **key** is unique in the collection (one document per key).
+- **Uniqueness:** The secret **key** is unique per scope: one document per (key, tenantId, agentId, userId, activationName), where unset scope fields count as null. Enforced by a service-level check and the unique index `key_scope_unique`.
 - **Indexes:** `key_tenant` (`key`, `tenant_id`) supports fetch-by-key and batch fetch-by-tenants.
 - **Value collection (database provider only):** `secret_vault_values` with `_id` matching the metadata `_id` and a `ciphertext` field. Lookup is by `_id`; no extra indexes required.
 

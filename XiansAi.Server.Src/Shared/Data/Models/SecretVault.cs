@@ -4,7 +4,7 @@ using MongoDB.Bson.Serialization.Attributes;
 namespace Shared.Data.Models;
 
 /// <summary>
-/// Secret vault document. Key (secret name) is unique in the collection.
+/// Secret vault document. Key (secret name) is unique per scope (tenantId, agentId, userId, activationName); the same key may exist in different scopes.
 /// TenantId/AgentId null = scope across tenants/agents; UserId null = any user can access.
 /// ActivationName null = any activation of the agent can access; when set, only that activation can access.
 /// </summary>
@@ -14,7 +14,7 @@ public class SecretVault
     [BsonRepresentation(BsonType.ObjectId)]
     public string Id { get; set; } = null!;
 
-    /// <summary>Unique secret name/key used to fetch the secret.</summary>
+    /// <summary>Secret name/key (unique within its scope) used to fetch the secret.</summary>
     [BsonElement("key")]
     public required string Key { get; set; }
 
