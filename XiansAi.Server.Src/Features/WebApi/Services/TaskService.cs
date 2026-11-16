@@ -64,6 +64,7 @@ public class TaskService : ITaskService
                 StatusCode.NotFound => ServiceResult<TaskInfoResponse>.NotFound(adminResult.ErrorMessage ?? "Task not found"),
                 StatusCode.Forbidden => ServiceResult<TaskInfoResponse>.Forbidden(adminResult.ErrorMessage ?? "Access forbidden"),
                 StatusCode.Unauthorized => ServiceResult<TaskInfoResponse>.Unauthorized(adminResult.ErrorMessage ?? "Unauthorized"),
+                StatusCode.RequestTimeout => ServiceResult<TaskInfoResponse>.RequestTimeout(adminResult.ErrorMessage ?? "The task worker is not available"),
                 _ => ServiceResult<TaskInfoResponse>.InternalServerError(adminResult.ErrorMessage ?? "Failed to retrieve task")
             };
         }
