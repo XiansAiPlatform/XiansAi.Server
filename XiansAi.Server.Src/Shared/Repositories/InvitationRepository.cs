@@ -14,6 +14,14 @@ public interface IInvitationRepository
     Task<bool> MarkAsAcceptedAsync(string token);
     Task<bool> MarkAsExpiredAsync(string token);
     Task<bool> DeleteInvitation(string token);
+
+    /// <summary>
+    /// Invitations of every status in any of <paramref name="tenantIds"/> whose email matches one of
+    /// <paramref name="emails"/>, ignoring case, because invitation emails are stored as entered. Accepted
+    /// and expired invitations are included because they still hold the address. Used by privacy requests
+    /// to find a person's invitations from the emails the subject resolver returns.
+    /// </summary>
+    Task<List<Invitation>> FindByEmailsAsync(IReadOnlyCollection<string> tenantIds, IReadOnlyCollection<string> emails);
 }
 
 public class InvitationRepository : IInvitationRepository
@@ -89,5 +97,20 @@ public class InvitationRepository : IInvitationRepository
             var deletedUser = await _collection.DeleteOneAsync(filter);
             return deletedUser.IsAcknowledged;
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "DeleteInvitation");
+    }
+
+    public async Task<List<Invitation>> FindByEmailsAsync(IReadOnlyCollection<string> tenantIds, IReadOnlyCollection<string> emails)
+    {
+        var emailFilter = EmailFilter.MatchAnyIgnoringCase<Invitation>(x => x.Email, emails);
+        if (tenantIds.Count == 0 || emailFilter == null)
+        {
+            return [];
+        }
+
+        var filter = Builders<Invitation>.Filter.In(x => x.TenantId, tenantIds) & emailFilter;
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            return await _collection.Find(filter).ToListAsync();
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "FindInvitationsByEmails");
     }
 }
