@@ -138,13 +138,7 @@ public class HealthCheckNotifier : IHealthCheckNotifier
             if (!string.IsNullOrWhiteSpace(run.Detail))
                 AppendField(body, "Detail", run.Detail);
 
-            if (!string.IsNullOrWhiteSpace(run.ResponseSnippet))
-            {
-                body.AppendLine();
-                body.AppendLine("Response (start):");
-                body.AppendLine(run.ResponseSnippet);
-            }
-
+            // The agent's response is not emailed because it can contain customer data; it is in the run history.
             body.AppendLine();
             body.AppendLine($"The eval keeps running every {FormatInterval(check.IntervalMinutes)}. You'll get one more email when it passes again.");
         }

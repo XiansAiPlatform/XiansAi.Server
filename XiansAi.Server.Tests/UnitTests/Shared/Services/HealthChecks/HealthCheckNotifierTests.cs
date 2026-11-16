@@ -91,7 +91,7 @@ public class HealthCheckNotifierTests
 
         _email.Verify(e => e.SendEmailAsync(TenantId, "ops@acme.com",
             "Eval failing: health ping (Support Agent / prod)",
-            It.Is<string>(body => body.StartsWith("Hi Ops,") && body.Contains("got degraded") && body.Contains("{\"status\":\"degraded\"}")),
+            It.Is<string>(body => body.StartsWith("Hi Ops,") && body.Contains("got degraded") && !body.Contains("{\"status\":\"degraded\"}")),
             false), Times.Once);
         _email.Verify(e => e.SendEmailAsync(TenantId, "dev@acme.com", It.IsAny<string>(), It.Is<string>(body => body.StartsWith("Hi Dev,")), false), Times.Once);
         _email.Verify(e => e.SendEmailAsync(TenantId, "other@acme.com", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>()), Times.Never);

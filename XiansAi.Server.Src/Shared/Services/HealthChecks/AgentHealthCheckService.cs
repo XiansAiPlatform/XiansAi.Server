@@ -337,6 +337,13 @@ public class AgentHealthCheckService : IAgentHealthCheckService, IHealthCheckAct
                 return $"schedule.scheduleId '{definition.Schedule.ScheduleId}' was not found for agent '{activation.AgentName}'";
         }
 
+        if (definition.Webhook is { Mode: WebhookHealthCheckMode.Update } webhook)
+        {
+            var methodError = await ValidateWebhookMethodAsync(webhook, activation);
+            if (methodError != null)
+                return methodError;
+        }
+
         if (definition.NotifyContactIds.Count > 0)
         {
             var tenantContactIds = (await _contactRepository.ListAsync(activation.TenantId)).Select(c => c.Id).ToHashSet();
@@ -344,6 +351,35 @@ public class AgentHealthCheckService : IAgentHealthCheckService, IHealthCheckAct
             if (unknown != null)
                 return $"notifyContactIds: contact '{unknown}' was not found in this tenant";
         }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Only allows update methods the workflow declares. Methods can only be read from a running
+    /// workflow, so a workflow that isn't running is accepted and fails at run time if the method is wrong.
+    /// </summary>
+    private async Task<string?> ValidateWebhookMethodAsync(WebhookHealthCheckConfig webhook, AgentActivation activation)
+    {
+        List<WebhookTargetWorkflow> targets;
+        try
+        {
+            targets = await _webhookTargetDiscovery.DiscoverAsync(activation);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Could not list webhook targets for activation {ActivationId}; skipping method check",
+                LogSanitizer.Sanitize(activation.Id));
+            return null;
+        }
+
+        var target = targets.FirstOrDefault(t => string.Equals(t.WorkflowType, webhook.WorkflowType, StringComparison.Ordinal));
+        if (target == null)
+            return $"webhook.workflowType '{webhook.WorkflowType}' is not a workflow of agent '{activation.AgentName}'";
+
+        if (target.Status == WebhookTargetStatus.Running
+            && !target.Methods.Any(m => string.Equals(m.Name, webhook.MethodName, StringComparison.Ordinal)))
+            return $"webhook.methodName '{webhook.MethodName}' is not an update method of workflow '{webhook.WorkflowType}'";
 
         return null;
     }

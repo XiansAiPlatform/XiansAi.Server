@@ -180,6 +180,12 @@ public class HealthCheckValidatorTests
     [Theory]
     [InlineData("apikey")]
     [InlineData("ACCESS_TOKEN")]
+    [InlineData("api_key")]
+    [InlineData("X-Auth-Token")]
+    [InlineData("clientSecret")]
+    [InlineData("Authorization")]
+    [InlineData("password")]
+    [InlineData("sig_signature")]
     public void WebhookCredentialQueryParam_IsRejected(string key)
     {
         var request = new HealthCheckRequest
@@ -221,6 +227,22 @@ public class HealthCheckValidatorTests
         var webhook = new WebhookHealthCheckRequest { WorkflowType = "Inbound", MethodName = "ping" };
         configure(webhook);
         return new HealthCheckRequest { Name = "hook", Type = HealthCheckType.Webhook, IntervalMinutes = 10, TimeoutSeconds = 20, Webhook = webhook };
+    }
+
+    [Fact]
+    public void WebhookNonCredentialQueryParam_IsAllowed()
+    {
+        var (_, error) = HealthCheckValidator.Validate(Webhook(w => w.QueryParams = new() { ["author"] = "ops" }), Options);
+
+        Assert.Null(error);
+    }
+
+    [Fact]
+    public void WebhookTemporalInternalMethod_IsRejected()
+    {
+        var (_, error) = HealthCheckValidator.Validate(Webhook(w => w.MethodName = "__temporal_workflow_metadata"), Options);
+
+        Assert.Contains("Temporal internal method", error);
     }
 
     [Fact]

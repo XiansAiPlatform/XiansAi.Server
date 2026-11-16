@@ -141,6 +141,8 @@ public static class HealthCheckValidator
             methodName = webhook.MethodName?.Trim() ?? string.Empty;
             if (methodName.Length == 0 || methodName.Length > HealthCheckLimits.MaxMethodNameLength)
                 return (null, $"webhook.methodName is required and must be at most {HealthCheckLimits.MaxMethodNameLength} characters");
+            if (methodName.StartsWith("__", StringComparison.Ordinal))
+                return (null, "webhook.methodName must not be a Temporal internal method (names starting with '__')");
         }
         else
         {
@@ -164,8 +166,8 @@ public static class HealthCheckValidator
                 return (null, $"webhook.queryParams keys must be 1 to {HealthCheckLimits.MaxQueryParamKeyLength} characters");
             if ((value?.Length ?? 0) > HealthCheckLimits.MaxQueryParamValueLength)
                 return (null, $"webhook.queryParams values must be at most {HealthCheckLimits.MaxQueryParamValueLength} characters");
-            // Don't save API keys or tokens in query parameters.
-            if (key.Equals("apikey", StringComparison.OrdinalIgnoreCase) || key.Equals("access_token", StringComparison.OrdinalIgnoreCase))
+            // Checks are stored in plain text and readable by every tenant admin, so don't save credentials.
+            if (IsCredentialKey(key))
                 return (null, $"webhook.queryParams must not contain credential parameter '{key}'");
         }
 
@@ -261,6 +263,16 @@ public static class HealthCheckValidator
         if (workflowType.Contains(':'))
             return $"{field} must be the flow name without the agent prefix (e.g. 'Router Bot', not 'My Agent:Router Bot')";
         return null;
+    }
+
+    private static readonly string[] CredentialKeyParts =
+        ["apikey", "token", "secret", "password", "passwd", "authorization", "signature", "credential", "sessionid"];
+
+    /// <summary>Matches keys like <c>api_key</c>, <c>X-Auth-Token</c> or <c>clientSecret</c>.</summary>
+    private static bool IsCredentialKey(string key)
+    {
+        var normalized = new string(key.Where(char.IsLetterOrDigit).ToArray()).ToLowerInvariant();
+        return CredentialKeyParts.Any(part => normalized.Contains(part, StringComparison.Ordinal));
     }
 
     private static (HealthCheckDefinition?, string?) Invalid(string error) => (null, error);
