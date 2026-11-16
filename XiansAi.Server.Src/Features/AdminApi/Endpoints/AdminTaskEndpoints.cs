@@ -82,6 +82,7 @@ public static class AdminTaskEndpoints
         .Produces<AdminTaskInfoResponse>()
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status404NotFound)
+        .Produces(StatusCodes.Status408RequestTimeout)
         .WithName("GetTask")
         .RequireCapability(CapabilityActions.TenantTasksGet);
 
@@ -104,6 +105,7 @@ public static class AdminTaskEndpoints
         .Produces<object>()
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status404NotFound)
+        .Produces(StatusCodes.Status408RequestTimeout)
         .WithName("UpdateTaskDraft")
         .RequireCapability(CapabilityActions.TenantTasksUpdateDraft);
 
@@ -126,6 +128,7 @@ public static class AdminTaskEndpoints
         .Produces<object>()
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status404NotFound)
+        .Produces(StatusCodes.Status408RequestTimeout)
         .WithName("UpdateTaskMetadata")
         .RequireCapability(CapabilityActions.TenantTasksUpdateMetadata);
 
@@ -148,6 +151,7 @@ public static class AdminTaskEndpoints
         .Produces<object>()
         .Produces(StatusCodes.Status400BadRequest)
         .Produces(StatusCodes.Status404NotFound)
+        .Produces(StatusCodes.Status408RequestTimeout)
         .WithName("PerformTaskAction")
         .RequireCapability(CapabilityActions.TenantTasksPerformAction);
     }

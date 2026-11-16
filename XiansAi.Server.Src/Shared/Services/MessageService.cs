@@ -596,6 +596,9 @@ public class MessageService : IMessageService
                  Agent = agent,
                  ThreadId = threadId,
                  request.ParticipantId,
+                 // The user who actually sent this message, from the X-On-Behalf-Of header. Agents
+                 // attribute the logs this message triggers to it; null when no header was sent.
+                 InitiatedBy = _tenantContext.OnBehalfOf,
                  request.Text, 
                  request.RequestId,
                  request.Scope,

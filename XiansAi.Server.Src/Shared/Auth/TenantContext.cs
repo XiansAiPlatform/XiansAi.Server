@@ -34,6 +34,14 @@ namespace Shared.Auth;
         string ParticipantId { get; set; }
 
         /// <summary>
+        /// The human a trusted Admin API client named in the <c>X-On-Behalf-Of</c> header, or null
+        /// when no such header was accepted. Unlike <see cref="ParticipantId"/> it never falls back
+        /// to the key owner, so it identifies the user who actually made the call. Attribution only:
+        /// authorization still uses <see cref="LoggedInUser"/>.
+        /// </summary>
+        string? OnBehalfOf { get; set; }
+
+        /// <summary>
         /// The account's stored email when known. A token holder may name themselves by it, which
         /// resolves to their <see cref="ParticipantId"/>.
         ///
@@ -72,6 +80,7 @@ namespace Shared.Auth;
             set => _participantId = value;
         }
 
+        public string? OnBehalfOf { get; set; }
         public string? Email { get; set; }
         public string? ProviderSubject { get; set; }
 
