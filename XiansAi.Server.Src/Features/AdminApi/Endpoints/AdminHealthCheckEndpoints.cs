@@ -189,7 +189,7 @@ public static class AdminHealthCheckEndpoints
         .RequireCapability(CapabilityActions.TenantHealthChecksManage)
         .WithSummary("List a health check's run history")
         .WithDescription(
-            "Paged pass/fail/error history, newest first. pageSize is at most 100. History is kept for 30 days " +
+            "Paged pass/fail/error history, newest first. pageSize is at most 100. History is kept for 15 days " +
             "by default (configurable per deployment).");
 
         var tenantGroup = adminApiGroup.MapGroup("/tenants/{tenantId}/health-checks")

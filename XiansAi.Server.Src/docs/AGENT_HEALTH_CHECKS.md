@@ -229,12 +229,12 @@ wildcards, filters or recursive descent. Failed JSON and header assertions recor
 | `agent_health_checks` | `{tenant_id:1, activation_id:1, name:1}` unique | name uniqueness |
 | `agent_health_checks` | `{tenant_id:1, last_status:1}` | tenant-wide "failing" view |
 | `agent_health_check_runs` | `{tenant_id:1, check_id:1, started_at:-1}` | history paging |
-| `agent_health_check_runs` | `health_check_run_ttl`: `{started_at:1}` TTL **30 days** by default | bounded growth |
+| `agent_health_check_runs` | `health_check_run_ttl`: `{started_at:1}` TTL **15 days** by default | bounded growth |
 
 Retention is configurable per deployment through the existing TTL override (see `INDEXES_AND_TTL.md`):
 `MongoIndexes__agent_health_check_runs__health_check_run_ttl__ExpireAfter=60d`.
 
-At a 5-minute minimum interval, one check generates at most 8,640 runs over 30 days.
+At a 5-minute minimum interval, one check generates at most 4,320 runs over 15 days.
 
 ## 5. Executors (`IHealthCheckExecutor`, one per type)
 
@@ -411,4 +411,4 @@ Tests (`XiansAi.Server.Tests`):
 | D2 | Optional `expected_status_code` assertion on webhook checks (§5.2) | **Yes** |
 | D3 | Builtin webhooks (`/webhooks/builtin`) out of scope for v1 (§5.2) | **Yes, out of scope** at first; **reversed** once it was clear standard agents use `OnWebhook`: builtin mode added, plus JSON/header assertions and a response-time limit |
 | D4 | Default role for `tenant.healthChecks.manage` | **`TenantAdmin` only** |
-| D5 | Run retention | **30 days by default, configurable** through the TTL index override (§4.3) |
+| D5 | Run retention | **15 days by default, configurable** through the TTL index override (§4.3) |

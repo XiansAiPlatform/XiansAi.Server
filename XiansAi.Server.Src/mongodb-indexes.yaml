@@ -626,7 +626,7 @@ agent_health_check_runs:
   - name: health_check_run_ttl
     keys:
       started_at: asc
-    expire_after: 30d
+    expire_after: 15d
     background: true
 
 admin_capability_matrix:

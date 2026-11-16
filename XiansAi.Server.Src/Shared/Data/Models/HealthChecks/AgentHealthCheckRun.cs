@@ -27,7 +27,7 @@ public class HealthCheckAssertionResult
 
 /// <summary>
 /// The saved result of one run, in the <c>agent_health_check_runs</c> collection.
-/// Deleted after 30 days by default.
+/// Deleted after 15 days by default.
 /// </summary>
 [BsonIgnoreExtraElements]
 public class AgentHealthCheckRun
