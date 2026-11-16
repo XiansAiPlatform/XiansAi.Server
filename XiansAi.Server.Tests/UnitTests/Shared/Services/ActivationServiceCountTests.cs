@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shared.Repositories;
 using Shared.Services;
+using Shared.Services.HealthChecks;
 using Shared.Utils.Services;
 using Xunit;
 
@@ -43,6 +44,7 @@ public class ActivationServiceCountTests
             Mock.Of<IAdminMetricsService>(),
             Mock.Of<IFeedbackService>(),
             Mock.Of<IAuditLogService>(),
+            Mock.Of<IHealthCheckActivationHooks>(),
             NullLogger<ActivationService>.Instance);
     }
 

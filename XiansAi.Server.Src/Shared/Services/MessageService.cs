@@ -177,6 +177,7 @@ public class MessageService : IMessageService
     private readonly bool _validateActivation;
     private readonly TimeSpan _heartbeatRetention;
     private readonly TimeSpan _messageRetention;
+    private readonly TimeSpan _healthCheckRetention;
 
     public MessageService(
         ILogger<MessageService> logger,
@@ -200,6 +201,22 @@ public class MessageService : IMessageService
         _validateActivation = configuration.GetValue("Messaging:ValidateActivation", defaultValue: true);
         _heartbeatRetention = ConfigDuration.Get(configuration, "Messaging:HeartbeatRetention", logger) ?? TimeSpan.FromHours(1);
         _messageRetention = ConfigDuration.Get(configuration, "Messaging:MessageRetention", logger) ?? TimeSpan.FromDays(180);
+        _healthCheckRetention = ConfigDuration.Get(configuration, "Messaging:HealthCheckRetention", logger) ?? TimeSpan.FromDays(1);
+    }
+
+    /// <summary>
+    /// Scheduled health-check chats run every few minutes, so they are kept briefly
+    /// (default 1 day) instead of for the normal message retention.
+    /// Replies are matched by participant because agents may set their own origin.
+    /// </summary>
+    private TimeSpan GetRetention(ChatOrDataRequest request, bool isHeartbeat)
+    {
+        if (isHeartbeat)
+            return _heartbeatRetention;
+
+        var isHealthCheck = request.ParticipantId == HealthChecks.ChatHealthCheckExecutor.ParticipantId
+            || (request.Origin?.StartsWith("health-check", StringComparison.OrdinalIgnoreCase) ?? false);
+        return isHealthCheck ? _healthCheckRetention : _messageRetention;
     }
 
     public async Task<ServiceResult<string>> ProcessHandoff(HandoffRequest request)
@@ -647,7 +664,7 @@ public class MessageService : IMessageService
         // Heartbeat messages (incoming or outgoing) get a short TTL (default 1h) to avoid database bloat
         var isHeartbeat = messageType == MessageType.Heartbeat ||
             string.Equals(request.Origin, "heartbeat", StringComparison.OrdinalIgnoreCase);
-        var expiresAt = now.Add(isHeartbeat ? _heartbeatRetention : _messageRetention);
+        var expiresAt = now.Add(GetRetention(request, isHeartbeat));
 
         var message = new ConversationMessage
         {

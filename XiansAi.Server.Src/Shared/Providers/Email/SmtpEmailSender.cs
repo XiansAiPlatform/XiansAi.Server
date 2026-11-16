@@ -22,17 +22,28 @@ public class SmtpEmailSender : ISmtpEmailSender
     private static readonly TimeSpan ClientTimeout = TimeSpan.FromSeconds(30);
 
     private readonly ILogger<SmtpEmailSender> _logger;
+    private readonly bool _checkCertificateRevocation;
 
-    public SmtpEmailSender(ILogger<SmtpEmailSender> logger)
+    /// <param name="logger">Logger</param>
+    /// <param name="checkCertificateRevocation">
+    /// Whether to check the SMTP server certificate against its CA's revocation list. Turning it off
+    /// still validates the certificate chain and host name.
+    /// </param>
+    public SmtpEmailSender(ILogger<SmtpEmailSender> logger, bool checkCertificateRevocation = true)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _checkCertificateRevocation = checkCertificateRevocation;
     }
 
     public async Task SendAsync(SmtpSettings settings, IEnumerable<string> to, string subject, string body, bool isHtml, CancellationToken cancellationToken = default)
     {
         var message = BuildMessage(settings, to, subject, body, isHtml);
 
-        using var client = new SmtpClient { Timeout = (int)ClientTimeout.TotalMilliseconds };
+        using var client = new SmtpClient
+        {
+            Timeout = (int)ClientTimeout.TotalMilliseconds,
+            CheckCertificateRevocation = _checkCertificateRevocation
+        };
 
         await client.ConnectAsync(settings.Host, settings.Port, ToSecureSocketOptions(settings.Security), cancellationToken);
         try

@@ -27,6 +27,7 @@ Email__Smtp__SenderName=Xians
 - `Host` and `SenderEmail` are required. `Username` and `Password` are only needed if the server requires authentication.
 - `Security` is one of `None`, `StartTls` (usually port 587), `SslOnConnect` (usually port 465) or `Auto`.
 - If `Host` is set but the other settings are invalid, the server fails at startup with a clear error.
+- `Email__CheckCertificateRevocation=false` skips the certificate revocation check for every SMTP server, including tenant overrides. Use it only when the host cannot reach the CA's revocation servers and sends fail with `An incomplete certificate revocation check occurred`. The certificate chain and host name are still validated.
 
 For local testing, run [Mailpit](https://mailpit.axllent.org/) (`docker run -p 1025:1025 -p 8025:8025 axllent/mailpit`). Set `Host=localhost`, `Port=1025` and `Security=None`, then read the emails at http://localhost:8025.
 
