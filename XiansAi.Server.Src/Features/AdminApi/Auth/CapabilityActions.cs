@@ -81,6 +81,8 @@ public static class CapabilityActions
     public const string TenantMessagingDownloadFile = "tenant.messaging.downloadFile";
     public const string TenantMessagingTopics = "tenant.messaging.topics";
     public const string TenantMessagingHistory = "tenant.messaging.history";
+    public const string TenantMessagingUnread = "tenant.messaging.unread";
+    public const string TenantMessagingMarkRead = "tenant.messaging.markRead";
     public const string TenantMessagingDeleteByTopic = "tenant.messaging.deleteByTopic";
     public const string TenantMessagingDeleteByActivation = "tenant.messaging.deleteByActivation";
 
@@ -204,6 +206,10 @@ public static class CapabilityActions
     public const string TenantWebhooksList = "tenant.webhooks.list";
     public const string TenantWebhooksDeleteByActivation = "tenant.webhooks.deleteByActivation";
     public const string TenantWebhooksDelete = "tenant.webhooks.delete";
+    public const string TenantWebhookIncomingsList = "tenant.webhookIncomings.list";
+    public const string TenantWebhookIncomingsGet = "tenant.webhookIncomings.get";
+    public const string TenantWebhookIncomingsDelete = "tenant.webhookIncomings.delete";
+    public const string TenantWebhookIncomingsDeleteAll = "tenant.webhookIncomings.deleteAll";
 
     // AdminAppIntegrationEndpoints: /tenants/{tenantId}/integrations
     public const string TenantIntegrationsList = "tenant.integrations.list";
@@ -374,6 +380,10 @@ public static class CapabilityActions
             "List conversation topics for an agent activation."),
         new(TenantMessagingHistory, [SystemRoles.TenantParticipant, SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
             "Read conversation message history."),
+        new(TenantMessagingUnread, [SystemRoles.TenantParticipant, SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
+            "Read unread message counts for a conversation, thread-wide and per topic."),
+        new(TenantMessagingMarkRead, [SystemRoles.TenantParticipant, SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
+            "Mark a conversation thread, or one of its topics, as read."),
         new(TenantMessagingDeleteByTopic, [SystemRoles.TenantParticipant, SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
             "Delete messages in a conversation topic."),
         new(TenantMessagingDeleteByActivation, [SystemRoles.TenantAdmin],
@@ -569,6 +579,14 @@ public static class CapabilityActions
             "Delete all builtin webhooks for one agent activation."),
         new(TenantWebhooksDelete, [SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
             "Delete a single builtin webhook integration."),
+        new(TenantWebhookIncomingsList, [SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
+            "List the calls a builtin webhook has received."),
+        new(TenantWebhookIncomingsGet, [SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
+            "Read one call a builtin webhook received, including its headers and body."),
+        new(TenantWebhookIncomingsDelete, [SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
+            "Delete one recorded call of a builtin webhook."),
+        new(TenantWebhookIncomingsDeleteAll, [SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
+            "Delete every recorded call of a builtin webhook."),
 
         new(TenantIntegrationsList, [SystemRoles.TenantParticipantAdmin, SystemRoles.TenantUser, SystemRoles.TenantAdmin],
             "List app integrations for a tenant."),

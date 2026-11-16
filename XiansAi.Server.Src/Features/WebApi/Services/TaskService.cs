@@ -64,6 +64,7 @@ public class TaskService : ITaskService
                 StatusCode.NotFound => ServiceResult<TaskInfoResponse>.NotFound(adminResult.ErrorMessage ?? "Task not found"),
                 StatusCode.Forbidden => ServiceResult<TaskInfoResponse>.Forbidden(adminResult.ErrorMessage ?? "Access forbidden"),
                 StatusCode.Unauthorized => ServiceResult<TaskInfoResponse>.Unauthorized(adminResult.ErrorMessage ?? "Unauthorized"),
+                StatusCode.RequestTimeout => ServiceResult<TaskInfoResponse>.RequestTimeout(adminResult.ErrorMessage ?? "The task worker is not available"),
                 _ => ServiceResult<TaskInfoResponse>.InternalServerError(adminResult.ErrorMessage ?? "Failed to retrieve task")
             };
         }
@@ -77,6 +78,7 @@ public class TaskService : ITaskService
             RunId = adminData.RunId,
             Title = adminData.Title,
             Description = adminData.Description,
+            DescriptionType = adminData.DescriptionType,
             InitialWork = adminData.InitialWork,
             FinalWork = adminData.FinalWork,
             ParticipantId = adminData.ParticipantId,
@@ -299,6 +301,7 @@ public class TaskService : ITaskService
     {
         var taskTitle = ExtractMemoValue(workflow.Memo, Constants.TaskTitleKey) ?? "Untitled Task";
         var taskDescription = ExtractMemoValue(workflow.Memo, Constants.TaskDescriptionKey) ?? "";
+        var taskDescriptionType = ExtractMemoValue(workflow.Memo, Constants.TaskDescriptionTypeKey) is { Length: > 0 } memoDescType ? memoDescType : Constants.DefaultTaskDescriptionType;
         var participantId = ExtractMemoValue(workflow.Memo, Constants.UserIdKey);
         var taskActionsStr = ExtractMemoValue(workflow.Memo, Constants.TaskActionsKey);
 
@@ -315,6 +318,7 @@ public class TaskService : ITaskService
             RunId = workflow.RunId,
             Title = taskTitle,
             Description = taskDescription,
+            DescriptionType = taskDescriptionType,
             ParticipantId = participantId,
             Status = workflow.Status.ToString(),
             IsCompleted = workflow.Status != Temporalio.Api.Enums.V1.WorkflowExecutionStatus.Running,
@@ -329,10 +333,6 @@ public class TaskService : ITaskService
     /// </summary>
     private string? ExtractMemoValue(IReadOnlyDictionary<string, Temporalio.Converters.IEncodedRawValue> memo, string key)
     {
-        if (memo.TryGetValue(key, out var memoValue))
-        {
-            return memoValue?.Payload?.Data?.ToStringUtf8()?.Replace("\"", "");
-        }
-        return null;
+        return TemporalMemoDecoder.GetString(memo, key);
     }
 }

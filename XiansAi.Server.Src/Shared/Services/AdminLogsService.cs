@@ -68,7 +68,8 @@ public interface IAdminLogsService
         string? search,
         int page,
         int pageSize,
-        Dictionary<string, string[]>? propertyFilters = null);
+        Dictionary<string, string[]>? propertyFilters = null,
+        bool includeChildWorkflows = false);
 
     Task<ServiceResult<AdminLogStreamsResponse>> GetLogStreamsAsync(
         string tenantId,
@@ -81,7 +82,8 @@ public interface IAdminLogsService
         DateTime? endDate,
         string? search,
         int page,
-        int pageSize);
+        int pageSize,
+        bool includeChildWorkflows = false);
 
     Task<ServiceResult<int>> DeleteLogsByActivationAsync(string tenantId, string agentName, string activationName);
 }
@@ -96,15 +98,20 @@ public class AdminLogsService : IAdminLogsService
     private const int MinPageSize = 1;
     private const int MaxPageSize = 100;
     private const int MaxSearchLength = 100;
+    // How many workflows of the filtered type are checked for children (most recently active first).
+    private const int MaxParentWorkflowsForChildLookup = 200;
 
     private readonly ILogRepository _logRepository;
+    private readonly IWorkflowChildrenResolver _childrenResolver;
     private readonly ILogger<AdminLogsService> _logger;
 
     public AdminLogsService(
         ILogRepository logRepository,
+        IWorkflowChildrenResolver childrenResolver,
         ILogger<AdminLogsService> logger)
     {
         _logRepository = logRepository ?? throw new ArgumentNullException(nameof(logRepository));
+        _childrenResolver = childrenResolver ?? throw new ArgumentNullException(nameof(childrenResolver));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -127,7 +134,8 @@ public class AdminLogsService : IAdminLogsService
         string? search,
         int page,
         int pageSize,
-        Dictionary<string, string[]>? propertyFilters = null)
+        Dictionary<string, string[]>? propertyFilters = null,
+        bool includeChildWorkflows = false)
     {
         search = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
         var validation = ValidateCommonInputs(tenantId, page, pageSize, startDate, endDate, search);
@@ -138,6 +146,22 @@ public class AdminLogsService : IAdminLogsService
 
         try
         {
+            string[]? childWorkflowIds = null;
+            if (includeChildWorkflows && workflowIds != null && workflowIds.Length > 0)
+            {
+                // Explicit workflows (e.g. a schedule run or a drilled-in stream): add their
+                // descendants to the ID list. The IDs already narrow the query, and a child has
+                // its own type, so the type filter is dropped.
+                var descendants = await _childrenResolver.GetDescendantWorkflowIdsAsync(tenantId, workflowIds);
+                workflowIds = workflowIds.Concat(descendants).ToArray();
+                workflowType = null;
+            }
+            else
+            {
+                childWorkflowIds = await ResolveChildWorkflowIdsAsync(
+                    tenantId, agentName, activationName, participantId, workflowType, startDate, endDate, includeChildWorkflows);
+            }
+
             _logger.LogInformation(
                 "Retrieving admin logs - TenantId: {TenantId}, AgentName: {AgentName}, ActivationName: {ActivationName}, " +
                 "ParticipantId: {ParticipantId}, WorkflowIds: {WorkflowIds}, WorkflowType: {WorkflowType}, " +
@@ -166,7 +190,8 @@ public class AdminLogsService : IAdminLogsService
                 search,
                 page,
                 pageSize,
-                propertyFilters);
+                propertyFilters,
+                childWorkflowIds);
 
             var response = new AdminLogsResponse
             {
@@ -206,7 +231,8 @@ public class AdminLogsService : IAdminLogsService
         DateTime? endDate,
         string? search,
         int page,
-        int pageSize)
+        int pageSize,
+        bool includeChildWorkflows = false)
     {
         search = string.IsNullOrWhiteSpace(search) ? null : search.Trim();
         var validation = ValidateCommonInputs(tenantId, page, pageSize, startDate, endDate, search);
@@ -217,6 +243,9 @@ public class AdminLogsService : IAdminLogsService
 
         try
         {
+            var childWorkflowIds = await ResolveChildWorkflowIdsAsync(
+                tenantId, agentName, activationName, participantId, workflowType, startDate, endDate, includeChildWorkflows);
+
             _logger.LogInformation(
                 "Retrieving admin log streams - TenantId: {TenantId}, AgentName: {AgentName}, ActivationName: {ActivationName}, " +
                 "ParticipantId: {ParticipantId}, WorkflowType: {WorkflowType}, LogLevels: {LogLevels}, " +
@@ -237,7 +266,8 @@ public class AdminLogsService : IAdminLogsService
                 endDate,
                 search,
                 page,
-                pageSize);
+                pageSize,
+                childWorkflowIds);
 
             var response = new AdminLogStreamsResponse
             {
@@ -330,6 +360,44 @@ public class AdminLogsService : IAdminLogsService
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// When the query is scoped to a workflow type and child workflows are requested, returns the IDs
+    /// of workflows started (directly or transitively) by workflows of that type. Returns null otherwise.
+    /// Log level and search filters are not applied here: a parent may have no matching logs itself
+    /// while its children do.
+    /// </summary>
+    private async Task<string[]?> ResolveChildWorkflowIdsAsync(
+        string tenantId,
+        string? agentName,
+        string? activationName,
+        string? participantId,
+        string? workflowType,
+        DateTime? startDate,
+        DateTime? endDate,
+        bool includeChildWorkflows)
+    {
+        if (!includeChildWorkflows || string.IsNullOrEmpty(workflowType))
+        {
+            return null;
+        }
+
+        var parentIds = await _logRepository.GetRecentWorkflowIdsForTypeAsync(
+            tenantId, agentName, activationName, participantId, workflowType, startDate, endDate,
+            MaxParentWorkflowsForChildLookup);
+
+        if (parentIds.Count == 0)
+        {
+            return null;
+        }
+
+        var childIds = await _childrenResolver.GetDescendantWorkflowIdsAsync(tenantId, parentIds);
+
+        _logger.LogDebug("Resolved {ChildCount} child workflow(s) for {ParentCount} workflow(s) of type {WorkflowType}",
+            childIds.Count, parentIds.Count, LogSanitizer.Sanitize(workflowType));
+
+        return childIds.Count > 0 ? childIds.ToArray() : null;
     }
 
     private static int CalculateTotalPages(long totalCount, int pageSize)

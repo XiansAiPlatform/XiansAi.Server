@@ -13,10 +13,18 @@ public interface IActivationRepository
     Task<List<AgentActivation>> GetByTenantIdAsync(string tenantId);
     Task<List<AgentActivation>> GetByAgentNameAsync(string agentName, string tenantId);
     Task<List<AgentActivation>> GetActiveActivationsAsync(string tenantId);
+    /// <summary>
+    /// Counts activations per agent name in a tenant. When <paramref name="agentNames"/> is null or empty,
+    /// every agent with at least one activation is counted. Agents with no activations are not included.
+    /// </summary>
+    Task<Dictionary<string, AgentActivationCount>> CountByAgentNamesAsync(string tenantId, IReadOnlyCollection<string>? agentNames);
     Task CreateAsync(AgentActivation activation);
     Task<bool> UpdateAsync(string id, AgentActivation activation);
     Task<bool> DeleteAsync(string id);
 }
+
+/// <summary>Number of activations for one agent: all of them, and those currently active.</summary>
+public readonly record struct AgentActivationCount(long Total, long Active);
 
 public class ActivationRepository : IActivationRepository
 {
@@ -74,21 +82,56 @@ public class ActivationRepository : IActivationRepository
     {
         return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
         {
-            // Active == true for new documents, or infer from ActivatedAt/DeactivatedAt for legacy documents
             var filter = Builders<AgentActivation>.Filter.And(
                 Builders<AgentActivation>.Filter.Eq(x => x.TenantId, tenantId),
-                Builders<AgentActivation>.Filter.Or(
-                    Builders<AgentActivation>.Filter.Eq(x => x.Active, true),
-                    Builders<AgentActivation>.Filter.And(
-                        Builders<AgentActivation>.Filter.Ne(x => x.ActivatedAt, null),
-                        Builders<AgentActivation>.Filter.Eq(x => x.DeactivatedAt, null),
-                        Builders<AgentActivation>.Filter.Or(
-                            Builders<AgentActivation>.Filter.Eq(x => x.Active, (bool?)null),
-                            Builders<AgentActivation>.Filter.Exists("active", false)))
-                ));
+                IsActiveFilter());
             return await _activations.Find(filter).ToListAsync();
         }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "GetActiveActivations");
     }
+
+    public async Task<Dictionary<string, AgentActivationCount>> CountByAgentNamesAsync(
+        string tenantId,
+        IReadOnlyCollection<string>? agentNames)
+    {
+        return await MongoRetryHelper.ExecuteWithRetryAsync(async () =>
+        {
+            var baseFilter = Builders<AgentActivation>.Filter.Eq(x => x.TenantId, tenantId);
+            if (agentNames is { Count: > 0 })
+            {
+                baseFilter &= Builders<AgentActivation>.Filter.In(x => x.AgentName, agentNames);
+            }
+
+            var totals = await CountGroupedByAgentNameAsync(baseFilter);
+            var actives = await CountGroupedByAgentNameAsync(baseFilter & IsActiveFilter());
+
+            return totals.ToDictionary(
+                kv => kv.Key,
+                kv => new AgentActivationCount(kv.Value, actives.GetValueOrDefault(kv.Key)));
+        }, _logger, maxRetries: 3, baseDelayMs: 100, operationName: "CountActivationsByAgentNames");
+    }
+
+    private async Task<Dictionary<string, long>> CountGroupedByAgentNameAsync(FilterDefinition<AgentActivation> filter)
+    {
+        var groups = await _activations.Aggregate()
+            .Match(filter)
+            .Group(x => x.AgentName, g => new { AgentName = g.Key, Count = g.LongCount() })
+            .ToListAsync();
+        return groups.ToDictionary(g => g.AgentName, g => g.Count);
+    }
+
+    /// <summary>
+    /// Active == true for new documents, or inferred from ActivatedAt/DeactivatedAt for legacy documents.
+    /// Mirrors <see cref="AgentActivation.IsActive"/>.
+    /// </summary>
+    private static FilterDefinition<AgentActivation> IsActiveFilter() =>
+        Builders<AgentActivation>.Filter.Or(
+            Builders<AgentActivation>.Filter.Eq(x => x.Active, true),
+            Builders<AgentActivation>.Filter.And(
+                Builders<AgentActivation>.Filter.Ne(x => x.ActivatedAt, null),
+                Builders<AgentActivation>.Filter.Eq(x => x.DeactivatedAt, null),
+                Builders<AgentActivation>.Filter.Or(
+                    Builders<AgentActivation>.Filter.Eq(x => x.Active, (bool?)null),
+                    Builders<AgentActivation>.Filter.Exists("active", false))));
 
     public async Task CreateAsync(AgentActivation activation)
     {

@@ -26,6 +26,7 @@ namespace Features.UserApi.Websocket
             TenantId = source.TenantId;
             LoggedInUser = source.LoggedInUser;
             ParticipantId = source.ParticipantId;
+            OnBehalfOf = source.OnBehalfOf;
             Email = source.Email;
             ProviderSubject = source.ProviderSubject;
             Authorization = source.Authorization;
@@ -40,6 +41,7 @@ namespace Features.UserApi.Websocket
         public string TenantId { get; set; }
         public string LoggedInUser { get; set; }
         public string ParticipantId { get; set; }
+        public string? OnBehalfOf { get; set; }
         public string? Email { get; set; }
         public string? ProviderSubject { get; set; }
         public string[] UserRoles { get; set; }

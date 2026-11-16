@@ -227,6 +227,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IUsageEventRepository, UsageEventRepository>();
         builder.Services.AddScoped<IActivationRepository, ActivationRepository>();
         builder.Services.AddScoped<IWebhookDeliveryRepository, WebhookDeliveryRepository>();
+        builder.Services.AddScoped<IWebhookIncomingRepository, WebhookIncomingRepository>();
         builder.Services.AddScoped<IAppIntegrationRepository, AppIntegrationRepository>();
         builder.Services.AddScoped<IContactRepository, ContactRepository>();
         builder.Services.AddSingleton<IAsyncResultCache, AsyncResultCache>();
@@ -250,6 +251,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IUsageEventService, UsageEventService>();
         builder.Services.AddScoped<IWebhookEventPublisher, WebhookEventPublisher>();
         builder.Services.AddScoped<IAppIntegrationService, AppIntegrationService>();
+        builder.Services.AddScoped<IWebhookIncomingService, WebhookIncomingService>();
         builder.Services.AddHttpClient();              
         builder.Services.AddScoped<IApiKeyService, ApiKeyService>();
         builder.Services.AddScoped<IRoleCacheService, RoleCacheService>();

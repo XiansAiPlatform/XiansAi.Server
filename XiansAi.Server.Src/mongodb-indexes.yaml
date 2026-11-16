@@ -143,6 +143,18 @@ conversation_message:
     keys:
       tenant_id: asc
       status: asc
+  # perf: serves the per-thread unread count and per-topic unread group (GetUnreadMessageCountAsync,
+  # GetUnreadCountsByScopeAsync) and the scoped mark-read filter. The status predicate is written as
+  # `status in [Unread, null]` rather than `status != Read` so this index applies.
+  - name: thread_unread_lookup
+    keys:
+      tenant_id: asc
+      thread_id: asc
+      status: asc
+      direction: asc
+      message_type: asc
+      scope: asc
+    background: true
   - name: message_type_1
     keys:
       message_type: asc
@@ -172,6 +184,13 @@ conversation_thread:
     keys:
       tenant_id: asc
       agent: asc
+  # Finds a person's threads by participant ID, for GDPR export and erasure.
+  - name: thread_participant_lookup
+    keys:
+      participant_id: asc
+      tenant_id: asc
+      workflow_id: asc
+    background: true
 
 certificates:
   - name: Thumbprint_1
@@ -396,10 +415,22 @@ documents:
     sparse: true
 
 secret_vault:
+  # NOTE: key_tenant is a prefix of key_scope_unique below and is a candidate for removal
+  # once key_scope_unique is confirmed live everywhere (verify with explain() first).
   - name: key_tenant
     keys:
       key: asc
       tenant_id: asc
+    background: true
+  # A key is unique per full scope; null/missing scope fields compare equal in a unique index.
+  - name: key_scope_unique
+    keys:
+      key: asc
+      tenant_id: asc
+      agent_id: asc
+      user_id: asc
+      activation_name: asc
+    unique: true
     background: true
 
 # secret_vault_values: secret value documents written by DatabaseSecretStoreProvider.
@@ -591,6 +622,30 @@ webhook_deliveries:
     expire_after: 15d
     background: true
 
+webhook_incomings:
+  # Deliveries list for a builtin webhook (newest first) and the per-webhook retention cap.
+  - name: tenant_id_1_integration_id_1_received_at_-1__id_-1
+    keys:
+      tenant_id: asc
+      integration_id: asc
+      received_at: desc
+      _id: desc
+    background: true
+  # Calls sent to one workflow, newest first.
+  - name: tenant_id_1_workflow_id_1_received_at_-1__id_-1
+    keys:
+      tenant_id: asc
+      workflow_id: asc
+      received_at: desc
+      _id: desc
+    background: true
+  # TTL cleanup: remove calls 90 days after they arrived, even on webhooks under the per-webhook cap.
+  - name: webhook_incoming_ttl
+    keys:
+      received_at: asc
+    expire_after: 90d
+    background: true
+
 agent_health_checks:
   # List the checks attached to one activation.
   - name: health_check_activation
@@ -692,3 +747,32 @@ tenant_smtp_config:
     keys:
       tenant_id: asc
     unique: true
+
+privacy_requests:
+  - name: privacy_request_claim
+    keys:
+      status: asc
+      run_after: asc
+    background: true
+  - name: privacy_request_tenant
+    keys:
+      scope.tenant_ids: asc
+      created_at: desc
+      status: asc
+    background: true
+  - name: privacy_request_requester
+    keys:
+      requested_by.user_hash: asc
+      created_at: desc
+    background: true
+  - name: privacy_request_ttl
+    keys:
+      closed_at: asc
+    expire_after: 1095d
+    background: true
+  # Failed requests keep plain identifiers for follow-up, so they expire much sooner than other records.
+  - name: privacy_request_failed_ttl
+    keys:
+      failed_at: asc
+    expire_after: 90d
+    background: true

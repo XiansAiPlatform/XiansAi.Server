@@ -279,17 +279,62 @@ public class ScheduleService : IScheduleService
             {
                 return ServiceResult<List<ScheduleRunModel>>.NotFound($"Schedule {scheduleId} not found");
             }
+            var historyRuns = new List<ScheduleRunModel>();
+
+            // Schedule RecentActions is capped by Temporal (~10 entries), so list the
+            // executions the schedule started via visibility instead. This returns the
+            // full history (newest first) and the real workflow outcome.
+            try
+            {
+                var escapedId = scheduleId.Replace("\\", "\\\\").Replace("'", "\\'");
+                var listQuery = $"TemporalScheduledById = '{escapedId}'";
+                var scheduledStartKey = Temporalio.Common.SearchAttributeKey.CreateDateTimeOffset("TemporalScheduledStartTime");
+
+                // Child workflows can inherit the parent's TemporalScheduledById search attribute,
+                // so skip them to keep only the runs the schedule started. Filtering here (rather
+                // than via ParentWorkflowId in the query) works on every visibility store; the
+                // limit is applied after filtering so children don't crowd out schedule runs.
+                await foreach (var workflow in client.ListWorkflowsAsync(listQuery))
+                {
+                    if (!string.IsNullOrEmpty(workflow.ParentId))
+                        continue;
+
+                    var scheduledAt = workflow.TypedSearchAttributes.TryGetValue(scheduledStartKey, out var scheduledStart)
+                        ? scheduledStart.UtcDateTime
+                        : workflow.StartTime;
+
+                    historyRuns.Add(new ScheduleRunModel
+                    {
+                        RunId = workflow.RunId,
+                        ScheduleId = scheduleId,
+                        ScheduledTime = scheduledAt,
+                        ActualRunTime = workflow.StartTime,
+                        Status = MapExecutionStatus(workflow.Status),
+                        WorkflowRunId = workflow.RunId,
+                        WorkflowId = workflow.Id
+                    });
+
+                    if (historyRuns.Count >= count)
+                        break;
+                }
+
+                _logger.LogInformation("Retrieved {Count} history runs for schedule {ScheduleId}", historyRuns.Count, LogSanitizer.Sanitize(scheduleId));
+                return ServiceResult<List<ScheduleRunModel>>.Success(historyRuns);
+            }
+            catch (Exception ex)
+            {
+                // Visibility query unsupported (e.g. no advanced visibility) - fall back to RecentActions
+                _logger.LogWarning(ex, "Failed to list executions for schedule {ScheduleId}, falling back to recent actions", LogSanitizer.Sanitize(scheduleId));
+                historyRuns.Clear();
+            }
+
             var scheduleHandle = client.GetScheduleHandle(scheduleId);
             var description = await scheduleHandle.DescribeAsync();
-            
-            var historyRuns = new List<ScheduleRunModel>();
-            
-            // Use the REAL recent actions recorded by Temporal. Each action carries
-            // its actual scheduled and started timestamps, so we must not fabricate
-            // them. RecentActions is ordered oldest-first, so take the most recent.
+
+            // RecentActions is ordered oldest-first, so take the most recent.
             var recentActions = description.Info?.RecentActions?.ToList()
                 ?? new List<Temporalio.Client.Schedules.ScheduleActionResult>();
-            
+
             foreach (var action in recentActions.OrderByDescending(a => a.ScheduledAt).Take(count))
             {
                 var startWorkflow = action.Action as Temporalio.Client.Schedules.ScheduleActionExecutionStartWorkflow;
@@ -304,7 +349,8 @@ public class ScheduleService : IScheduleService
                     // A recorded action means the workflow was started. Temporal's
                     // schedule info does not include the workflow's final outcome.
                     Status = ScheduleRunStatus.Completed,
-                    WorkflowRunId = startWorkflow?.FirstExecutionRunId
+                    WorkflowRunId = startWorkflow?.FirstExecutionRunId,
+                    WorkflowId = startWorkflow?.WorkflowId
                 });
             }
             
@@ -317,6 +363,14 @@ public class ScheduleService : IScheduleService
             return ServiceResult<List<ScheduleRunModel>>.InternalServerError($"Failed to retrieve schedule history: {ex.Message}");
         }
     }
+
+    private static ScheduleRunStatus MapExecutionStatus(Temporalio.Api.Enums.V1.WorkflowExecutionStatus status) => status switch
+    {
+        Temporalio.Api.Enums.V1.WorkflowExecutionStatus.Running => ScheduleRunStatus.Running,
+        Temporalio.Api.Enums.V1.WorkflowExecutionStatus.Completed => ScheduleRunStatus.Completed,
+        Temporalio.Api.Enums.V1.WorkflowExecutionStatus.ContinuedAsNew => ScheduleRunStatus.Completed,
+        _ => ScheduleRunStatus.Failed
+    };
     
     public async Task<ServiceResult<ScheduleModel>> GetScheduleByIdAsync(string scheduleId)
     {
@@ -459,7 +513,7 @@ public class ScheduleService : IScheduleService
                 {
                     if (memoValue is Temporalio.Converters.IEncodedRawValue encodedValue)
                     {
-                        return encodedValue?.Payload?.Data?.ToStringUtf8()?.Replace("\"", "");
+                        return TemporalMemoDecoder.Decode(encodedValue);
                     }
                 }
             }
@@ -484,7 +538,7 @@ public class ScheduleService : IScheduleService
                 {
                     if (memoValue is Temporalio.Converters.IEncodedRawValue encodedValue)
                     {
-                        return encodedValue?.Payload?.Data?.ToStringUtf8()?.Replace("\"", "");
+                        return TemporalMemoDecoder.Decode(encodedValue);
                     }
                 }
             }
@@ -517,7 +571,7 @@ public class ScheduleService : IScheduleService
                 {
                     if (memoValue is Temporalio.Converters.IEncodedRawValue encodedValue)
                     {
-                        return encodedValue?.Payload?.Data?.ToStringUtf8()?.Replace("\"", "");
+                        return TemporalMemoDecoder.Decode(encodedValue);
                     }
                 }
             }
@@ -546,7 +600,7 @@ public class ScheduleService : IScheduleService
                         {
                             if (kvp.Value is Temporalio.Converters.IEncodedRawValue encodedValue)
                             {
-                                var decodedValue = encodedValue?.Payload?.Data?.ToStringUtf8()?.Replace("\"", "") ?? "";
+                                var decodedValue = TemporalMemoDecoder.Decode(encodedValue) ?? "";
                                 metadata[kvp.Key] = decodedValue;
                             }
                             else

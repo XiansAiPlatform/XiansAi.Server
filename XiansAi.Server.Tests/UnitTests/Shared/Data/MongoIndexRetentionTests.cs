@@ -29,4 +29,13 @@ public class MongoIndexRetentionTests
         Assert.Equal(new Dictionary<string, string> { ["started_time"] = "asc" }, index.Keys);
         Assert.Equal(TimeSpan.FromDays(90), index.ExpireAfter);
     }
+
+    [Fact]
+    public async Task WebhookIncomings_ExpireNinetyDaysAfterReceipt()
+    {
+        var index = await FindAsync("webhook_incomings", "webhook_incoming_ttl");
+
+        Assert.Equal(new Dictionary<string, string> { ["received_at"] = "asc" }, index.Keys);
+        Assert.Equal(TimeSpan.FromDays(90), index.ExpireAfter);
+    }
 }

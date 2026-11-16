@@ -14,6 +14,8 @@ public interface IContactRepository
     Task<bool> UpdateAsync(Contact contact);
     Task<bool> DeleteAsync(string tenantId, string id);
     Task<long> DeleteByTenantAsync(string tenantId);
+
+    Task<List<Contact>> FindByEmailsAsync(IReadOnlyCollection<string> tenantIds, IReadOnlyCollection<string> emails);
 }
 
 /// <summary>
@@ -73,5 +75,17 @@ public class ContactRepository : IContactRepository
     {
         var result = await _collection.DeleteManyAsync(c => c.TenantId == tenantId);
         return result.DeletedCount;
+    }
+
+    public async Task<List<Contact>> FindByEmailsAsync(IReadOnlyCollection<string> tenantIds, IReadOnlyCollection<string> emails)
+    {
+        var emailFilter = EmailFilter.MatchAnyIgnoringCase<Contact>(c => c.Email, emails);
+        if (tenantIds.Count == 0 || emailFilter == null)
+        {
+            return [];
+        }
+
+        var filter = Builders<Contact>.Filter.In(c => c.TenantId, tenantIds) & emailFilter;
+        return await _collection.Find(filter).ToListAsync();
     }
 }

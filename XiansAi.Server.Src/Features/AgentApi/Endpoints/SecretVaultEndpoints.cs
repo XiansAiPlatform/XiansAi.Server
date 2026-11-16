@@ -133,7 +133,7 @@ public static class SecretVaultEndpoints
             }
 
             var result = await service.FetchByTenantsAsync(
-                request.Key, request.TenantIds, request.AgentId, request.UserId);
+                request.Key, request.TenantIds, request.AgentId, request.UserId, request.ActivationName);
             if (result.IsSuccess)
                 httpContext.Response.Headers.CacheControl = "no-store";
             return result.ToHttpResult();
@@ -235,6 +235,8 @@ public class AgentSecretVaultFetchByTenantsRequest
     public List<string>? TenantIds { get; set; }
     public string? AgentId { get; set; }
     public string? UserId { get; set; }
+    /// <summary>When set, only secrets scoped to this agent activation are returned; null = only secrets not scoped to an activation.</summary>
+    public string? ActivationName { get; set; }
 }
 
 public class AgentSecretVaultUpdateRequest

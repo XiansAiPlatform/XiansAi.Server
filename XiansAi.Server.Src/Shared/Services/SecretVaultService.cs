@@ -87,7 +87,7 @@ public interface ISecretVaultService
     /// bounded number of queries. Returns a map with every requested tenant id; the value is null when the
     /// secret does not exist or its value is missing from the store. Callers must enforce tenant scope first.
     /// </summary>
-    Task<ServiceResult<Dictionary<string, string?>>> FetchByTenantsAsync(string key, IReadOnlyList<string>? tenantIds, string? agentId, string? userId);
+    Task<ServiceResult<Dictionary<string, string?>>> FetchByTenantsAsync(string key, IReadOnlyList<string>? tenantIds, string? agentId, string? userId, string? activationName);
 
     /// <summary>
     /// Returns metadata for a secret without ever loading or returning the secret value.
@@ -134,6 +134,12 @@ public class SecretVaultService : ISecretVaultService
         _logger = logger;
     }
 
+    private const string DuplicateScopeMessage = "A secret with this key already exists in this scope";
+
+    private static bool IsDuplicateKey(Exception ex) =>
+        ex is MongoDB.Driver.MongoWriteException mwe
+        && mwe.WriteError?.Category == MongoDB.Driver.ServerErrorCategory.DuplicateKey;
+
     public async Task<ServiceResult<SecretVaultGetResponse>> CreateAsync(SecretVaultCreateInput input, string actorUserId)
     {
         if (string.IsNullOrWhiteSpace(input.Key))
@@ -141,9 +147,17 @@ public class SecretVaultService : ISecretVaultService
         if (string.IsNullOrWhiteSpace(input.Value))
             return ServiceResult<SecretVaultGetResponse>.BadRequest("Value is required");
 
-        var exists = await _repository.ExistsByKeyAsync(input.Key, input.TenantId);
-        if (exists)
-            return ServiceResult<SecretVaultGetResponse>.Conflict("A secret with this key already exists");
+        try
+        {
+            var exists = await _repository.ExistsByKeyAsync(input.Key, input.TenantId, input.AgentId, input.UserId, input.ActivationName);
+            if (exists)
+                return ServiceResult<SecretVaultGetResponse>.Conflict(DuplicateScopeMessage);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error checking secret key uniqueness for {Key}", LogSanitizer.Sanitize(input.Key));
+            return ServiceResult<SecretVaultGetResponse>.InternalServerError("Failed to create secret");
+        }
 
         var (sanitizedAdditionalData, additionalDataError) = ValidateAndSanitizeAdditionalData(input.AdditionalData);
         if (additionalDataError != null)
@@ -190,9 +204,11 @@ public class SecretVaultService : ISecretVaultService
         }
         catch (Exception ex)
         {
+            var isDuplicateKey = IsDuplicateKey(ex);
+
             _logger.LogError(ex,
-                "Error creating secret vault key {Key} (provider={Provider}). storeWritten={StoreWritten}",
-                input.Key, _secretStore.Name, storeWritten);
+                "Error creating secret vault key {Key} (provider={Provider}). storeWritten={StoreWritten} duplicate={Duplicate}",
+                LogSanitizer.Sanitize(input.Key), _secretStore.Name, storeWritten, isDuplicateKey);
 
             if (storeWritten)
             {
@@ -207,6 +223,9 @@ public class SecretVaultService : ISecretVaultService
                         LogSanitizer.Sanitize(id));
                 }
             }
+
+            if (isDuplicateKey)
+                return ServiceResult<SecretVaultGetResponse>.Conflict(DuplicateScopeMessage);
 
             return ServiceResult<SecretVaultGetResponse>.InternalServerError("Failed to create secret");
         }
@@ -269,6 +288,18 @@ public class SecretVaultService : ISecretVaultService
 
         try
         {
+            // Resulting scope after applying the update (null input = unchanged, empty = cleared).
+            static string? Resolve(string? incoming, string? current) =>
+                incoming == null ? current : (string.IsNullOrWhiteSpace(incoming) ? null : incoming);
+            var newTenant = Resolve(input.TenantId, entity.TenantId);
+            var newAgent = Resolve(input.AgentId, entity.AgentId);
+            var newUser = Resolve(input.UserId, entity.UserId);
+            var newActivation = Resolve(input.ActivationName, entity.ActivationName);
+            var scopeChanged = newTenant != entity.TenantId || newAgent != entity.AgentId
+                || newUser != entity.UserId || newActivation != entity.ActivationName;
+            if (scopeChanged && await _repository.ExistsByKeyAsync(entity.Key, newTenant, newAgent, newUser, newActivation, entity.Id))
+                return ServiceResult<SecretVaultGetResponse>.Conflict(DuplicateScopeMessage);
+
             var changedFields = new List<string>();
             string? updatedValue = null;
             if (input.Value != null)
@@ -332,7 +363,11 @@ public class SecretVaultService : ISecretVaultService
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error updating secret vault id {Id}", LogSanitizer.Sanitize(id));
+            // Backstop for the check-then-write race: the unique index rejects the loser.
+            var isDuplicateKey = IsDuplicateKey(ex);
+            _logger.LogError(ex, "Error updating secret vault id {Id}. duplicate={Duplicate}", LogSanitizer.Sanitize(id), isDuplicateKey);
+            if (isDuplicateKey)
+                return ServiceResult<SecretVaultGetResponse>.Conflict(DuplicateScopeMessage);
             return ServiceResult<SecretVaultGetResponse>.InternalServerError("Failed to update secret");
         }
     }
@@ -416,7 +451,7 @@ public class SecretVaultService : ISecretVaultService
         }
     }
 
-    public async Task<ServiceResult<Dictionary<string, string?>>> FetchByTenantsAsync(string key, IReadOnlyList<string>? tenantIds, string? agentId, string? userId)
+    public async Task<ServiceResult<Dictionary<string, string?>>> FetchByTenantsAsync(string key, IReadOnlyList<string>? tenantIds, string? agentId, string? userId, string? activationName)
     {
         if (string.IsNullOrWhiteSpace(key))
             return ServiceResult<Dictionary<string, string?>>.BadRequest("Key is required");
@@ -431,7 +466,7 @@ public class SecretVaultService : ISecretVaultService
 
         try
         {
-            var entities = await _repository.FindManyForAccessAsync(key, distinctTenantIds, agentId, userId);
+            var entities = await _repository.FindManyForAccessAsync(key, distinctTenantIds, agentId, userId, activationName);
             var entityByTenant = entities
                 .GroupBy(e => e.TenantId!, StringComparer.Ordinal)
                 .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
@@ -457,7 +492,7 @@ public class SecretVaultService : ISecretVaultService
             _ = _auditLogService.RecordEntryAsync(
                 action: DomainEventTypes.SecretBatchFetched,
                 description: $"Vault secret '{key}' was batch-fetched for {distinctTenantIds.Count} tenant(s).",
-                details: new { key, tenantIds = distinctTenantIds, agentId, userId, found = entityByTenant.Count },
+                details: new { key, tenantIds = distinctTenantIds, agentId, userId, activationName, found = entityByTenant.Count },
                 tenantId: auditTenantId);
 
             return ServiceResult<Dictionary<string, string?>>.Success(response);

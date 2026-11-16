@@ -1,5 +1,6 @@
 using Shared.Utils;
 using Temporalio.Client;
+using Temporalio.Exceptions;
 using Shared.Utils.Services;
 using Shared.Utils.Temporal;
 
@@ -14,6 +15,7 @@ public class AdminTaskInfoResponse
     public required string RunId { get; set; }
     public required string Title { get; set; }
     public required string Description { get; set; }
+    public string DescriptionType { get; set; } = Constants.DefaultTaskDescriptionType;
     public required string WorkflowStatus { get; set; }
     public bool TimedOut { get; set; }
     public string? InitialWork { get; set; }
@@ -89,6 +91,15 @@ public interface IAdminTaskService
 /// </summary>
 public class AdminTaskService : IAdminTaskService
 {
+    /// <summary>
+    /// How long a task query or signal waits for a worker before giving up.
+    /// Temporal otherwise waits about 30 seconds and then reports that no poller was seen.
+    /// </summary>
+    private static readonly TimeSpan WorkerCallTimeout = TimeSpan.FromSeconds(10);
+
+    internal const string WorkerUnavailableMessage =
+        "The task worker is not available. Start the agent worker and try again.";
+
     private readonly ITemporalGatewayFactory _temporalGatewayFactory;
     private readonly ILogger<AdminTaskService> _logger;
 
@@ -119,11 +130,19 @@ public class AdminTaskService : IAdminTaskService
 
             var workflowHandle = client.GetWorkflowHandle(workflowId);
 
-            // Get workflow description for metadata
+            // Get workflow description for metadata. This is served by Temporal and does not need a worker.
             var workflowDescription = await workflowHandle.DescribeAsync();
 
-            // Query the task info from the workflow
-            var taskInfo = await workflowHandle.QueryAsync<object>("GetTaskInfo", Array.Empty<object>());
+            // Query the task info from the workflow. This is dispatched to a worker on the task queue.
+            var taskInfo = await CallWorkerAsync(
+                workflowId,
+                token => workflowHandle.QueryAsync<object>(
+                    "GetTaskInfo",
+                    Array.Empty<object>(),
+                    new WorkflowQueryOptions
+                    {
+                        Rpc = new RpcOptions { CancellationToken = token, Retry = false }
+                    }));
             
             // Parse the task info from the query result
             var taskInfoJson = System.Text.Json.JsonSerializer.Serialize(taskInfo);
@@ -134,6 +153,7 @@ public class AdminTaskService : IAdminTaskService
             // Extract values from the parsed task info
             string? title = parsedTaskInfo.TryGetProperty("Title", out var titleProp) ? titleProp.GetString() : null;
             string? description = parsedTaskInfo.TryGetProperty("Description", out var descProp) ? descProp.GetString() : null;
+            string descriptionType = (parsedTaskInfo.TryGetProperty("DescriptionType", out var descTypeProp) && descTypeProp.ValueKind == System.Text.Json.JsonValueKind.String ? descTypeProp.GetString() : null) ?? Constants.DefaultTaskDescriptionType;
             string? initialWork = parsedTaskInfo.TryGetProperty("InitialWork", out var initialWorkProp) ? initialWorkProp.GetString() : null;
             string? finalWork = parsedTaskInfo.TryGetProperty("FinalWork", out var finalWorkProp) ? finalWorkProp.GetString() : null;
             string? participantId = parsedTaskInfo.TryGetProperty("ParticipantId", out var partProp) ? partProp.GetString() : null;
@@ -173,6 +193,7 @@ public class AdminTaskService : IAdminTaskService
                 RunId = workflowDescription.RunId,
                 Title = title ?? "Untitled Task",
                 Description = description ?? "",
+                DescriptionType = descriptionType,
                 InitialWork = initialWork,
                 FinalWork = finalWork,
                 TimedOut = timedOut,
@@ -193,6 +214,10 @@ public class AdminTaskService : IAdminTaskService
 
             _logger.LogInformation("Successfully retrieved task {WorkflowId}", LogSanitizer.Sanitize(workflowId));
             return ServiceResult<AdminTaskInfoResponse>.Success(response);
+        }
+        catch (WorkerUnavailableException ex)
+        {
+            return WorkerUnavailable<AdminTaskInfoResponse>(workflowId, ex);
         }
         catch (Exception ex)
         {
@@ -402,6 +427,7 @@ public class AdminTaskService : IAdminTaskService
     {
         var taskTitle = ExtractMemoValue(workflow.Memo, Constants.TaskTitleKey) ?? "Untitled Task";
         var taskDescription = ExtractMemoValue(workflow.Memo, Constants.TaskDescriptionKey) ?? "";
+        var taskDescriptionType = ExtractMemoValue(workflow.Memo, Constants.TaskDescriptionTypeKey) is { Length: > 0 } memoDescType ? memoDescType : Constants.DefaultTaskDescriptionType;
         var participantId = ExtractMemoValue(workflow.Memo, Constants.UserIdKey);
         var taskActionsStr = ExtractMemoValue(workflow.Memo, Constants.TaskActionsKey);
         var agentName = ExtractMemoValue(workflow.Memo, Constants.AgentKey);
@@ -423,6 +449,7 @@ public class AdminTaskService : IAdminTaskService
             Status = workflow.Status.ToString(),
             Title = taskTitle,
             Description = taskDescription,
+            DescriptionType = taskDescriptionType,
             ParticipantId = participantId,
             AvailableActions = availableActions,
             StartTime = workflow.StartTime,
@@ -750,11 +777,22 @@ public class AdminTaskService : IAdminTaskService
 
             var workflowHandle = client.GetWorkflowHandle(workflowId);
 
-            // Send UpdateDraft signal
-            await workflowHandle.SignalAsync("UpdateDraft", new object[] { updatedDraft });
+            await CallWorkerAsync(
+                workflowId,
+                token => workflowHandle.SignalAsync(
+                    "UpdateDraft",
+                    new object[] { updatedDraft },
+                    new WorkflowSignalOptions
+                    {
+                        Rpc = new RpcOptions { CancellationToken = token, Retry = false }
+                    }));
 
             _logger.LogInformation("Successfully updated draft for task {WorkflowId}", LogSanitizer.Sanitize(workflowId));
             return ServiceResult<object>.Success(new { message = "Draft updated successfully" });
+        }
+        catch (WorkerUnavailableException ex)
+        {
+            return WorkerUnavailable<object>(workflowId, ex);
         }
         catch (Exception ex)
         {
@@ -790,10 +828,22 @@ public class AdminTaskService : IAdminTaskService
             var client = await _temporalGatewayFactory.GetClientAsync(WorkflowIdentifier.GetAgentName(WorkflowIdentifier.GetWorkflowType(workflowId)));
 
             var workflowHandle = client.GetWorkflowHandle(workflowId);
-            await workflowHandle.SignalAsync("UpdateMetadata", new object[] { metadata });
+            await CallWorkerAsync(
+                workflowId,
+                token => workflowHandle.SignalAsync(
+                    "UpdateMetadata",
+                    new object[] { metadata },
+                    new WorkflowSignalOptions
+                    {
+                        Rpc = new RpcOptions { CancellationToken = token, Retry = false }
+                    }));
 
             _logger.LogInformation("Successfully updated metadata for task {WorkflowId}", LogSanitizer.Sanitize(workflowId));
             return ServiceResult<object>.Success(new { message = "Metadata updated successfully" });
+        }
+        catch (WorkerUnavailableException ex)
+        {
+            return WorkerUnavailable<object>(workflowId, ex);
         }
         catch (Exception ex)
         {
@@ -836,12 +886,23 @@ public class AdminTaskService : IAdminTaskService
 
             var workflowHandle = client.GetWorkflowHandle(workflowId);
 
-            // Send PerformAction signal with TaskActionRequest payload
             var actionRequest = new { Action = action, Comment = comment, Metadata = metadata };
-            await workflowHandle.SignalAsync("PerformAction", new object[] { actionRequest });
+            await CallWorkerAsync(
+                workflowId,
+                token => workflowHandle.SignalAsync(
+                    "PerformAction",
+                    new object[] { actionRequest },
+                    new WorkflowSignalOptions
+                    {
+                        Rpc = new RpcOptions { CancellationToken = token, Retry = false }
+                    }));
 
             _logger.LogInformation("Successfully performed action '{Action}' on task {WorkflowId}", LogSanitizer.Sanitize(action), LogSanitizer.Sanitize(workflowId));
             return ServiceResult<object>.Success(new { message = $"Action '{action}' performed successfully" });
+        }
+        catch (WorkerUnavailableException ex)
+        {
+            return WorkerUnavailable<object>(workflowId, ex);
         }
         catch (Exception ex)
         {
@@ -852,14 +913,111 @@ public class AdminTaskService : IAdminTaskService
     }
 
     /// <summary>
+    /// Runs a workflow query or signal that must be picked up by a worker.
+    /// A missing worker is reported as <see cref="WorkerUnavailableException"/> instead of waiting
+    /// for Temporal's default poller timeout. Tests may pass a shorter timeout.
+    /// </summary>
+    internal static async Task<T> CallWorkerAsync<T>(
+        string workflowId,
+        Func<CancellationToken, Task<T>> call,
+        TimeSpan? timeout = null)
+    {
+        using var timeoutSource = new CancellationTokenSource(timeout ?? WorkerCallTimeout);
+        try
+        {
+            return await call(timeoutSource.Token);
+        }
+        catch (Exception ex) when (IsWorkerUnavailable(ex) || IsTimedOutCall(ex, timeoutSource.Token))
+        {
+            throw new WorkerUnavailableException(workflowId, ex);
+        }
+    }
+
+    private static async Task CallWorkerAsync(string workflowId, Func<CancellationToken, Task> call)
+    {
+        await CallWorkerAsync(workflowId, async token =>
+        {
+            await call(token);
+            return true;
+        });
+    }
+
+    internal ServiceResult<T> WorkerUnavailable<T>(string workflowId, Exception ex)
+    {
+        _logger.LogWarning(
+            ex,
+            "Task worker is not available for {WorkflowId}. Error: {ErrorMessage}",
+            LogSanitizer.Sanitize(workflowId),
+            LogSanitizer.Sanitize(ex.InnerException?.Message ?? ex.Message));
+        return ServiceResult<T>.RequestTimeout(WorkerUnavailableMessage);
+    }
+
+    /// <summary>
+    /// Temporal reports a missing poller as an <see cref="RpcException"/> whose message currently
+    /// contains "no poller" or "worker may be down". The SDK has no dedicated type for that case.
+    /// <see cref="RpcException.StatusCode.FailedPrecondition"/> is also used for other query
+    /// rejections, so the status code alone is not specific enough.
+    /// </summary>
+    private static bool IsWorkerUnavailable(Exception exception)
+    {
+        for (var current = exception; current != null; current = current.InnerException)
+        {
+            var message = current.Message;
+            if (message.Contains("no poller", StringComparison.OrdinalIgnoreCase)
+                || message.Contains("worker may be down", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// True only when this call was ended by our timeout. A late application error that happens
+    /// to be thrown after the timeout has already fired is left alone.
+    /// Client-side cancel is an <see cref="OperationCanceledException"/>. A gRPC cancel is an
+    /// <see cref="RpcException"/> with <see cref="RpcException.StatusCode.Cancelled"/>.
+    /// </summary>
+    private static bool IsTimedOutCall(Exception exception, CancellationToken timeoutToken)
+    {
+        if (!timeoutToken.IsCancellationRequested)
+        {
+            return false;
+        }
+
+        for (var current = exception; current != null; current = current.InnerException)
+        {
+            if (current is OperationCanceledException)
+            {
+                return true;
+            }
+
+            if (current is RpcException rpc && rpc.Code == RpcException.StatusCode.Cancelled)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Extracts a value from the workflow memo dictionary.
     /// </summary>
     private string? ExtractMemoValue(IReadOnlyDictionary<string, Temporalio.Converters.IEncodedRawValue> memo, string key)
     {
-        if (memo.TryGetValue(key, out var memoValue))
+        return TemporalMemoDecoder.GetString(memo, key);
+    }
+
+    /// <summary>
+    /// Raised when a task query or signal cannot be dispatched because no worker is polling.
+    /// </summary>
+    internal sealed class WorkerUnavailableException : Exception
+    {
+        public WorkerUnavailableException(string workflowId, Exception inner)
+            : base($"Task worker is not available for {workflowId}", inner)
         {
-            return memoValue.Payload.Data?.ToStringUtf8()?.Replace("\"", "");
         }
-        return null;
     }
 }
