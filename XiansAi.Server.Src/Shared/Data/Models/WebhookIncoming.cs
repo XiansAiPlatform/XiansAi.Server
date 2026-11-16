@@ -105,6 +105,7 @@ public class WebhookIncoming
     /// never splitting a character, and sets <see cref="BodyTruncated"/>.
     /// </summary>
     /// <param name="rowBytes">The row's current serialized size.</param>
+    /// <param name="maxBytes">The largest serialized size the row may have.</param>
     public void TruncateBody(int rowBytes, int maxBytes)
     {
         var body = Encoding.UTF8.GetBytes(Body);

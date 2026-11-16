@@ -1,5 +1,6 @@
 using Shared.Utils;
 using Temporalio.Client;
+using Temporalio.Exceptions;
 using Shared.Utils.Services;
 using Shared.Utils.Temporal;
 
@@ -96,7 +97,7 @@ public class AdminTaskService : IAdminTaskService
     /// </summary>
     private static readonly TimeSpan WorkerCallTimeout = TimeSpan.FromSeconds(10);
 
-    private const string WorkerUnavailableMessage =
+    internal const string WorkerUnavailableMessage =
         "The task worker is not available. Start the agent worker and try again.";
 
     private readonly ITemporalGatewayFactory _temporalGatewayFactory;
@@ -914,16 +915,19 @@ public class AdminTaskService : IAdminTaskService
     /// <summary>
     /// Runs a workflow query or signal that must be picked up by a worker.
     /// A missing worker is reported as <see cref="WorkerUnavailableException"/> instead of waiting
-    /// for Temporal's default poller timeout.
+    /// for Temporal's default poller timeout. Tests may pass a shorter timeout.
     /// </summary>
-    private static async Task<T> CallWorkerAsync<T>(string workflowId, Func<CancellationToken, Task<T>> call)
+    internal static async Task<T> CallWorkerAsync<T>(
+        string workflowId,
+        Func<CancellationToken, Task<T>> call,
+        TimeSpan? timeout = null)
     {
-        using var timeout = new CancellationTokenSource(WorkerCallTimeout);
+        using var timeoutSource = new CancellationTokenSource(timeout ?? WorkerCallTimeout);
         try
         {
-            return await call(timeout.Token);
+            return await call(timeoutSource.Token);
         }
-        catch (Exception ex) when (IsWorkerUnavailable(ex) || timeout.IsCancellationRequested)
+        catch (Exception ex) when (IsWorkerUnavailable(ex) || IsTimedOutCall(ex, timeoutSource.Token))
         {
             throw new WorkerUnavailableException(workflowId, ex);
         }
@@ -938,7 +942,7 @@ public class AdminTaskService : IAdminTaskService
         });
     }
 
-    private ServiceResult<T> WorkerUnavailable<T>(string workflowId, Exception ex)
+    internal ServiceResult<T> WorkerUnavailable<T>(string workflowId, Exception ex)
     {
         _logger.LogWarning(
             ex,
@@ -948,6 +952,12 @@ public class AdminTaskService : IAdminTaskService
         return ServiceResult<T>.RequestTimeout(WorkerUnavailableMessage);
     }
 
+    /// <summary>
+    /// Temporal reports a missing poller as an <see cref="RpcException"/> whose message currently
+    /// contains "no poller" or "worker may be down". The SDK has no dedicated type for that case.
+    /// <see cref="RpcException.StatusCode.FailedPrecondition"/> is also used for other query
+    /// rejections, so the status code alone is not specific enough.
+    /// </summary>
     private static bool IsWorkerUnavailable(Exception exception)
     {
         for (var current = exception; current != null; current = current.InnerException)
@@ -955,6 +965,35 @@ public class AdminTaskService : IAdminTaskService
             var message = current.Message;
             if (message.Contains("no poller", StringComparison.OrdinalIgnoreCase)
                 || message.Contains("worker may be down", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// True only when this call was ended by our timeout. A late application error that happens
+    /// to be thrown after the timeout has already fired is left alone.
+    /// Client-side cancel is an <see cref="OperationCanceledException"/>. A gRPC cancel is an
+    /// <see cref="RpcException"/> with <see cref="RpcException.StatusCode.Cancelled"/>.
+    /// </summary>
+    private static bool IsTimedOutCall(Exception exception, CancellationToken timeoutToken)
+    {
+        if (!timeoutToken.IsCancellationRequested)
+        {
+            return false;
+        }
+
+        for (var current = exception; current != null; current = current.InnerException)
+        {
+            if (current is OperationCanceledException)
+            {
+                return true;
+            }
+
+            if (current is RpcException rpc && rpc.Code == RpcException.StatusCode.Cancelled)
             {
                 return true;
             }
@@ -974,7 +1013,7 @@ public class AdminTaskService : IAdminTaskService
     /// <summary>
     /// Raised when a task query or signal cannot be dispatched because no worker is polling.
     /// </summary>
-    private sealed class WorkerUnavailableException : Exception
+    internal sealed class WorkerUnavailableException : Exception
     {
         public WorkerUnavailableException(string workflowId, Exception inner)
             : base($"Task worker is not available for {workflowId}", inner)
