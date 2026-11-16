@@ -166,7 +166,10 @@ public static class SharedServices
             throw new InvalidOperationException($"Email:Smtp is misconfigured: {error}");
         }
 
-        services.AddSingleton<ISmtpEmailSender, SmtpEmailSender>();
+        var checkCertificateRevocation = configuration.GetValue("Email:CheckCertificateRevocation", true);
+        services.AddSingleton<ISmtpEmailSender>(sp => new SmtpEmailSender(
+            sp.GetRequiredService<ILogger<SmtpEmailSender>>(),
+            checkCertificateRevocation));
         services.AddScoped<IEmailService>(sp => new EmailService(
             sp.GetRequiredService<ITenantSmtpConfigRepository>(),
             sp.GetRequiredService<ISmtpEmailSender>(),
