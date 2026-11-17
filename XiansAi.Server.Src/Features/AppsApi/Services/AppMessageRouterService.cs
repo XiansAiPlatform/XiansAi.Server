@@ -20,6 +20,7 @@ public class AppMessageRouterService : BackgroundService
     private readonly ILogger<AppMessageRouterService> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IMessageEventPublisher _messageEventPublisher;
+    private readonly CancellationTokenSource _routingCts = new();
 
     public AppMessageRouterService(
         ILogger<AppMessageRouterService> logger,
@@ -31,19 +32,42 @@ public class AppMessageRouterService : BackgroundService
         _messageEventPublisher = messageEventPublisher ?? throw new ArgumentNullException(nameof(messageEventPublisher));
     }
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    /// <summary>
+    /// Subscribes before <c>base.StartAsync</c> because .NET 10 runs all of <see cref="ExecuteAsync"/>
+    /// on the thread pool; subscribing there would drop messages published right after startup.
+    /// </summary>
+    public override Task StartAsync(CancellationToken cancellationToken)
     {
+        _messageEventPublisher.MessageReceived += HandleMessageReceivedAsync;
         _logger.LogInformation("App Message Router Service started - listening for outgoing messages");
 
+        return base.StartAsync(cancellationToken);
+    }
+
+    public override async Task StopAsync(CancellationToken cancellationToken)
+    {
+        _messageEventPublisher.MessageReceived -= HandleMessageReceivedAsync;
+        _routingCts.Cancel();
+
+        await base.StopAsync(cancellationToken);
+    }
+
+    public override void Dispose()
+    {
+        _messageEventPublisher.MessageReceived -= HandleMessageReceivedAsync;
+        _routingCts.Dispose();
+        base.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    private Task HandleMessageReceivedAsync(MessageStreamEvent messageEvent) =>
+        RouteMessageAsync(messageEvent, _routingCts.Token);
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
         try
         {
-            // Subscribe to message events
-            _messageEventPublisher.MessageReceived += async (messageEvent) =>
-            {
-                await RouteMessageAsync(messageEvent, stoppingToken);
-            };
-
-            // Keep the service running
+            // Keep the service running; routing is driven by the subscription made in StartAsync.
             await Task.Delay(Timeout.Infinite, stoppingToken);
         }
         catch (OperationCanceledException)

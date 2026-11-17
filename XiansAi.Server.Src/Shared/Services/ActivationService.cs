@@ -3,6 +3,7 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 using Shared.Data.Models;
 using Shared.Repositories;
+using Shared.Services.HealthChecks;
 using Shared.Utils.Services;
 using Shared.Utils.Temporal;
 using Features.WebApi.Services;
@@ -16,6 +17,7 @@ public interface IActivationService
     Task<ServiceResult<AgentActivation>> UpdateActivationAsync(string activationId, UpdateActivationRequest request, string tenantId);
     Task<ServiceResult<AgentActivation>> GetActivationByIdAsync(string id);
     Task<ServiceResult<List<AgentActivation>>> GetActivationsByTenantAsync(string tenantId, string? agentName = null);
+    Task<ServiceResult<List<AgentInstanceCount>>> GetActivationCountsByAgentAsync(string tenantId, IEnumerable<string>? agentNames);
     Task<ServiceResult<AgentActivation>> ActivateAgentAsync(string activationId, string tenantId, ActivationWorkflowConfiguration? workflowConfiguration = null);
     Task<ServiceResult<AgentActivation>> DeactivateAgentAsync(string activationId, string tenantId);
     Task<ServiceResult<bool>> DeleteActivationAsync(string activationId);
@@ -36,6 +38,16 @@ public class UpdateActivationRequest
     public string? Description { get; set; }
     public string? ParticipantId { get; set; }
     public ActivationWorkflowConfiguration? WorkflowConfiguration { get; set; }
+}
+
+/// <summary>
+/// Number of activation instances of one agent in a tenant.
+/// </summary>
+public class AgentInstanceCount
+{
+    public required string AgentName { get; set; }
+    public long InstanceCount { get; set; }
+    public long ActiveInstanceCount { get; set; }
 }
 
 /// <summary>
@@ -68,6 +80,7 @@ public class ActivationService : IActivationService
     private readonly IAdminMetricsService _metricsService;
     private readonly IFeedbackService _feedbackService;
     private readonly IAuditLogService _auditLogService;
+    private readonly IHealthCheckActivationHooks _healthCheckHooks;
     private readonly ILogger<ActivationService> _logger;
 
     public ActivationService(
@@ -86,6 +99,7 @@ public class ActivationService : IActivationService
         IAdminMetricsService metricsService,
         IFeedbackService feedbackService,
         IAuditLogService auditLogService,
+        IHealthCheckActivationHooks healthCheckHooks,
         ILogger<ActivationService> logger)
     {
         _activationRepository = activationRepository ?? throw new ArgumentNullException(nameof(activationRepository));
@@ -103,6 +117,7 @@ public class ActivationService : IActivationService
         _metricsService = metricsService ?? throw new ArgumentNullException(nameof(metricsService));
         _feedbackService = feedbackService ?? throw new ArgumentNullException(nameof(feedbackService));
         _auditLogService = auditLogService ?? throw new ArgumentNullException(nameof(auditLogService));
+        _healthCheckHooks = healthCheckHooks ?? throw new ArgumentNullException(nameof(healthCheckHooks));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -437,6 +452,64 @@ public class ActivationService : IActivationService
         }
     }
 
+    /// <summary>Upper bound on agent names accepted by a single count request.</summary>
+    public const int MaxAgentNamesPerCountRequest = 100;
+
+    /// <summary>
+    /// Counts activation instances per agent name in a tenant.
+    /// With agent names given, returns one entry per distinct name in request order (zero counts included).
+    /// Without them, returns every agent that has at least one activation, ordered by name.
+    /// Names may be given as separate values or comma-separated.
+    /// </summary>
+    public async Task<ServiceResult<List<AgentInstanceCount>>> GetActivationCountsByAgentAsync(
+        string tenantId,
+        IEnumerable<string>? agentNames)
+    {
+        var requested = (agentNames ?? [])
+            .SelectMany(n => n.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (requested.Count > MaxAgentNamesPerCountRequest)
+        {
+            return ServiceResult<List<AgentInstanceCount>>.BadRequest(
+                $"At most {MaxAgentNamesPerCountRequest} agent names can be requested at once");
+        }
+
+        try
+        {
+            _logger.LogInformation("Counting activations for tenant {TenantId} across {Count} requested agent names",
+                LogSanitizer.Sanitize(tenantId), requested.Count);
+
+            var counts = await _activationRepository.CountByAgentNamesAsync(tenantId, requested);
+
+            var names = requested.Count > 0
+                ? requested
+                : counts.Keys.OrderBy(n => n, StringComparer.Ordinal).ToList();
+
+            var result = names
+                .Select(name =>
+                {
+                    var count = counts.GetValueOrDefault(name);
+                    return new AgentInstanceCount
+                    {
+                        AgentName = name,
+                        InstanceCount = count.Total,
+                        ActiveInstanceCount = count.Active
+                    };
+                })
+                .ToList();
+
+            return ServiceResult<List<AgentInstanceCount>>.Success(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error counting activations for tenant {TenantId}", LogSanitizer.Sanitize(tenantId));
+            return ServiceResult<List<AgentInstanceCount>>.InternalServerError(
+                "An error occurred while counting activations");
+        }
+    }
+
     /// <summary>
     /// Activates an agent by starting a workflow in Temporal.
     /// </summary>
@@ -600,8 +673,11 @@ public class ActivationService : IActivationService
 
                 _activationValidationService.InvalidateActivationCache(activation.TenantId, activation.AgentName, activation.Name);
 
-                _logger.LogInformation("Successfully activated {StartedCount}/{TotalCount} workflows for activation {ActivationId}", 
+                _logger.LogInformation("Successfully activated {StartedCount}/{TotalCount} workflows for activation {ActivationId}",
                     startedCount, flowDefinitions.Count, LogSanitizer.Sanitize(activationId));
+
+                // Resume the activation's enabled health checks. Errors here don't stop the activation.
+                await _healthCheckHooks.OnActivationStateChangedAsync(activation);
 
                 var metadata = new { tenantId, activationId = activation.Id, name = activation.Name, agentName = activation.AgentName, workflowIds = activation.WorkflowIds };
 
@@ -715,6 +791,9 @@ public class ActivationService : IActivationService
             await _activationRepository.UpdateAsync(activationId, activation);
 
             _activationValidationService.InvalidateActivationCache(activation.TenantId, activation.AgentName, activation.Name);
+
+            // Pause the activation's health checks so they don't run while it is stopped.
+            await _healthCheckHooks.OnActivationStateChangedAsync(activation);
 
             _logger.LogInformation(
                 "Successfully deactivated activation {ActivationId}. " +
@@ -897,5 +976,8 @@ public class ActivationService : IActivationService
         {
             _logger.LogWarning(ex, "Failed to delete feedback for activation {ActivationId}", LogSanitizer.Sanitize(activation.Id));
         }
+
+        // Delete the health checks, their runs and their schedules. The reconciler cleans up anything left.
+        await _healthCheckHooks.OnActivationDeletedAsync(activation);
     }
 }
