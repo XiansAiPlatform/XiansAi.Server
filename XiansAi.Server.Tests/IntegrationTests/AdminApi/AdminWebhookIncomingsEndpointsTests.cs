@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using MongoDB.Bson;
 using MongoDB.Driver;
 using Tests.TestUtils;
@@ -41,8 +42,13 @@ public class AdminWebhookIncomingsEndpointsTests : AdminApiIntegrationTestBase
         Assert.Equal(Payload, root.GetProperty("body").GetString());
         Assert.Equal(webhookId, root.GetProperty("integrationId").GetString());
         Assert.StartsWith("application/json", root.GetProperty("contentType").GetString());
-        Assert.EndsWith(":Integrator Workflow:hooks", root.GetProperty("workflowId").GetString());
-        Assert.False(string.IsNullOrEmpty(root.GetProperty("requestId").GetString()));
+        // Each call runs in its own workflow, keyed by the call's request ID.
+        var requestId = root.GetProperty("requestId").GetString();
+        Assert.False(string.IsNullOrEmpty(requestId));
+        var workflowId = root.GetProperty("workflowId").GetString();
+        Assert.NotNull(workflowId);
+        Assert.StartsWith($"{tenantId}:", workflowId);
+        Assert.EndsWith($":Integrator Workflow:hooks:{requestId}", workflowId);
 
         var headers = root.GetProperty("headers").EnumerateArray()
             .Select(h => (Name: h.GetProperty("name").GetString()!, Value: h.GetProperty("value").GetString()!))
@@ -61,6 +67,37 @@ public class AdminWebhookIncomingsEndpointsTests : AdminApiIntegrationTestBase
         Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
         var getAfterDelete = await GetAsync($"/api/v1/admin/tenants/{tenantId}/webhooks/{webhookId}/incomings/{incomingId}");
         Assert.Equal(HttpStatusCode.NotFound, getAfterDelete.StatusCode);
+        Assert.Empty(await ListIncomingsAsync(tenantId, webhookId));
+    }
+
+    [Fact]
+    public async Task BuiltinWebhookCall_PassesActivationValidation_InItsOwnWorkflow()
+    {
+        var (_, _, webhookUrl) = await CreateBuiltinWebhookAsync();
+        using var inbound = InboundClient();
+
+        // The call's workflow ends with its request ID, yet it belongs to the active "hooks" activation:
+        // it is accepted and waits for an agent (none runs here) instead of being rejected.
+        var status = await PostInboundAsync(inbound, webhookUrl, Payload);
+
+        Assert.Equal(HttpStatusCode.RequestTimeout, status);
+    }
+
+    [Theory]
+    [InlineData("agentName")]
+    [InlineData("workflowName")]
+    [InlineData("activationName")]
+    public async Task BuiltinWebhookCall_WithAColonInAName_IsRejectedAndNotRecorded(string parameter)
+    {
+        var (tenantId, webhookId, webhookUrl) = await CreateBuiltinWebhookAsync();
+        using var inbound = InboundClient();
+
+        // A ':' in a name would add a segment to the workflow ID and shift the activation after it.
+        var url = Regex.Replace(webhookUrl, $"([?&]{parameter}=)([^&]*)", "$1$2%3Aextra");
+        Assert.NotEqual(webhookUrl, url);
+        var status = await PostInboundAsync(inbound, url, Payload);
+
+        Assert.Equal(HttpStatusCode.BadRequest, status);
         Assert.Empty(await ListIncomingsAsync(tenantId, webhookId));
     }
 
@@ -148,7 +185,7 @@ public class AdminWebhookIncomingsEndpointsTests : AdminApiIntegrationTestBase
     }
 
     /// <summary>Sends a GitHub-style call. Nothing answers it, so only the recording is checked.</summary>
-    private static async Task PostInboundAsync(HttpClient inbound, string webhookUrl, string payload)
+    private static async Task<HttpStatusCode> PostInboundAsync(HttpClient inbound, string webhookUrl, string payload)
     {
         var request = new HttpRequestMessage(HttpMethod.Post, webhookUrl)
         {
@@ -160,6 +197,7 @@ public class AdminWebhookIncomingsEndpointsTests : AdminApiIntegrationTestBase
         using var response = await inbound.SendAsync(request);
         Assert.NotEqual(HttpStatusCode.Unauthorized, response.StatusCode);
         Assert.NotEqual(HttpStatusCode.NotFound, response.StatusCode);
+        return response.StatusCode;
     }
 
     private async Task<List<JsonElement>> ListIncomingsAsync(string tenantId, string webhookId)
