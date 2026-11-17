@@ -260,12 +260,10 @@ public static class AdminAppIntegrationEndpoints
         })
         .WithName("RedeliverWebhookIncoming")
         .WithSummary("Send a recorded call to its builtin webhook again")
-        .WithDescription("POSTs the recorded body and headers to the webhook's URL. The call runs the agent again and is recorded as a new delivery linked to the original. Calls stored truncated cannot be redelivered (409).")
+        .WithDescription("Runs the recorded body and headers through the webhook again, with the values from its current URL. The call runs the agent again and is recorded as a new delivery linked to the original; statusCode is what the webhook answered. Calls stored truncated cannot be redelivered (409).")
         .Produces<WebhookRedeliveryResult>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status404NotFound)
-        .Produces(StatusCodes.Status408RequestTimeout)
         .Produces(StatusCodes.Status409Conflict)
-        .Produces(StatusCodes.Status429TooManyRequests)
         .RequireCapability(CapabilityActions.TenantWebhookIncomingsRedeliver);
 
         webhookGroup.MapDelete("{integrationId}/incomings", async (

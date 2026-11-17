@@ -191,15 +191,16 @@ public class AdminWebhookIncomingsEndpointsTests : AdminApiIntegrationTestBase
         Assert.Contains(("X-GitHub-Event", "issues"), headers);
         Assert.Contains(("X-Hub-Signature-256", "sha256=abc"), headers);
         Assert.Contains(("X-Xians-Redelivery-Of", originalId), headers);
-        Assert.DoesNotContain(headers, h => h.Name.Equals("X-Xians-Redelivery", StringComparison.OrdinalIgnoreCase));
+        // The stored credential header is recorded again, and shown masked.
+        Assert.Contains(("Cookie", "********"), headers);
     }
 
     [Fact]
-    public async Task AnUnsignedRedeliveryHeaderIsRecordedAsAnOrdinaryCall()
+    public async Task ARedeliveryHeaderSentFromOutsideDoesNotLinkTheCall()
     {
         var (tenantId, webhookId, webhookUrl) = await CreateBuiltinWebhookAsync();
         using var inbound = InboundClient();
-        inbound.DefaultRequestHeaders.TryAddWithoutValidation("X-Xians-Redelivery", "forged.claim");
+        inbound.DefaultRequestHeaders.TryAddWithoutValidation("X-Xians-Redelivery-Of", Guid.CreateVersion7().ToString());
 
         await PostInboundAsync(inbound, webhookUrl, Payload);
 

@@ -24,14 +24,9 @@ public static class WebhookEndpoints
             [FromQuery] string? apikeyId,
             [FromQuery] string? activationName,
             HttpContext httpContext,
-            [FromServices] IMessageService messageService,
-            [FromServices] IPendingRequestService pendingRequestService,
             [FromServices] ITenantContext tenantContext,
             [FromServices] IApiKeyService apiKeyService,
-            [FromServices] IActivationValidationService activationValidationService,
-            [FromServices] IFlowDefinitionRepository flowDefinitionRepository,
-            [FromServices] IWebhookIncomingService webhookIncomingService,
-            [FromServices] IWebhookRedeliverySigner redeliverySigner,
+            [FromServices] IBuiltinWebhookProcessor webhookProcessor,
             [FromServices] ILogger<SyncMessageHandler> logger,
             [FromQuery] int timeoutSeconds = 60,
             [FromQuery] string? participantId = null,
@@ -40,28 +35,6 @@ public static class WebhookEndpoints
         {
             try
             {
-                // Validate required parameters
-                if (string.IsNullOrWhiteSpace(workflowName))
-                {
-                    return Results.BadRequest("workflowName is required");
-                }
-
-                if (string.IsNullOrWhiteSpace(webhookName))
-                {
-                    return Results.BadRequest("webhookName is required");
-                }
-
-                if (string.IsNullOrWhiteSpace(agentName))
-                {
-                    return Results.BadRequest("agentName is required");
-                }
-
-                // Each name is one segment of the workflow ID, so a ':' would shift the segments after it.
-                if (agentName.Contains(':') || workflowName.Contains(':') || activationName?.Contains(':') == true)
-                {
-                    return Results.BadRequest("agentName, workflowName and activationName must not contain ':'");
-                }
-
                 // Credential validation (Authorization header preferred, ?apikey= still accepted
                 // as a deprecated fallback) is performed by EndpointAuthenticationHandler and the
                 // "EndpointAuthPolicy" requirement applied below. By the time we reach this point
@@ -88,96 +61,24 @@ public static class WebhookEndpoints
                         statusCode: StatusCodes.Status401Unauthorized);
                 }
 
-                // Validate timeout is within acceptable range
-                if (timeoutSeconds <= 0 || timeoutSeconds > 300)
-                {
-                    return Results.BadRequest("Timeout must be between 1 and 300 seconds");
-                }
-
-                // Validate activation exists and is active when activationName is provided
-                if (!string.IsNullOrWhiteSpace(activationName))
-                {
-                    var validationResult = await activationValidationService.ValidateActivationAsync(
-                        tenantId, agentName, activationName, workflowName);
-                    if (!validationResult.IsSuccess)
-                    {
-                        return validationResult.ToHttpResult();
-                    }
-                }
-
                 // Read the request body
                 using var reader = new StreamReader(httpContext.Request.Body, Encoding.UTF8);
                 var body = await reader.ReadToEndAsync();
 
-                // Build workflowId from workflowName (format: tenant:workflowName)
-                // Using webhookName as the scope/method identifier
-                var webhookWorkflowId = $"{tenantId}:{agentName}:{workflowName}{(activationName != null ? $":{activationName}" : string.Empty)}";
-
-                // Use participantId from query or default to "webhook" for identification
-                // Normalize to lowercase for consistency (especially important for emails)
-                var resolvedParticipantId = (participantId ?? "webhook").ToLowerInvariant();
-
-                // Generate unique request ID for correlation
-                var requestId = MessageRequestProcessor.GenerateRequestId(webhookWorkflowId, resolvedParticipantId);
-
-                // Each call runs in its own workflow, keyed by its request ID, so one call's logs can
-                // be found by workflow ID instead of mixing with every other call to this webhook.
-                var workflowId = WorkflowIdentifier.WithRequestId(webhookWorkflowId, activationName, requestId);
-
-                // A redelivery the server sent itself carries a signed claim; anything else that
-                // sends the header is recorded as an ordinary call.
-                var redelivery = redeliverySigner.Verify(
-                    httpContext.Request.Headers[WebhookRedeliverySigner.TokenHeader].FirstOrDefault(), tenantId);
-
-                // Record the call before the workflow runs, so it is kept even if the workflow
-                // times out or fails. Recording never throws.
-                await webhookIncomingService.RecordAsync(new BuiltinWebhookCall(
-                    tenantId, agentName, activationName, workflowName, webhookName, apikeyId,
-                    workflowId, requestId, httpContext.Request.ContentType, httpContext.Request.Headers, body,
-                    redelivery));
-
-                // The agent sees X-Xians-Redelivery-Of, but not the signed claim, which is only for this endpoint.
-                var inboundMetadata = WebhookHeaderCapture.Capture(httpContext.Request.Headers);
-                inboundMetadata?.Keys
-                    .Where(k => k.Equals(WebhookRedeliverySigner.TokenHeader, StringComparison.OrdinalIgnoreCase))
-                    .ToList()
-                    .ForEach(k => inboundMetadata.Remove(k));
-
-                // Create the chat request for the message service
-                var chatRequest = new ChatOrDataRequest
-                {
-                    RequestId = requestId,
-                    ParticipantId = resolvedParticipantId,
-                    WorkflowId = workflowId,
-                    // The call's own workflow belongs to the connection's activation.
-                    ActivationWorkflowId = webhookWorkflowId,
-                    Text = webhookName,
-                    Data = body,
-                    Scope = scope,
-                    Authorization = authorization ?? tenantContext.Authorization,
-                    Origin = $"webhook:builtin:{webhookName}",
-                    Metadata = inboundMetadata
-                };
-
-                // Use the sync message handler to process and wait for response
-                var syncHandler = new SyncMessageHandler(messageService, pendingRequestService, logger);
-                var result = await syncHandler.ProcessSyncMessageAsync(
-                    chatRequest,
-                    MessageType.Webhook,
-                    timeoutSeconds,
+                var outcome = await webhookProcessor.ProcessAsync(new BuiltinWebhookCallRequest(
+                    tenantId, agentName, workflowName, webhookName, activationName, apikeyId,
+                    timeoutSeconds, participantId, scope,
+                    authorization ?? tenantContext.Authorization,
+                    httpContext.Request.ContentType, httpContext.Request.Headers, body),
                     httpContext.RequestAborted);
 
-                // Handle error results
-                if (result is IResult httpResult)
+                if (outcome.Error != null)
                 {
-                    return httpResult;
+                    return outcome.Error;
                 }
 
-                // Read the WebhookResponse from the workflow's reply.
-                var webhookResponse = WebhookResponseParser.FromSyncResult(result, logger);
-
                 // Apply the WebhookResponse to the HTTP context
-                if (webhookResponse != null)
+                if (outcome.Response is { } webhookResponse)
                 {
                     logger.LogInformation(
                         "Applying WebhookResponse: StatusCode={StatusCode}, ContentType={ContentType}, HeaderCount={HeaderCount}",
@@ -190,8 +91,7 @@ public static class WebhookEndpoints
                 }
 
                 // Fallback: return result as JSON if no WebhookResponse could be parsed
-                logger.LogWarning("Could not parse WebhookResponse from result, returning raw result");
-                return Results.Ok(result);
+                return Results.Ok(outcome.RawResult);
             }
             catch (TimeoutException)
             {

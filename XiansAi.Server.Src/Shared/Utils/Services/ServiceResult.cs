@@ -10,7 +10,6 @@ public enum StatusCode
     NotFound = 404,
     Conflict = 409,
     RequestTimeout = 408,
-    TooManyRequests = 429,
     InternalServerError = 500,
 }
 

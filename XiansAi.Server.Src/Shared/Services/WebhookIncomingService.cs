@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using Shared.Configuration;
@@ -10,8 +8,8 @@ using Shared.Utils.Services;
 namespace Shared.Services;
 
 /// <summary>
-/// A call that reached the builtin webhook endpoint and passed its checks. <c>Redelivery</c> is
-/// set, already verified, when the call is a redelivery the server sent to itself.
+/// A call that reached the builtin webhook and passed its checks. <c>Redelivery</c> is set only
+/// when the server sends a recorded call again.
 /// </summary>
 public record BuiltinWebhookCall(
     string TenantId,
@@ -25,7 +23,7 @@ public record BuiltinWebhookCall(
     string? ContentType,
     IHeaderDictionary Headers,
     string Body,
-    WebhookRedeliveryClaim? Redelivery = null);
+    WebhookRedelivery? Redelivery = null);
 
 /// <summary>One page of a builtin webhook's incoming calls, newest first.</summary>
 public record WebhookIncomingPage(List<WebhookIncomingSummary> Items, WebhookIncomingCursor? NextCursor);
@@ -40,7 +38,8 @@ public interface IWebhookIncomingService
     /// <see cref="WebhookIncomingsOptions.MaxPerWebhook"/>. Never throws: a call that cannot be
     /// recorded is logged and the webhook carries on.
     /// </summary>
-    Task RecordAsync(BuiltinWebhookCall call);
+    /// <returns>The recorded call's id, or null when no builtin webhook matches the call or recording failed.</returns>
+    Task<Guid?> RecordAsync(BuiltinWebhookCall call);
 
     Task<ServiceResult<WebhookIncomingPage>> ListAsync(string tenantId, string integrationId, WebhookIncomingCursor? after, int limit);
 
@@ -77,7 +76,7 @@ public class WebhookIncomingService : IWebhookIncomingService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task RecordAsync(BuiltinWebhookCall call)
+    public async Task<Guid?> RecordAsync(BuiltinWebhookCall call)
     {
         try
         {
@@ -87,7 +86,7 @@ public class WebhookIncomingService : IWebhookIncomingService
                 _logger.LogDebug(
                     "No builtin webhook matches call {RequestId} for agent {AgentName}, activation {ActivationName}, webhook {WebhookName}; not recorded",
                     call.RequestId, call.AgentName, call.ActivationName, call.WebhookName);
-                return;
+                return null;
             }
 
             var incoming = new WebhookIncoming
@@ -101,39 +100,9 @@ public class WebhookIncomingService : IWebhookIncomingService
                 WorkflowId = call.WorkflowId
             };
 
-            // A claim signed for another webhook does not describe this call; record it as a new delivery.
-            var redelivery = call.Redelivery;
-            if (redelivery != null && redelivery.IntegrationId != integration.Id)
+            // A redelivery is linked to the delivery it repeats, on the webhook that recorded it.
+            if (call.Redelivery is { } redelivery && redelivery.IntegrationId == integration.Id)
             {
-                _logger.LogWarning(
-                    "Call {RequestId} carries a redelivery claim for another webhook; recorded as a new delivery",
-                    call.RequestId);
-                redelivery = null;
-            }
-            // The claim was signed for one body. Any other body with it is not the redelivery,
-            // even if it arrives first, so record it as a new delivery.
-            if (redelivery != null
-                && !CryptographicOperations.FixedTimeEquals(
-                    Encoding.ASCII.GetBytes(redelivery.BodySha256 ?? string.Empty),
-                    Encoding.ASCII.GetBytes(WebhookRedeliverySigner.HashBody(call.Body))))
-            {
-                _logger.LogWarning(
-                    "Call {RequestId} carries a redelivery claim signed for a different body; recorded as a new delivery",
-                    call.RequestId);
-                redelivery = null;
-            }
-            // A claim is good for one call. A replayed one would clash with the row already saved
-            // under its id and go unrecorded, so record the replay as a new delivery instead.
-            if (redelivery != null && await _incomings.ExistsAsync(call.TenantId, integration.Id, redelivery.DeliveryId))
-            {
-                _logger.LogWarning(
-                    "Call {RequestId} reuses a redelivery claim that was already used; recorded as a new delivery",
-                    call.RequestId);
-                redelivery = null;
-            }
-            if (redelivery != null)
-            {
-                incoming.Id = redelivery.DeliveryId;
                 incoming.RedeliveryOf = redelivery.RedeliveryOf;
                 incoming.RedeliveryOfRequestId = redelivery.RedeliveryOfRequestId;
                 incoming.TriggeredBy = redelivery.TriggeredBy;
@@ -142,10 +111,12 @@ public class WebhookIncomingService : IWebhookIncomingService
             await _incomings.InsertAsync(incoming);
 
             await _incomings.TrimAsync(call.TenantId, integration.Id, _options.MaxPerWebhook);
+            return incoming.Id;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to record builtin webhook call {RequestId}", call.RequestId);
+            return null;
         }
     }
 
@@ -223,13 +194,9 @@ public class WebhookIncomingService : IWebhookIncomingService
     private static string? ConfigValue(AppIntegration integration, string key) =>
         integration.Configuration.TryGetValue(key, out var value) ? value?.ToString() : null;
 
-    /// <summary>
-    /// Every header line in order, one entry per value so repeated headers are kept. The signed
-    /// redelivery claim is left out: it is meant only for the endpoint, and it expires.
-    /// </summary>
+    /// <summary>Every header line in order, one entry per value so repeated headers are kept.</summary>
     private static List<WebhookIncomingHeader> ToHeaderList(IHeaderDictionary headers) =>
         headers
-            .Where(h => !h.Key.Equals(WebhookRedeliverySigner.TokenHeader, StringComparison.OrdinalIgnoreCase))
             .SelectMany(h => h.Value.Select(v => new WebhookIncomingHeader { Name = h.Key, Value = v ?? string.Empty }))
             .ToList();
 }

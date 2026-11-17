@@ -221,19 +221,19 @@ public class WebhookIncomingServiceTests
     }
 
     [Fact]
-    public async Task RecordSavesARedeliveryUnderItsClaimedIdAndLinksItToTheOriginal()
+    public async Task RecordLinksARedeliveryToTheOriginalAndReturnsItsId()
     {
         var webhook = Webhook();
         GivenWebhooks(webhook);
         WebhookIncoming? saved = null;
         _incomings.Setup(r => r.InsertAsync(It.IsAny<WebhookIncoming>())).Callback<WebhookIncoming>(i => saved = i);
-        var claim = Claim(webhook.Id);
+        var redelivery = Redelivery(webhook.Id);
 
-        await _service.RecordAsync(Call() with { Redelivery = claim });
+        var id = await _service.RecordAsync(Call() with { Redelivery = redelivery });
 
         Assert.NotNull(saved);
-        Assert.Equal(claim.DeliveryId, saved!.Id);
-        Assert.Equal(claim.RedeliveryOf, saved.RedeliveryOf);
+        Assert.Equal(saved!.Id, id);
+        Assert.Equal(redelivery.RedeliveryOf, saved.RedeliveryOf);
         Assert.Equal("original-request", saved.RedeliveryOfRequestId);
         Assert.Equal("dev@example.com", saved.TriggeredBy);
         // The call keeps the request id it was given on arrival; the original's is only its label.
@@ -241,98 +241,45 @@ public class WebhookIncomingServiceTests
     }
 
     [Fact]
-    public async Task RecordPrefersTheClaimedWebhookWhenSeveralShareTheUrl()
+    public async Task RecordReturnsNullWhenNoWebhookMatches()
+    {
+        GivenWebhooks();
+
+        Assert.Null(await _service.RecordAsync(Call()));
+    }
+
+    [Fact]
+    public async Task RecordPrefersTheRedeliveredWebhookWhenSeveralShareTheUrl()
     {
         var newest = Webhook();
         var older = Webhook();
         GivenWebhooks(newest, older);
 
-        await _service.RecordAsync(Call() with { Redelivery = Claim(older.Id) });
+        await _service.RecordAsync(Call() with { Redelivery = Redelivery(older.Id) });
 
         _incomings.Verify(r => r.InsertAsync(It.Is<WebhookIncoming>(i => i.IntegrationId == older.Id && i.RedeliveryOf != null)), Times.Once);
     }
 
     [Fact]
-    public async Task RecordIgnoresAClaimForAnotherWebhook()
-    {
-        var webhook = Webhook();
-        GivenWebhooks(webhook);
-        WebhookIncoming? saved = null;
-        _incomings.Setup(r => r.InsertAsync(It.IsAny<WebhookIncoming>())).Callback<WebhookIncoming>(i => saved = i);
-        var claim = Claim("another-webhook");
-
-        await _service.RecordAsync(Call() with { Redelivery = claim });
-
-        Assert.NotNull(saved);
-        Assert.NotEqual(claim.DeliveryId, saved!.Id);
-        Assert.Null(saved.RedeliveryOf);
-        Assert.Null(saved.RedeliveryOfRequestId);
-        Assert.Null(saved.TriggeredBy);
-    }
-
-    [Fact]
-    public async Task RecordIgnoresAClaimSignedForADifferentBody()
-    {
-        var webhook = Webhook();
-        GivenWebhooks(webhook);
-        WebhookIncoming? saved = null;
-        _incomings.Setup(r => r.InsertAsync(It.IsAny<WebhookIncoming>())).Callback<WebhookIncoming>(i => saved = i);
-        var claim = Claim(webhook.Id, body: "{\"action\":\"closed\"}");
-
-        await _service.RecordAsync(Call() with { Redelivery = claim });
-
-        Assert.NotNull(saved);
-        Assert.NotEqual(claim.DeliveryId, saved!.Id);
-        Assert.Null(saved.RedeliveryOf);
-        Assert.Null(saved.TriggeredBy);
-    }
-
-    [Fact]
-    public async Task RecordTreatsAReusedClaimAsANewDelivery()
-    {
-        var webhook = Webhook();
-        GivenWebhooks(webhook);
-        WebhookIncoming? saved = null;
-        _incomings.Setup(r => r.InsertAsync(It.IsAny<WebhookIncoming>())).Callback<WebhookIncoming>(i => saved = i);
-        var claim = Claim(webhook.Id);
-        // The redelivery the claim was signed for is already recorded.
-        _incomings.Setup(r => r.ExistsAsync("tenant", webhook.Id, claim.DeliveryId)).ReturnsAsync(true);
-
-        await _service.RecordAsync(Call() with { Redelivery = claim });
-
-        Assert.NotNull(saved);
-        Assert.NotEqual(claim.DeliveryId, saved!.Id);
-        Assert.Null(saved.RedeliveryOf);
-        Assert.Null(saved.TriggeredBy);
-    }
-
-    [Fact]
-    public async Task RecordNeverStoresTheSignedRedeliveryHeader()
+    public async Task ARedeliveryHeaderFromTheSourceIsKeptButDoesNotLinkTheCall()
     {
         GivenWebhooks(Webhook());
         WebhookIncoming? saved = null;
         _incomings.Setup(r => r.InsertAsync(It.IsAny<WebhookIncoming>())).Callback<WebhookIncoming>(i => saved = i);
         var headers = new HeaderDictionary
         {
-            ["x-xians-redelivery"] = "payload.signature",
-            [WebhookRedeliverySigner.RedeliveryOfHeader] = "0193f0a0-0000-7000-8000-000000000000"
+            [WebhookRedeliveryService.RedeliveryOfHeader] = "0193f0a0-0000-7000-8000-000000000000"
         };
 
         await _service.RecordAsync(Call(headers: headers));
 
-        Assert.Equal([WebhookRedeliverySigner.RedeliveryOfHeader], saved!.Headers.Select(h => h.Name));
+        Assert.Equal([WebhookRedeliveryService.RedeliveryOfHeader], saved!.Headers.Select(h => h.Name));
+        Assert.Null(saved.RedeliveryOf);
+        Assert.Null(saved.TriggeredBy);
     }
 
-    private static WebhookRedeliveryClaim Claim(string integrationId, string body = "{\"action\":\"opened\"}") => new(
-        TenantId: "tenant",
-        IntegrationId: integrationId,
-        RedeliveryOf: Guid.CreateVersion7(),
-        RedeliveryOfRequestId: "original-request",
-        DeliveryId: Guid.CreateVersion7(),
-        TriggeredBy: "dev@example.com",
-        ExpiresAtUnixSeconds: DateTimeOffset.UtcNow.AddMinutes(5).ToUnixTimeSeconds(),
-        BodySha256: WebhookRedeliverySigner.HashBody(body));
-
+    private static WebhookRedelivery Redelivery(string integrationId) =>
+        new(integrationId, Guid.CreateVersion7(), "original-request", "dev@example.com");
     private void GivenWebhooks(params AppIntegration[] webhooks) =>
         _integrations.Setup(r => r.GetByAgentActivationAsync("tenant", "agent", "activation", "builtin_webhook"))
             .ReturnsAsync(webhooks.ToList());
