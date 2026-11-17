@@ -260,7 +260,7 @@ public static class AdminAppIntegrationEndpoints
         })
         .WithName("RedeliverWebhookIncoming")
         .WithSummary("Send a recorded call to its builtin webhook again")
-        .WithDescription("Runs the recorded body and headers through the webhook again, with the values from its current URL. The call runs the agent again and is recorded as a new delivery linked to the original; statusCode is what the webhook answered. Calls stored truncated cannot be redelivered (409).")
+        .WithDescription("Starts the agent's workflow again with the recorded body and headers and the values from the webhook's current URL, without calling the webhook URL. The call is recorded as a new delivery linked to the original; statusCode is what the webhook would have answered (408 when the agent did not answer in time). Calls stored truncated, webhooks with an inactive activation, and a call already being redelivered return 409.")
         .Produces<WebhookRedeliveryResult>(StatusCodes.Status200OK)
         .Produces(StatusCodes.Status404NotFound)
         .Produces(StatusCodes.Status409Conflict)

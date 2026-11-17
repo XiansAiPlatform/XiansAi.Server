@@ -1,10 +1,13 @@
-using Microsoft.AspNetCore.Http;
+using System.Net;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Shared.Auth;
 using Shared.Data.Models;
 using Shared.Repositories;
 using Shared.Services;
+using Shared.Utils;
 using Shared.Utils.Services;
+using WebhookResponse = global::Shared.Models.WebhookResponse;
 
 namespace XiansAi.Server.Tests.UnitTests.Shared.Services;
 
@@ -15,16 +18,39 @@ public class WebhookRedeliveryServiceTests
 
     private readonly Mock<IWebhookIncomingRepository> _incomings = new();
     private readonly Mock<IAppIntegrationRepository> _integrations = new();
-    private readonly Mock<IBuiltinWebhookProcessor> _processor = new();
+    private readonly Mock<IWebhookIncomingService> _webhookIncomingService = new();
+    private readonly Mock<IActivationValidationService> _activationValidation = new();
+    private readonly Mock<IMessageService> _messageService = new();
+    private readonly Mock<IPendingRequestService> _pendingRequests = new();
     private readonly Mock<ITenantContext> _tenantContext = new();
     private readonly Mock<IAuditLogService> _auditLog = new();
-    private readonly List<BuiltinWebhookCallRequest> _sent = new();
+
+    private readonly List<BuiltinWebhookCall> _recorded = new();
+    private readonly List<ChatOrDataRequest> _sent = new();
+    private readonly List<TimeSpan> _waits = new();
     private readonly List<object?> _audits = new();
+    private readonly Guid _deliveryId = Guid.CreateVersion7();
+    private string? _authorizationWhenSent = "not sent";
 
     public WebhookRedeliveryServiceTests()
     {
         _tenantContext.SetupProperty(t => t.Authorization, "admin-token");
-        GivenTheWebhookAnswers(_ => new BuiltinWebhookOutcome(Guid.CreateVersion7(), null, null, new { }));
+        _activationValidation
+            .Setup(v => v.ValidateActivationAsync("tenant", It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>()))
+            .ReturnsAsync(ServiceResult.Success());
+        _webhookIncomingService
+            .Setup(s => s.RecordAsync(It.IsAny<BuiltinWebhookCall>()))
+            .Callback<BuiltinWebhookCall>(_recorded.Add)
+            .ReturnsAsync(_deliveryId);
+        _messageService
+            .Setup(m => m.ProcessIncomingMessage(It.IsAny<ChatOrDataRequest>(), MessageType.Webhook))
+            .Callback<ChatOrDataRequest, MessageType>((request, _) =>
+            {
+                _sent.Add(request);
+                _authorizationWhenSent = _tenantContext.Object.Authorization;
+            })
+            .ReturnsAsync(ServiceResult<string>.Success("thread-1"));
+        GivenTheAgentAnswers(new WebhookResponse(HttpStatusCode.Accepted));
         _auditLog
             .Setup(a => a.RecordEntryAsync(
                 DomainEventTypes.IntegrationWebhookRedelivered, It.IsAny<string?>(), null, It.IsAny<object?>(), "tenant"))
@@ -37,7 +63,7 @@ public class WebhookRedeliveryServiceTests
         details!.GetType().GetProperty(name)!.GetValue(details);
 
     [Fact]
-    public async Task RunsTheStoredCallThroughTheWebhookWithTheValuesFromItsUrl()
+    public async Task StartsTheAgentsWorkflowWithTheStoredCallAndTheValuesFromTheWebhooksUrl()
     {
         var webhook = GivenWebhook();
         var original = GivenIncoming(webhook);
@@ -45,15 +71,35 @@ public class WebhookRedeliveryServiceTests
         var result = await Service().RedeliverAsync("tenant", webhook.Id, original.Id, "dev@example.com");
 
         Assert.True(result.IsSuccess);
-        var call = Assert.Single(_sent);
-        Assert.Equal("tenant", call.TenantId);
+        var request = Assert.Single(_sent);
+        Assert.Equal("tenant:agent:Integrator Workflow:activation", request.ActivationWorkflowId);
+        Assert.StartsWith("tenant:agent:Integrator Workflow:activation", request.WorkflowId);
+        Assert.NotEqual(original.RequestId, request.RequestId);
+        Assert.Equal("webhook", request.ParticipantId);
+        Assert.Equal("GitHub", request.Text);
+        Assert.Equal(Body, request.Data);
+        Assert.Equal("ci", request.Scope);
+        Assert.Equal("webhook:builtin:GitHub", request.Origin);
+        Assert.Equal(TimeSpan.FromSeconds(2), Assert.Single(_waits));
+    }
+
+    [Fact]
+    public async Task RecordsTheCallAsANewDeliveryLinkedToTheOriginal()
+    {
+        var webhook = GivenWebhook();
+        var original = GivenIncoming(webhook);
+
+        await Service().RedeliverAsync("tenant", webhook.Id, original.Id, "dev@example.com");
+
+        var call = Assert.Single(_recorded);
+        var request = Assert.Single(_sent);
         Assert.Equal("agent", call.AgentName);
         Assert.Equal("Integrator Workflow", call.WorkflowName);
         Assert.Equal("GitHub", call.WebhookName);
         Assert.Equal("activation", call.ActivationName);
         Assert.Equal("key-1", call.ApiKeyId);
-        Assert.Equal(2, call.TimeoutSeconds);
-        Assert.Equal("ci", call.Scope);
+        Assert.Equal(request.WorkflowId, call.WorkflowId);
+        Assert.Equal(request.RequestId, call.RequestId);
         Assert.Equal(Body, call.Body);
         Assert.Equal("application/json; charset=utf-8", call.ContentType);
         Assert.Equal("pull_request", call.Headers["X-GitHub-Event"]);
@@ -75,7 +121,7 @@ public class WebhookRedeliveryServiceTests
         await Service().RedeliverAsync("tenant", webhook.Id, original.Id, "dev@example.com");
 
         Assert.Equal("sk-Xnai-original", Assert.Single(_sent).Authorization);
-        Assert.Null(_tenantContext.Object.Authorization);
+        Assert.Null(_authorizationWhenSent);
     }
 
     [Fact]
@@ -87,43 +133,57 @@ public class WebhookRedeliveryServiceTests
         await Service().RedeliverAsync("tenant", webhook.Id, original.Id, "dev@example.com");
 
         Assert.Null(Assert.Single(_sent).Authorization);
-        Assert.Null(_tenantContext.Object.Authorization);
+        Assert.Null(_authorizationWhenSent);
     }
 
     [Fact]
-    public async Task ReturnsTheNewDeliveryAndWhatTheWebhookAnswered()
+    public async Task ReturnsTheNewDeliveryAndWhatTheAgentAnswered()
     {
         var webhook = GivenWebhook();
         var original = GivenIncoming(webhook);
-        var deliveryId = Guid.CreateVersion7();
-        GivenTheWebhookAnswers(_ => new BuiltinWebhookOutcome(
-            deliveryId, null, new global::Shared.Models.WebhookResponse(System.Net.HttpStatusCode.Accepted), null));
 
         var result = await Service().RedeliverAsync("tenant", webhook.Id, original.Id, "dev@example.com");
 
-        Assert.Equal(deliveryId, result.Data!.DeliveryId);
+        Assert.Equal(_deliveryId, result.Data!.DeliveryId);
         Assert.Equal(original.Id, result.Data.RedeliveryOf);
         Assert.Equal(202, result.Data.StatusCode);
         var audit = Assert.Single(_audits);
-        Assert.Equal(deliveryId.ToString(), Detail(audit, "deliveryId"));
+        Assert.Equal(_deliveryId.ToString(), Detail(audit, "deliveryId"));
         Assert.Equal(original.Id.ToString(), Detail(audit, "redeliveryOf"));
         Assert.Equal(202, Detail(audit, "statusCode"));
     }
 
     [Fact]
-    public async Task ReportsNoDeliveryWhenTheWebhookTurnedTheCallAway()
+    public async Task AnAgentThatDoesNotAnswerInTimeIsReportedAs408()
     {
         var webhook = GivenWebhook();
         var original = GivenIncoming(webhook);
-        GivenTheWebhookAnswers(_ => new BuiltinWebhookOutcome(
-            null, Results.Json(new { error = "Activation is not active" }, statusCode: 409), null, null));
+        _pendingRequests
+            .Setup(p => p.WaitForResponseAsync<ConversationMessage>(
+                It.IsAny<string>(), It.IsAny<TimeSpan>(), MessageType.Webhook, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((ConversationMessage?)null);
 
         var result = await Service().RedeliverAsync("tenant", webhook.Id, original.Id, "dev@example.com");
 
         Assert.True(result.IsSuccess);
-        Assert.Null(result.Data!.DeliveryId);
-        Assert.Equal(409, result.Data.StatusCode);
-        Assert.Null(Detail(Assert.Single(_audits), "deliveryId"));
+        Assert.Equal(_deliveryId, result.Data!.DeliveryId);
+        Assert.Equal(408, result.Data.StatusCode);
+    }
+
+    [Fact]
+    public async Task AnInactiveActivationIsAConflictAndRunsNothing()
+    {
+        var webhook = GivenWebhook();
+        var original = GivenIncoming(webhook);
+        _activationValidation
+            .Setup(v => v.ValidateActivationAsync("tenant", "agent", "activation", "Integrator Workflow"))
+            .ReturnsAsync(ServiceResult.Failure("Activation is not active"));
+
+        var result = await Service().RedeliverAsync("tenant", webhook.Id, original.Id, "dev@example.com");
+
+        Assert.Equal(StatusCode.Conflict, result.StatusCode);
+        Assert.Empty(_recorded);
+        Assert.Empty(_sent);
     }
 
     [Fact]
@@ -140,7 +200,7 @@ public class WebhookRedeliveryServiceTests
 
         await Service().RedeliverAsync("tenant", webhook.Id, redelivery.Id, "dev@example.com");
 
-        var call = Assert.Single(_sent);
+        var call = Assert.Single(_recorded);
         Assert.Equal(first, call.Redelivery!.RedeliveryOf);
         Assert.Equal("first-request", call.Redelivery.RedeliveryOfRequestId);
         // The stored header is replaced, not sent twice.
@@ -158,7 +218,7 @@ public class WebhookRedeliveryServiceTests
 
         await Service().RedeliverAsync("tenant", webhook.Id, original.Id, "dev@example.com");
 
-        Assert.Equal(expectedSeconds, Assert.Single(_sent).TimeoutSeconds);
+        Assert.Equal(TimeSpan.FromSeconds(expectedSeconds), Assert.Single(_waits));
     }
 
     [Theory]
@@ -204,7 +264,9 @@ public class WebhookRedeliveryServiceTests
     [InlineData(null)]
     [InlineData("https://evil.example.com/api/user/webhooks/builtin?apikeyId=x")]
     [InlineData("/api/user/webhooks/other?apikeyId=x")]
-    public async Task AWebhookWithoutABuiltinUrlCannotBeRedelivered(string? webhookUrl)
+    [InlineData("/api/user/webhooks/builtin?agentName=agent&workflowName=W")]          // no webhookName
+    [InlineData("/api/user/webhooks/builtin?agentName=a:b&workflowName=W&webhookName=GitHub")]
+    public async Task AWebhookWithoutAUsableBuiltinUrlCannotBeRedelivered(string? webhookUrl)
     {
         var webhook = GivenWebhook(webhookUrl: webhookUrl);
         var original = GivenIncoming(webhook);
@@ -220,10 +282,11 @@ public class WebhookRedeliveryServiceTests
     {
         var webhook = GivenWebhook();
         var original = GivenIncoming(webhook);
-        var release = new TaskCompletionSource<BuiltinWebhookOutcome>();
+        var release = new TaskCompletionSource<ConversationMessage?>();
         var started = new TaskCompletionSource();
-        _processor
-            .Setup(p => p.ProcessAsync(It.IsAny<BuiltinWebhookCallRequest>(), It.IsAny<CancellationToken>()))
+        _pendingRequests
+            .Setup(p => p.WaitForResponseAsync<ConversationMessage>(
+                It.IsAny<string>(), It.IsAny<TimeSpan>(), MessageType.Webhook, It.IsAny<CancellationToken>()))
             .Returns(() =>
             {
                 started.TrySetResult();
@@ -234,7 +297,7 @@ public class WebhookRedeliveryServiceTests
         await started.Task.WaitAsync(TimeSpan.FromSeconds(10));
 
         var second = await Service().RedeliverAsync("tenant", webhook.Id, original.Id, "dev@example.com");
-        release.SetResult(new BuiltinWebhookOutcome(null, null, null, new { }));
+        release.SetResult(null);
 
         Assert.Equal(StatusCode.Conflict, second.StatusCode);
         Assert.True((await first).IsSuccess);
@@ -243,13 +306,27 @@ public class WebhookRedeliveryServiceTests
     }
 
     private WebhookRedeliveryService Service() => new(
-        _incomings.Object, _integrations.Object, _processor.Object, _tenantContext.Object, _auditLog.Object);
+        _incomings.Object, _integrations.Object, _webhookIncomingService.Object, _activationValidation.Object,
+        _messageService.Object, _pendingRequests.Object, _tenantContext.Object, _auditLog.Object,
+        NullLogger<SyncMessageHandler>.Instance);
 
-    private void GivenTheWebhookAnswers(Func<BuiltinWebhookCallRequest, BuiltinWebhookOutcome> answer) =>
-        _processor
-            .Setup(p => p.ProcessAsync(It.IsAny<BuiltinWebhookCallRequest>(), It.IsAny<CancellationToken>()))
-            .Callback<BuiltinWebhookCallRequest, CancellationToken>((call, _) => _sent.Add(call))
-            .ReturnsAsync((BuiltinWebhookCallRequest call, CancellationToken _) => answer(call));
+    private void GivenTheAgentAnswers(WebhookResponse response) =>
+        _pendingRequests
+            .Setup(p => p.WaitForResponseAsync<ConversationMessage>(
+                It.IsAny<string>(), It.IsAny<TimeSpan>(), MessageType.Webhook, It.IsAny<CancellationToken>()))
+            .Callback<string, TimeSpan, MessageType, CancellationToken>((_, wait, _, _) => _waits.Add(wait))
+            .ReturnsAsync(new ConversationMessage
+            {
+                ThreadId = "thread-1",
+                TenantId = "tenant",
+                CreatedAt = DateTime.UtcNow,
+                CreatedBy = "agent",
+                Direction = MessageDirection.Outgoing,
+                ParticipantId = "webhook",
+                WorkflowId = "workflow",
+                WorkflowType = "Integrator Workflow",
+                Data = response
+            });
 
     private AppIntegration GivenWebhook(string tenantId = "tenant", string? webhookUrl = WebhookPath)
     {
