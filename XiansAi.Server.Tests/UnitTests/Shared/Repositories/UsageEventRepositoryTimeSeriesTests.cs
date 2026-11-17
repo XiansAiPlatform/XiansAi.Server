@@ -245,4 +245,214 @@ public class UsageEventRepositoryTimeSeriesTests : IClassFixture<MongoDbFixture>
         Assert.Equal(15, response.Summary.TotalValue);
         Assert.Equal(expected.Length, response.Summary.DataPointCount);
     }
+
+    // ---- metadata filter ----------------------------------------------------------------------
+
+    private static UsageMetric Tagged(string tenantId, DateTime createdAtUtc, double value, params (string Key, string Value)[] metadata)
+    {
+        var metric = Metric(tenantId, createdAtUtc, value);
+        metric.Metadata = metadata.Length == 0 ? null : metadata.ToDictionary(m => m.Key, m => m.Value);
+        return metric;
+    }
+
+    /// <summary>
+    /// Two days in each of two Sunday-based weeks (Aug 30 - Sep 5 and Sep 6 - Sep 12). Values are powers
+    /// of two so every expected sum identifies exactly which records were bucketed.
+    /// </summary>
+    private Task<string> SeedTaggedRuns()
+    {
+        var tenantId = $"ts-{Guid.NewGuid()}";
+        return Seed(
+            Tagged(tenantId, Utc(2026, 9, 1, 8), 1, ("status", "completed"), ("origin", "email")),
+            Tagged(tenantId, Utc(2026, 9, 1, 9), 2, ("status", "failed"), ("origin", "email")),
+            Tagged(tenantId, Utc(2026, 9, 4, 8), 4, ("status", "failed"), ("origin", "chat")),
+            Tagged(tenantId, Utc(2026, 9, 8, 8), 8, ("status", "skipped")),
+            Tagged(tenantId, Utc(2026, 9, 8, 9), 16, ("status", "failed"), ("origin", "email")),
+            Tagged(tenantId, Utc(2026, 9, 9, 8), 32));  // no metadata at all
+    }
+
+    private static Dictionary<string, string[]> Filter(params (string Key, string[] Values)[] filters) =>
+        filters.ToDictionary(f => f.Key, f => f.Values);
+
+    public static TheoryData<MongoProvider, string, double[]> OneKeyOneValueCases() => new()
+    {
+        // status=failed -> 2 (Sep 1), 4 (Sep 4), 16 (Sep 8)
+        { MongoProvider.MongoDB, "day", new double[] { 2, 4, 16 } },
+        { MongoProvider.MongoDB, "week", new double[] { 6, 16 } },
+        { MongoProvider.MongoDB, "month", new double[] { 22 } },
+        { MongoProvider.DocumentDB, "day", new double[] { 2, 4, 16 } },
+        { MongoProvider.DocumentDB, "week", new double[] { 6, 16 } },
+        { MongoProvider.DocumentDB, "month", new double[] { 22 } },
+    };
+
+    [Theory]
+    [MemberData(nameof(OneKeyOneValueCases))]
+    public async Task MetadataFilter_OneKeyOneValue_BucketsOnlyMatchingRecords(
+        MongoProvider provider, string groupBy, double[] expectedValues)
+    {
+        if (CannotRun(provider)) return;
+        var tenantId = await SeedTaggedRuns();
+        var request = Request(tenantId, groupBy) with { Metadata = Filter(("status", new[] { "failed" })) };
+
+        var response = await CreateRepository(provider).GetAdminMetricsTimeSeriesAsync(request);
+
+        Assert.Equal(expectedValues, response.DataPoints.Select(p => p.Value));
+        Assert.Equal(3, response.Summary.TotalCount);
+        Assert.Equal(new[] { "failed" }, response.Filters.Metadata!["status"]);
+    }
+
+    [Theory]
+    [InlineData(MongoProvider.MongoDB)]
+    [InlineData(MongoProvider.DocumentDB)]
+    public async Task MetadataFilter_OneKeySeveralValues_MatchesAnyOfThem(MongoProvider provider)
+    {
+        if (CannotRun(provider)) return;
+        var tenantId = await SeedTaggedRuns();
+        var request = Request(tenantId, "week") with { Metadata = Filter(("status", new[] { "completed", "skipped" })) };
+
+        var response = await CreateRepository(provider).GetAdminMetricsTimeSeriesAsync(request);
+
+        Assert.Equal(new[] { (Utc(2026, 8, 30), 1.0), (Utc(2026, 9, 6), 8.0) }, response.DataPoints.Select(p => (p.Timestamp, p.Value)));
+        Assert.Equal(new long[] { 1, 1 }, response.DataPoints.Select(p => p.Count));
+    }
+
+    [Theory]
+    [InlineData(MongoProvider.MongoDB)]
+    [InlineData(MongoProvider.DocumentDB)]
+    public async Task MetadataFilter_TwoKeys_RequiresBothToMatch(MongoProvider provider)
+    {
+        if (CannotRun(provider)) return;
+        var tenantId = await SeedTaggedRuns();
+        var request = Request(tenantId, "day") with
+        {
+            Metadata = Filter(("status", new[] { "failed" }), ("origin", new[] { "email" }))
+        };
+
+        var response = await CreateRepository(provider).GetAdminMetricsTimeSeriesAsync(request);
+
+        Assert.Equal(new[] { (Utc(2026, 9, 1), 2.0), (Utc(2026, 9, 8), 16.0) }, response.DataPoints.Select(p => (p.Timestamp, p.Value)));
+    }
+
+    [Theory]
+    [InlineData(MongoProvider.MongoDB)]
+    [InlineData(MongoProvider.DocumentDB)]
+    public async Task MetadataFilter_KeyNoRecordHas_ReturnsNoDataPoints(MongoProvider provider)
+    {
+        if (CannotRun(provider)) return;
+        var tenantId = await SeedTaggedRuns();
+        var request = Request(tenantId, "day") with { Metadata = Filter(("decision", new[] { "approved" })) };
+
+        var response = await CreateRepository(provider).GetAdminMetricsTimeSeriesAsync(request);
+
+        Assert.Empty(response.DataPoints);
+        Assert.Equal(0, response.Summary.TotalCount);
+    }
+
+    [Theory]
+    [InlineData(MongoProvider.MongoDB)]
+    [InlineData(MongoProvider.DocumentDB)]
+    public async Task NoMetadataFilter_BucketsEveryRecordAndEchoesNull(MongoProvider provider)
+    {
+        if (CannotRun(provider)) return;
+        var tenantId = await SeedTaggedRuns();
+
+        var response = await CreateRepository(provider).GetAdminMetricsTimeSeriesAsync(Request(tenantId, "month"));
+
+        Assert.Equal(63, Assert.Single(response.DataPoints).Value);
+        Assert.Null(response.Filters.Metadata);
+        Assert.Null(response.Filters.BreakdownBy);
+    }
+
+    // ---- stats: filter and breakdown on both providers ----------------------------------------
+
+    private static AdminMetricsStatsRequest StatsRequest(string tenantId) => new()
+    {
+        TenantId = tenantId,
+        AgentName = AgentName,
+        StartDate = Utc(2026, 9, 1),
+        EndDate = Utc(2026, 9, 30, 23, 59, 59)
+    };
+
+    [Theory]
+    [InlineData(MongoProvider.MongoDB)]
+    [InlineData(MongoProvider.DocumentDB)]
+    public async Task Stats_MetadataFilterAndBreakdown_AgreeOnBothProviders(MongoProvider provider)
+    {
+        // The stats query has no provider-specific path, so this runs on the 4.4 fixture for both rows.
+        var tenantId = await SeedTaggedRuns();
+        var repository = CreateRepository(provider);
+
+        var filtered = await repository.GetAdminMetricsStatsAsync(
+            StatsRequest(tenantId) with { Metadata = Filter(("status", new[] { "failed" })) });
+        var filteredStats = Assert.Single(Assert.Single(filtered.CategoriesAndTypes).Types).Stats;
+        Assert.Equal(3, filteredStats.Count);
+        Assert.Equal(22, filteredStats.Sum);
+
+        var unfiltered = await repository.GetAdminMetricsStatsAsync(StatsRequest(tenantId));
+        var totals = Assert.Single(Assert.Single(unfiltered.CategoriesAndTypes).Types);
+        Assert.Null(totals.Breakdown);
+
+        var brokenDown = await repository.GetAdminMetricsStatsAsync(StatsRequest(tenantId) with { BreakdownBy = "status" });
+        var type = Assert.Single(Assert.Single(brokenDown.CategoriesAndTypes).Types);
+        Assert.Equal(totals.Stats, type.Stats);
+        Assert.Equal(new[] { "completed", "failed", "skipped", null }, type.Breakdown!.Select(b => b.Value));
+        Assert.Equal(new long[] { 1, 3, 1, 1 }, type.Breakdown!.Select(b => b.Count));
+        Assert.Equal(new double[] { 1, 22, 8, 32 }, type.Breakdown!.Select(b => b.Sum));
+        Assert.Equal(totals.Stats.Count, type.Breakdown!.Sum(b => b.Count));
+        Assert.Equal(totals.Stats.Sum, type.Breakdown!.Sum(b => b.Sum));
+    }
+
+    [Fact]
+    public async Task Stats_Breakdown_CoversRecordsStoredWithoutActivationOrMetadataFields()
+    {
+        // Documents written by other producers may omit activation_name and metadata entirely
+        // (as opposed to storing null); they must still land in the "unknown" activation's null entry.
+        var tenantId = await SeedTaggedRuns();
+        await _database.GetCollection<BsonDocument>("usage_metrics").InsertOneAsync(new BsonDocument
+        {
+            { "tenant_id", tenantId },
+            { "agent_name", AgentName },
+            { "category", Category },
+            { "type", Type },
+            { "value", 64.0 },
+            { "unit", "count" },
+            { "created_at", Utc(2026, 9, 10) }
+        });
+
+        var response = await CreateRepository(MongoProvider.MongoDB)
+            .GetAdminMetricsStatsAsync(StatsRequest(tenantId) with { BreakdownBy = "status" });
+
+        var type = Assert.Single(Assert.Single(response.CategoriesAndTypes).Types);
+        Assert.Equal(7, type.Stats.Count);
+        Assert.Equal(new[] { "completed", "failed", "skipped", null }, type.Breakdown!.Select(b => b.Value));
+        Assert.Equal(new long[] { 1, 3, 1, 2 }, type.Breakdown!.Select(b => b.Count));
+        Assert.Equal(new double[] { 1, 22, 8, 96 }, type.Breakdown!.Select(b => b.Sum));
+
+        foreach (var activation in response.ByActivation)
+        {
+            var activationType = Assert.Single(Assert.Single(activation.CategoriesAndTypes).Types);
+            Assert.Equal(activationType.Stats.Count, activationType.Breakdown!.Sum(b => b.Count));
+            Assert.Equal(activationType.Stats.Sum, activationType.Breakdown!.Sum(b => b.Sum));
+        }
+        Assert.Equal(7, response.ByActivation.Sum(a => a.MetricCount));
+        var unknown = Assert.Single(response.ByActivation, a => a.ActivationName == "unknown");
+        var unknownEntry = Assert.Single(Assert.Single(Assert.Single(unknown.CategoriesAndTypes).Types).Breakdown!);
+        Assert.Null(unknownEntry.Value);
+        Assert.Equal(64, unknownEntry.Sum);
+    }
+
+    [Theory]
+    [InlineData("status.nested")]
+    [InlineData("$where")]
+    [InlineData("")]
+    public async Task InvalidMetadataKey_IsRejectedBeforeItReachesTheQuery(string key)
+    {
+        var repository = CreateRepository(MongoProvider.DocumentDB);
+        var filter = Filter((key, new[] { "x" }));
+
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            repository.GetAdminMetricsTimeSeriesAsync(Request("ts-invalid", "day") with { Metadata = filter }));
+        await Assert.ThrowsAsync<ArgumentException>(() =>
+            repository.GetAdminMetricsStatsAsync(StatsRequest("ts-invalid") with { Metadata = filter }));
+    }
 }

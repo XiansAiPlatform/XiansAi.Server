@@ -477,7 +477,8 @@ public abstract class AdminApiIntegrationTestBase : WebApiIntegrationTestBase
         string activationName,
         string category = "llm",
         string type = "tokens",
-        double value = 42)
+        double value = 42,
+        Dictionary<string, string>? metadata = null)
     {
         using var scope = _factory.Services.CreateScope();
         var usageRepository = scope.ServiceProvider.GetRequiredService<IUsageEventRepository>();
@@ -494,6 +495,7 @@ public abstract class AdminApiIntegrationTestBase : WebApiIntegrationTestBase
                 Type = type,
                 Value = value,
                 Unit = "count",
+                Metadata = metadata,
                 CreatedAt = DateTime.UtcNow
             }
         ]);

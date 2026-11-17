@@ -1,6 +1,8 @@
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization.Attributes;
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
+using System.Text.RegularExpressions;
 
 namespace Shared.Data.Models.Usage;
 
@@ -283,6 +285,17 @@ public record AdminMetricsStatsRequest
     public string? ParticipantId { get; init; }
     public string? WorkflowType { get; init; }
     public string? Model { get; init; }
+
+    /// <summary>
+    /// Exact-match filter on metadata.&lt;key&gt;: OR across the values of one key, AND across keys.
+    /// Keys must satisfy <see cref="MetricMetadataKey.IsValid"/>.
+    /// </summary>
+    public IReadOnlyDictionary<string, string[]>? Metadata { get; init; }
+
+    /// <summary>
+    /// Metadata key to break each category/type down by. Must satisfy <see cref="MetricMetadataKey.IsValid"/>.
+    /// </summary>
+    public string? BreakdownBy { get; init; }
 }
 
 /// <summary>
@@ -312,6 +325,13 @@ public record AdminMetricsTimeSeriesRequest
     public string? ParticipantId { get; init; }
     public string? WorkflowType { get; init; }
     public string? Model { get; init; }
+
+    /// <summary>
+    /// Exact-match filter on metadata.&lt;key&gt;: OR across the values of one key, AND across keys.
+    /// Keys must satisfy <see cref="MetricMetadataKey.IsValid"/>.
+    /// </summary>
+    public IReadOnlyDictionary<string, string[]>? Metadata { get; init; }
+
     public string GroupBy { get; init; } = "day";  // "day", "week", "month"
     public string Aggregation { get; init; } = "sum";  // "sum", "avg", "min", "max", "count"
     public bool IncludeBreakdowns { get; init; } = false;
@@ -366,6 +386,31 @@ public record MetricsFilters
     public string? ParticipantId { get; init; }
     public string? WorkflowType { get; init; }
     public string? Model { get; init; }
+
+    /// <summary>
+    /// The metadata filter that was applied (key -> accepted values), or null when none was sent.
+    /// Clients use this to detect a server that predates the filter and silently ignored it.
+    /// </summary>
+    public IReadOnlyDictionary<string, string[]>? Metadata { get; init; }
+
+    /// <summary>The metadata key the stats were broken down by, or null when none was sent.</summary>
+    public string? BreakdownBy { get; init; }
+}
+
+/// <summary>
+/// Validation for metadata keys used in admin metrics queries. A key addresses a single
+/// top-level field (metadata.&lt;key&gt;), so dots, $ and nested paths are not allowed.
+/// Same rule as the admin logs property filter.
+/// </summary>
+public static partial class MetricMetadataKey
+{
+    public const string Requirement = "may only contain letters, digits and underscores (max 64 characters)";
+
+    // \z rather than $ so a trailing newline is not accepted.
+    [GeneratedRegex(@"^[A-Za-z0-9_]{1,64}\z")]
+    private static partial Regex Pattern();
+
+    public static bool IsValid(string? key) => key != null && Pattern().IsMatch(key);
 }
 
 public record MetricsSummary
@@ -390,6 +435,27 @@ public record TypeStats
 {
     public required string Type { get; init; }
     public required MetricStats Stats { get; init; }
+
+    /// <summary>
+    /// One entry per distinct value of the breakdownBy metadata key; entries add up to <see cref="Stats"/>.
+    /// Omitted from the response when no breakdown was requested.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public List<MetadataBreakdownEntry>? Breakdown { get; init; }
+}
+
+/// <summary>
+/// Stats for the records of one category/type that share a metadata value.
+/// </summary>
+public record MetadataBreakdownEntry
+{
+    /// <summary>The metadata value; null groups the records that do not have the key.</summary>
+    public required string? Value { get; init; }
+    public required long Count { get; init; }
+    public required double Sum { get; init; }
+    public required double Average { get; init; }
+    public required double Min { get; init; }
+    public required double Max { get; init; }
 }
 
 public record MetricStats
