@@ -217,6 +217,13 @@ public class AdminMetricsService : IAdminMetricsService
                 $"Date range cannot exceed {MaxDateRangeDays} days");
         }
 
+        var metadataError = ValidateMetadata(request.Metadata, request.BreakdownBy);
+        if (metadataError != null)
+        {
+            _logger.LogWarning("Metrics stats request with invalid metadata parameters: {Error}", metadataError);
+            return ServiceResult<AdminMetricsStatsResponse>.BadRequest(metadataError);
+        }
+
         return ServiceResult<AdminMetricsStatsResponse>.Success(null!);
     }
 
@@ -278,7 +285,45 @@ public class AdminMetricsService : IAdminMetricsService
                 $"Aggregation must be one of: {string.Join(", ", ValidAggregationValues)}");
         }
 
+        var metadataError = ValidateMetadata(request.Metadata, breakdownBy: null);
+        if (metadataError != null)
+        {
+            _logger.LogWarning("Metrics timeseries request with invalid metadata parameters: {Error}", metadataError);
+            return ServiceResult<AdminMetricsTimeSeriesResponse>.BadRequest(metadataError);
+        }
+
         return ServiceResult<AdminMetricsTimeSeriesResponse>.Success(null!);
+    }
+
+    /// <summary>
+    /// Metadata keys become part of a field name (metadata.&lt;key&gt;) in the query, so they are checked
+    /// here for every caller, not only the HTTP endpoint. Returns an error message, or null when valid.
+    /// The messages never echo caller input.
+    /// </summary>
+    private static string? ValidateMetadata(IReadOnlyDictionary<string, string[]>? metadata, string? breakdownBy)
+    {
+        if (metadata != null)
+        {
+            foreach (var (key, values) in metadata)
+            {
+                if (!MetricMetadataKey.IsValid(key))
+                {
+                    return $"Metadata filter key {MetricMetadataKey.Requirement}";
+                }
+
+                if (values == null || values.Length == 0 || values.Any(string.IsNullOrEmpty))
+                {
+                    return "Metadata filter must have at least one value per key";
+                }
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(breakdownBy) && !MetricMetadataKey.IsValid(breakdownBy))
+        {
+            return $"breakdownBy {MetricMetadataKey.Requirement}";
+        }
+
+        return null;
     }
 
     private ServiceResult<AdminMetricsCategoriesResponse> ValidateCategoriesRequest(AdminMetricsCategoriesRequest request)

@@ -23,6 +23,8 @@ The Admin Metrics Service provides comprehensive performance analytics for agent
 - `participantId` (optional): Filter by participant user ID (query parameter)
 - `workflowType` (optional): Filter by workflow type (query parameter)
 - `model` (optional): Filter by AI model name (query parameter)
+- `metadata` (optional, repeatable): Filter by metric metadata, as `key:value1,value2` (query parameter). See [Metadata filter and breakdown](#metadata-filter-and-breakdown)
+- `breakdownBy` (optional): Metadata key to break every category/type down by (query parameter). See [Metadata filter and breakdown](#metadata-filter-and-breakdown)
 
 **Response:**
 
@@ -37,7 +39,9 @@ The Admin Metrics Service provides comprehensive performance analytics for agent
     "activationName": null,
     "participantId": null,
     "workflowType": null,
-    "model": null
+    "model": null,
+    "metadata": null,
+    "breakdownBy": null
   },
   "summary": {
     "totalMetricRecords": 6840,
@@ -227,6 +231,140 @@ The Admin Metrics Service provides comprehensive performance analytics for agent
 }
 ```
 
+#### Metadata filter and breakdown
+
+Every usage metric carries an optional `metadata` dictionary of string tags (for example `status`, `reason`, `origin`). The stats and timeseries endpoints can filter on those tags, and the stats endpoint can also group by one of them, so a caller does not need one metric type per tag value.
+
+**`metadata=key:value1,value2`** (stats and timeseries, repeatable)
+
+- Exact, case-sensitive match on `metadata.<key>`.
+- Several values for one key are OR-ed. They can be comma-separated (`metadata=status:failed,skipped`) or sent as a repeated parameter (`metadata=status:failed&metadata=status:skipped`).
+- Different keys are AND-ed (`metadata=status:failed&metadata=origin:email`).
+- The parameter is split on the first `:`, so a value may itself contain colons (`metadata=sentDate:2026-11-17T10:00:00Z`). A value cannot contain a comma.
+- A key may only contain letters, digits and underscores, and is at most 64 characters. Dots and `$` are rejected, so a key always addresses one top-level metadata field.
+- A key that no record has matches nothing: the call returns 200 with empty totals.
+- This is the same syntax and the same rules as the `property` filter on the admin logs endpoint.
+
+**`breakdownBy=<metadataKey>`** (stats only)
+
+- Adds a `breakdown` array to every type under `categoriesAndTypes` and under each `byActivation` entry.
+- There is one entry per distinct value of the key, with `count`, `sum`, `average`, `min` and `max`. Entries are ordered by value.
+- Records that do not have the key (or have no metadata) are reported in a final entry whose `value` is `null`. The entries of a type therefore always add up to that type's `count` and `sum`.
+- It combines with `metadata`: the filter is applied first, then the remaining records are broken down.
+- The same key rules apply as for `metadata`.
+- Without `breakdownBy` the `breakdown` property is not present at all.
+
+**Malformed values** return `400 Bad Request` with a message that says what is wrong, for example `Metadata filter must be in the form key:value1,value2`.
+
+**Detecting a server that does not support these parameters.** A server that predates them ignores unknown query parameters and returns unfiltered totals that look valid. Both endpoints echo what they applied in `filters.metadata` and `filters.breakdownBy`. A client that sent a filter must check that the echo is present before trusting the numbers. On an older server those two fields are missing from `filters`.
+
+**Example: failed and skipped runs, broken down by origin**
+
+```http
+GET /api/v1/admin/tenants/acme/metrics/stats?agentName=CustomerSupportAgent&startDate=2026-01-01T00:00:00Z&endDate=2026-01-31T23:59:59Z&metadata=status:failed,skipped&breakdownBy=origin
+```
+
+```json
+{
+  "period": {
+    "startDate": "2026-01-01T00:00:00Z",
+    "endDate": "2026-01-31T23:59:59Z"
+  },
+  "filters": {
+    "agentName": "CustomerSupportAgent",
+    "activationName": null,
+    "participantId": null,
+    "workflowType": null,
+    "model": null,
+    "metadata": {
+      "status": ["failed", "skipped"]
+    },
+    "breakdownBy": "origin"
+  },
+  "summary": {
+    "totalMetricRecords": 42,
+    "uniqueCategories": 1,
+    "uniqueTypes": 1,
+    "uniqueActivations": 1,
+    "uniqueParticipants": 9,
+    "uniqueWorkflows": 40,
+    "uniqueModels": 0,
+    "dateRange": {
+      "startDate": "2026-01-02T07:14:03Z",
+      "endDate": "2026-01-30T16:02:41Z"
+    }
+  },
+  "categoriesAndTypes": [
+    {
+      "category": "agent_performance",
+      "types": [
+        {
+          "type": "runs_completed",
+          "stats": {
+            "count": 42,
+            "sum": 42.0,
+            "average": 1.0,
+            "min": 1.0,
+            "max": 1.0,
+            "median": 1.0,
+            "p95": 1.0,
+            "p99": 1.0,
+            "unit": "count"
+          },
+          "breakdown": [
+            { "value": "chat", "count": 11, "sum": 11.0, "average": 1.0, "min": 1.0, "max": 1.0 },
+            { "value": "email", "count": 28, "sum": 28.0, "average": 1.0, "min": 1.0, "max": 1.0 },
+            { "value": null, "count": 3, "sum": 3.0, "average": 1.0, "min": 1.0, "max": 1.0 }
+          ]
+        }
+      ]
+    }
+  ],
+  "byActivation": [
+    {
+      "activationName": "email-responder",
+      "metricCount": 42,
+      "categoriesAndTypes": [
+        {
+          "category": "agent_performance",
+          "types": [
+            {
+              "type": "runs_completed",
+              "stats": {
+                "count": 42,
+                "sum": 42.0,
+                "average": 1.0,
+                "min": 1.0,
+                "max": 1.0,
+                "median": null,
+                "p95": null,
+                "p99": null,
+                "unit": "count"
+              },
+              "breakdown": [
+                { "value": "chat", "count": 11, "sum": 11.0, "average": 1.0, "min": 1.0, "max": 1.0 },
+                { "value": "email", "count": 28, "sum": 28.0, "average": 1.0, "min": 1.0, "max": 1.0 },
+                { "value": null, "count": 3, "sum": 3.0, "average": 1.0, "min": 1.0, "max": 1.0 }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Example: failed runs per day**
+
+```http
+GET /api/v1/admin/tenants/acme/metrics/timeseries?agentName=CustomerSupportAgent&category=agent_performance&type=runs_completed&startDate=2026-01-01T00:00:00Z&endDate=2026-01-31T23:59:59Z&groupBy=day&aggregation=count&metadata=status:failed
+```
+
+The response has the usual timeseries shape. `dataPoints` contains only the days that have a failed run, and `filters.metadata` is `{ "status": ["failed"] }`.
+
+**Indexes.** No index was added for these parameters. A filtered call uses the existing tenant/agent/date indexes and reads the same records as the unfiltered call for that agent and period; the metadata condition is applied to those records.
+
 **Use Cases:**
 - Agent-specific dashboard overview
 - View all metrics for a specific agent
@@ -255,6 +393,7 @@ The Admin Metrics Service provides comprehensive performance analytics for agent
 - `groupBy` (optional): Time granularity - "day", "week", "month" (default: "day") (query parameter)
 - `aggregation` (optional): Aggregation method - "sum", "avg", "min", "max", "count" (default: "sum") (query parameter)
 - `includeBreakdowns` (optional): Include breakdowns by activation (default: false) (query parameter)
+- `metadata` (optional, repeatable): Filter by metric metadata, as `key:value1,value2` (query parameter). Only matching records are bucketed. See [Metadata filter and breakdown](#metadata-filter-and-breakdown)
 
 **Response:**
 
@@ -274,7 +413,9 @@ The Admin Metrics Service provides comprehensive performance analytics for agent
     "activationName": null,
     "participantId": null,
     "workflowType": null,
-    "model": null
+    "model": null,
+    "metadata": null,
+    "breakdownBy": null
   },
   "groupBy": "day",
   "aggregation": "sum",
@@ -914,6 +1055,7 @@ For each dataPoint, create breakdown by activation:
 - Validate enum values:
   - groupBy: "day", "week", "month"
   - aggregation: "sum", "avg", "min", "max", "count"
+- Validate `metadata` and `breakdownBy` (form `key:value1,value2`, keys of letters, digits and underscores only, at most 64 characters) and return 400 otherwise
 - Return meaningful error messages for:
   - Invalid or non-existent agentName
   - Invalid metric categories/types

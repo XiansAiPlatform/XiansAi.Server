@@ -1241,6 +1241,7 @@ public class UsageEventRepository : IUsageEventRepository
                 matchFilter.Add("workflow_type", request.WorkflowType);
             if (!string.IsNullOrWhiteSpace(request.Model))
                 matchFilter.Add("model", request.Model);
+            AddMetadataConditions(matchFilter, request.Metadata);
 
             // Use $facet for parallel aggregations - all done in one database query!
             var pipeline = new[]
@@ -1327,6 +1328,41 @@ public class UsageEventRepository : IUsageEventRepository
                 })
             };
 
+            // Optional facets: the same groupings split once more by the value of one metadata key.
+            // Each (category, type) partitions into its breakdown entries, which is what makes the
+            // entries add up to the type's totals.
+            var hasBreakdown = !string.IsNullOrWhiteSpace(request.BreakdownBy);
+            if (hasBreakdown)
+            {
+                // Records without the key (or without metadata at all) group under null.
+                var breakdownValue = new BsonDocument("$ifNull", new BsonArray
+                {
+                    "$" + MetadataField(request.BreakdownBy!),
+                    BsonNull.Value
+                });
+
+                var facets = pipeline[1]["$facet"].AsBsonDocument;
+                facets.Add("typeBreakdown", new BsonArray
+                {
+                    BuildBreakdownGroupStage(new BsonDocument
+                    {
+                        { "category", "$category" },
+                        { "type", "$type" },
+                        { "value", breakdownValue }
+                    })
+                });
+                facets.Add("activationBreakdown", new BsonArray
+                {
+                    BuildBreakdownGroupStage(new BsonDocument
+                    {
+                        { "activation", "$activation_name" },
+                        { "category", "$category" },
+                        { "type", "$type" },
+                        { "value", breakdownValue }
+                    })
+                });
+            }
+
             var result = await _collection.Aggregate<BsonDocument>(pipeline, cancellationToken: cancellationToken).FirstOrDefaultAsync(cancellationToken);
             
             if (result == null)
@@ -1335,10 +1371,14 @@ public class UsageEventRepository : IUsageEventRepository
             }
 
             // Parse categories and types
-            var categoriesAndTypes = ParseCategoriesAndTypes(result["categoriesAndTypes"].AsBsonArray);
+            var categoriesAndTypes = ParseCategoriesAndTypes(
+                result["categoriesAndTypes"].AsBsonArray,
+                hasBreakdown ? ParseMetadataBreakdown(result["typeBreakdown"].AsBsonArray, byActivation: false) : null);
             
             // Parse by activation
-            var byActivation = ParseActivationStats(result["byActivation"].AsBsonArray);
+            var byActivation = ParseActivationStats(
+                result["byActivation"].AsBsonArray,
+                hasBreakdown ? ParseMetadataBreakdown(result["activationBreakdown"].AsBsonArray, byActivation: true) : null);
             
             // Parse summary
             var summaryDoc = result["summary"].AsBsonArray.FirstOrDefault()?.AsBsonDocument;
@@ -1357,7 +1397,9 @@ public class UsageEventRepository : IUsageEventRepository
                     ActivationName = request.ActivationName,
                     ParticipantId = request.ParticipantId,
                     WorkflowType = request.WorkflowType,
-                    Model = request.Model
+                    Model = request.Model,
+                    Metadata = request.Metadata,
+                    BreakdownBy = request.BreakdownBy
                 },
                 Summary = summary,
                 CategoriesAndTypes = categoriesAndTypes,
@@ -1400,6 +1442,7 @@ public class UsageEventRepository : IUsageEventRepository
                 matchFilter.Add("workflow_type", request.WorkflowType);
             if (!string.IsNullOrWhiteSpace(request.Model))
                 matchFilter.Add("model", request.Model);
+            AddMetadataConditions(matchFilter, request.Metadata);
 
             // Determine aggregation operator
             var aggOperator = request.Aggregation.ToLower() switch
@@ -1540,7 +1583,8 @@ public class UsageEventRepository : IUsageEventRepository
                     ActivationName = request.ActivationName,
                     ParticipantId = request.ParticipantId,
                     WorkflowType = request.WorkflowType,
-                    Model = request.Model
+                    Model = request.Model,
+                    Metadata = request.Metadata
                 },
                 GroupBy = request.GroupBy,
                 Aggregation = request.Aggregation,
@@ -1663,7 +1707,9 @@ public class UsageEventRepository : IUsageEventRepository
                 ActivationName = request.ActivationName,
                 ParticipantId = request.ParticipantId,
                 WorkflowType = request.WorkflowType,
-                Model = request.Model
+                Model = request.Model,
+                Metadata = request.Metadata,
+                BreakdownBy = request.BreakdownBy
             },
             Summary = new MetricsSummary
             {
@@ -1681,7 +1727,9 @@ public class UsageEventRepository : IUsageEventRepository
         };
     }
 
-    private static List<CategoryStats> ParseCategoriesAndTypes(BsonArray categoriesArray)
+    private static List<CategoryStats> ParseCategoriesAndTypes(
+        BsonArray categoriesArray,
+        Dictionary<BreakdownKey, List<MetadataBreakdownEntry>>? breakdown = null)
     {
         var categoriesDict = new Dictionary<string, List<TypeStats>>();
 
@@ -1714,7 +1762,8 @@ public class UsageEventRepository : IUsageEventRepository
                     P95 = p95,
                     P99 = p99,
                     Unit = doc.Contains("unit") && !doc["unit"].IsBsonNull ? doc["unit"].AsString : "count"
-                }
+                },
+                Breakdown = BreakdownFor(breakdown, new BreakdownKey(null, category, type))
             });
         }
 
@@ -1725,7 +1774,9 @@ public class UsageEventRepository : IUsageEventRepository
         }).ToList();
     }
 
-    private static List<ActivationStats> ParseActivationStats(BsonArray activationArray)
+    private static List<ActivationStats> ParseActivationStats(
+        BsonArray activationArray,
+        Dictionary<BreakdownKey, List<MetadataBreakdownEntry>>? breakdown = null)
     {
         var activationsDict = new Dictionary<string, Dictionary<string, List<TypeStats>>>();
 
@@ -1733,7 +1784,7 @@ public class UsageEventRepository : IUsageEventRepository
         {
             var doc = item.AsBsonDocument;
             var id = doc["_id"].AsBsonDocument;
-            var activation = id.Contains("activation") && !id["activation"].IsBsonNull ? id["activation"].AsString : "unknown";
+            var activation = ActivationNameOf(id);
             var category = id["category"].AsString;
             var type = id["type"].AsString;
 
@@ -1758,7 +1809,8 @@ public class UsageEventRepository : IUsageEventRepository
                     Min = doc["min"].ToDouble(),
                     Max = doc["max"].ToDouble(),
                     Unit = doc.Contains("unit") && !doc["unit"].IsBsonNull ? doc["unit"].AsString : "count"
-                }
+                },
+                Breakdown = BreakdownFor(breakdown, new BreakdownKey(activation, category, type))
             });
         }
 
@@ -1773,6 +1825,118 @@ public class UsageEventRepository : IUsageEventRepository
             }).ToList()
         }).ToList();
     }
+
+    private static string ActivationNameOf(BsonDocument id) =>
+        id.Contains("activation") && !id["activation"].IsBsonNull ? id["activation"].AsString : "unknown";
+
+    // ---- Metadata filter and breakdown -------------------------------------------------------
+
+    /// <summary>
+    /// The document path of one top-level metadata value. The key is the only caller-supplied text
+    /// that ever becomes part of a field name, so it is re-validated here (letters, digits and
+    /// underscores only): it cannot contain a dot or $, and so cannot address a nested path or an operator.
+    /// </summary>
+    private static string MetadataField(string key)
+    {
+        if (!MetricMetadataKey.IsValid(key))
+        {
+            throw new ArgumentException($"Metadata key {MetricMetadataKey.Requirement}", nameof(key));
+        }
+        return $"metadata.{key}";
+    }
+
+    /// <summary>
+    /// Adds an exact-match condition per metadata key to a $match document: OR across the values of
+    /// one key ($in), AND across keys (separate fields). Values are always BSON strings, never query text.
+    /// Mirrors LogRepository.BuildPropertyFilter.
+    /// </summary>
+    private static void AddMetadataConditions(BsonDocument matchFilter, IReadOnlyDictionary<string, string[]>? metadata)
+    {
+        if (metadata == null)
+        {
+            return;
+        }
+
+        foreach (var (key, values) in metadata)
+        {
+            matchFilter.Add(MetadataField(key), values.Length == 1
+                ? new BsonString(values[0])
+                : new BsonDocument("$in", new BsonArray(values)));
+        }
+    }
+
+    private static BsonDocument BuildBreakdownGroupStage(BsonDocument groupId) =>
+        new("$group", new BsonDocument
+        {
+            { "_id", groupId },
+            { "count", new BsonDocument("$sum", 1) },
+            { "sum", new BsonDocument("$sum", "$value") },
+            { "min", new BsonDocument("$min", "$value") },
+            { "max", new BsonDocument("$max", "$value") }
+        });
+
+    /// <summary>Identifies the stats a breakdown belongs to. Activation is null for the tenant-wide facet.</summary>
+    private readonly record struct BreakdownKey(string? Activation, string Category, string Type);
+
+    /// <summary>
+    /// Parses a breakdown facet into entries per (activation, category, type), ordered by value with
+    /// the null value (records without the key) last. Rows that resolve to the same value are folded
+    /// together, so a missing key and an explicit null can never surface as two entries.
+    /// </summary>
+    private static Dictionary<BreakdownKey, List<MetadataBreakdownEntry>> ParseMetadataBreakdown(
+        BsonArray rows, bool byActivation)
+    {
+        var totals = new Dictionary<(BreakdownKey Key, string? Value), (long Count, double Sum, double Min, double Max)>();
+
+        foreach (var row in rows)
+        {
+            var doc = row.AsBsonDocument;
+            var id = doc["_id"].AsBsonDocument;
+            var key = new BreakdownKey(
+                // A record with no activation_name at all drops the field from the group key, so the
+                // facet, not the key's shape, decides whether this is a per-activation row.
+                byActivation ? ActivationNameOf(id) : null,
+                id["category"].AsString,
+                id["type"].AsString);
+
+            var rawValue = id.GetValue("value", BsonNull.Value);
+            var value = rawValue.IsBsonNull ? null : rawValue.IsString ? rawValue.AsString : rawValue.ToString();
+
+            var count = doc["count"].ToInt64();
+            var sum = doc["sum"].ToDouble();
+            var min = doc["min"].ToDouble();
+            var max = doc["max"].ToDouble();
+
+            totals[(key, value)] = totals.TryGetValue((key, value), out var existing)
+                ? (existing.Count + count, existing.Sum + sum, Math.Min(existing.Min, min), Math.Max(existing.Max, max))
+                : (count, sum, min, max);
+        }
+
+        return totals
+            .GroupBy(entry => entry.Key.Key)
+            .ToDictionary(
+                group => group.Key,
+                group => group
+                    .OrderBy(entry => entry.Key.Value == null)
+                    .ThenBy(entry => entry.Key.Value, StringComparer.Ordinal)
+                    .Select(entry => new MetadataBreakdownEntry
+                    {
+                        Value = entry.Key.Value,
+                        Count = entry.Value.Count,
+                        Sum = entry.Value.Sum,
+                        Average = entry.Value.Count > 0 ? entry.Value.Sum / entry.Value.Count : 0,
+                        Min = entry.Value.Min,
+                        Max = entry.Value.Max
+                    })
+                    .ToList());
+    }
+
+    /// <summary>Null when no breakdown was requested, so the field stays out of the response.</summary>
+    private static List<MetadataBreakdownEntry>? BreakdownFor(
+        Dictionary<BreakdownKey, List<MetadataBreakdownEntry>>? breakdown, BreakdownKey key) =>
+        breakdown == null
+            ? null
+            : breakdown.TryGetValue(key, out var entries) ? entries : new List<MetadataBreakdownEntry>();
 
     private static MetricsSummary ParseSummary(BsonDocument? summaryDoc, AdminMetricsStatsRequest request)
     {
