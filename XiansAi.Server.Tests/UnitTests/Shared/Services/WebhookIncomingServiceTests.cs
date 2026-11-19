@@ -220,6 +220,66 @@ public class WebhookIncomingServiceTests
         Assert.Equal(7, result.Data);
     }
 
+    [Fact]
+    public async Task RecordLinksARedeliveryToTheOriginalAndReturnsItsId()
+    {
+        var webhook = Webhook();
+        GivenWebhooks(webhook);
+        WebhookIncoming? saved = null;
+        _incomings.Setup(r => r.InsertAsync(It.IsAny<WebhookIncoming>())).Callback<WebhookIncoming>(i => saved = i);
+        var redelivery = Redelivery(webhook.Id);
+
+        var id = await _service.RecordAsync(Call() with { Redelivery = redelivery });
+
+        Assert.NotNull(saved);
+        Assert.Equal(saved!.Id, id);
+        Assert.Equal(redelivery.RedeliveryOf, saved.RedeliveryOf);
+        Assert.Equal("original-request", saved.RedeliveryOfRequestId);
+        Assert.Equal("dev@example.com", saved.TriggeredBy);
+        // The call keeps the request id it was given on arrival; the original's is only its label.
+        Assert.Equal("request-1", saved.RequestId);
+    }
+
+    [Fact]
+    public async Task RecordReturnsNullWhenNoWebhookMatches()
+    {
+        GivenWebhooks();
+
+        Assert.Null(await _service.RecordAsync(Call()));
+    }
+
+    [Fact]
+    public async Task RecordPrefersTheRedeliveredWebhookWhenSeveralShareTheUrl()
+    {
+        var newest = Webhook();
+        var older = Webhook();
+        GivenWebhooks(newest, older);
+
+        await _service.RecordAsync(Call() with { Redelivery = Redelivery(older.Id) });
+
+        _incomings.Verify(r => r.InsertAsync(It.Is<WebhookIncoming>(i => i.IntegrationId == older.Id && i.RedeliveryOf != null)), Times.Once);
+    }
+
+    [Fact]
+    public async Task ARedeliveryHeaderFromTheSourceIsKeptButDoesNotLinkTheCall()
+    {
+        GivenWebhooks(Webhook());
+        WebhookIncoming? saved = null;
+        _incomings.Setup(r => r.InsertAsync(It.IsAny<WebhookIncoming>())).Callback<WebhookIncoming>(i => saved = i);
+        var headers = new HeaderDictionary
+        {
+            [WebhookRedeliveryService.RedeliveryOfHeader] = "0193f0a0-0000-7000-8000-000000000000"
+        };
+
+        await _service.RecordAsync(Call(headers: headers));
+
+        Assert.Equal([WebhookRedeliveryService.RedeliveryOfHeader], saved!.Headers.Select(h => h.Name));
+        Assert.Null(saved.RedeliveryOf);
+        Assert.Null(saved.TriggeredBy);
+    }
+
+    private static WebhookRedelivery Redelivery(string integrationId) =>
+        new(integrationId, Guid.CreateVersion7(), "original-request", "dev@example.com");
     private void GivenWebhooks(params AppIntegration[] webhooks) =>
         _integrations.Setup(r => r.GetByAgentActivationAsync("tenant", "agent", "activation", "builtin_webhook"))
             .ReturnsAsync(webhooks.ToList());

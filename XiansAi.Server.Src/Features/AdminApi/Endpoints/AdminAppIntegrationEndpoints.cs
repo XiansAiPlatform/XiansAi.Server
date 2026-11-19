@@ -245,6 +245,27 @@ public static class AdminAppIntegrationEndpoints
         .Produces(StatusCodes.Status404NotFound)
         .RequireCapability(CapabilityActions.TenantWebhookIncomingsDelete);
 
+        webhookGroup.MapPost("{integrationId}/incomings/{incomingId:guid}/redeliver", async (
+            string tenantId,
+            string integrationId,
+            Guid incomingId,
+            HttpContext httpContext,
+            [FromServices] ITenantContext tenantContext,
+            [FromServices] IWebhookRedeliveryService redeliveryService) =>
+        {
+            // ParticipantId is the Studio user named by X-On-Behalf-Of, else the API key owner.
+            var result = await redeliveryService.RedeliverAsync(
+                tenantId, integrationId, incomingId, tenantContext.ParticipantId, httpContext.RequestAborted);
+            return result.ToHttpResult();
+        })
+        .WithName("RedeliverWebhookIncoming")
+        .WithSummary("Send a recorded call to its builtin webhook again")
+        .WithDescription("Starts the agent's workflow again with the recorded body and headers and the values from the webhook's current URL, without calling the webhook URL. The call is recorded as a new delivery linked to the original; statusCode is what the webhook would have answered (408 when the agent did not answer in time). Calls stored truncated, webhooks with an inactive activation, and a call already being redelivered return 409.")
+        .Produces<WebhookRedeliveryResult>(StatusCodes.Status200OK)
+        .Produces(StatusCodes.Status404NotFound)
+        .Produces(StatusCodes.Status409Conflict)
+        .RequireCapability(CapabilityActions.TenantWebhookIncomingsRedeliver);
+
         webhookGroup.MapDelete("{integrationId}/incomings", async (
             string tenantId,
             string integrationId,

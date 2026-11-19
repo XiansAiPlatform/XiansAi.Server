@@ -7,7 +7,10 @@ using Shared.Utils.Services;
 
 namespace Shared.Services;
 
-/// <summary>A call that reached the builtin webhook endpoint and passed its checks.</summary>
+/// <summary>
+/// A call that reached the builtin webhook and passed its checks. <c>Redelivery</c> is set only
+/// when the server sends a recorded call again.
+/// </summary>
 public record BuiltinWebhookCall(
     string TenantId,
     string AgentName,
@@ -19,7 +22,8 @@ public record BuiltinWebhookCall(
     string RequestId,
     string? ContentType,
     IHeaderDictionary Headers,
-    string Body);
+    string Body,
+    WebhookRedelivery? Redelivery = null);
 
 /// <summary>One page of a builtin webhook's incoming calls, newest first.</summary>
 public record WebhookIncomingPage(List<WebhookIncomingSummary> Items, WebhookIncomingCursor? NextCursor);
@@ -34,7 +38,8 @@ public interface IWebhookIncomingService
     /// <see cref="WebhookIncomingsOptions.MaxPerWebhook"/>. Never throws: a call that cannot be
     /// recorded is logged and the webhook carries on.
     /// </summary>
-    Task RecordAsync(BuiltinWebhookCall call);
+    /// <returns>The recorded call's id, or null when no builtin webhook matches the call or recording failed.</returns>
+    Task<Guid?> RecordAsync(BuiltinWebhookCall call);
 
     Task<ServiceResult<WebhookIncomingPage>> ListAsync(string tenantId, string integrationId, WebhookIncomingCursor? after, int limit);
 
@@ -71,7 +76,7 @@ public class WebhookIncomingService : IWebhookIncomingService
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    public async Task RecordAsync(BuiltinWebhookCall call)
+    public async Task<Guid?> RecordAsync(BuiltinWebhookCall call)
     {
         try
         {
@@ -81,10 +86,10 @@ public class WebhookIncomingService : IWebhookIncomingService
                 _logger.LogDebug(
                     "No builtin webhook matches call {RequestId} for agent {AgentName}, activation {ActivationName}, webhook {WebhookName}; not recorded",
                     call.RequestId, call.AgentName, call.ActivationName, call.WebhookName);
-                return;
+                return null;
             }
 
-            await _incomings.InsertAsync(new WebhookIncoming
+            var incoming = new WebhookIncoming
             {
                 TenantId = call.TenantId,
                 IntegrationId = integration.Id,
@@ -93,13 +98,25 @@ public class WebhookIncomingService : IWebhookIncomingService
                 Headers = ToHeaderList(call.Headers),
                 Body = call.Body,
                 WorkflowId = call.WorkflowId
-            });
+            };
+
+            // A redelivery is linked to the delivery it repeats, on the webhook that recorded it.
+            if (call.Redelivery is { } redelivery && redelivery.IntegrationId == integration.Id)
+            {
+                incoming.RedeliveryOf = redelivery.RedeliveryOf;
+                incoming.RedeliveryOfRequestId = redelivery.RedeliveryOfRequestId;
+                incoming.TriggeredBy = redelivery.TriggeredBy;
+            }
+
+            await _incomings.InsertAsync(incoming);
 
             await _incomings.TrimAsync(call.TenantId, integration.Id, _options.MaxPerWebhook);
+            return incoming.Id;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Failed to record builtin webhook call {RequestId}", call.RequestId);
+            return null;
         }
     }
 
@@ -148,7 +165,7 @@ public class WebhookIncomingService : IWebhookIncomingService
     /// <summary>
     /// The builtin webhook whose URL produced this call. The URL carries no integration id, so it is
     /// matched on the values the URL was built from. Webhooks with identical values share a URL;
-    /// the newest one is used.
+    /// the newest one is used, unless the call is a redelivery of one of the others.
     /// </summary>
     private async Task<AppIntegration?> FindIntegrationAsync(BuiltinWebhookCall call)
     {
@@ -158,10 +175,12 @@ public class WebhookIncomingService : IWebhookIncomingService
         var candidates = await _integrations.GetByAgentActivationAsync(
             call.TenantId, call.AgentName, call.ActivationName, BuiltinWebhookPlatformId);
 
-        return candidates.FirstOrDefault(i =>
+        var matches = candidates.Where(i =>
             ConfigValue(i, "webhookName") == call.WebhookName &&
             ConfigValue(i, "workflowName") == call.WorkflowName &&
-            (string.IsNullOrEmpty(call.ApiKeyId) || ConfigValue(i, "apiKeyId") == call.ApiKeyId));
+            (string.IsNullOrEmpty(call.ApiKeyId) || ConfigValue(i, "apiKeyId") == call.ApiKeyId)).ToList();
+
+        return matches.FirstOrDefault(i => i.Id == call.Redelivery?.IntegrationId) ?? matches.FirstOrDefault();
     }
 
     private async Task<bool> IsBuiltinWebhookAsync(string tenantId, string integrationId)

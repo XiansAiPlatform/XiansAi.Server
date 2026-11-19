@@ -252,6 +252,7 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IWebhookEventPublisher, WebhookEventPublisher>();
         builder.Services.AddScoped<IAppIntegrationService, AppIntegrationService>();
         builder.Services.AddScoped<IWebhookIncomingService, WebhookIncomingService>();
+        builder.Services.AddScoped<IWebhookRedeliveryService, WebhookRedeliveryService>();
         builder.Services.AddHttpClient();              
         builder.Services.AddScoped<IApiKeyService, ApiKeyService>();
         builder.Services.AddScoped<IRoleCacheService, RoleCacheService>();
