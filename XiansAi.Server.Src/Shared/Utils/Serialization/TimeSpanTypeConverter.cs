@@ -63,9 +63,6 @@ public partial class TimeSpanTypeConverter : IYamlTypeConverter
         return seconds > 0;
     }
 
-    public object? ReadYaml(IParser parser, Type type, ObjectDeserializer rootDeserializer)
-        => ReadYaml(parser, type);
-
     public object? ReadYaml(IParser parser, Type type)
     {
         var scalar = parser.Consume<Scalar>();
@@ -85,9 +82,6 @@ public partial class TimeSpanTypeConverter : IYamlTypeConverter
 
         return result;
     }
-
-    public void WriteYaml(IEmitter emitter, object? value, Type type, ObjectSerializer serializer)
-        => WriteYaml(emitter, value, type);
 
     public void WriteYaml(IEmitter emitter, object? value, Type type)
     {
