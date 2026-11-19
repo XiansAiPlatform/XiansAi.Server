@@ -1,4 +1,5 @@
 using System.Text;
+using Shared.Providers;
 using Shared.Repositories;
 using Shared.Utils;
 using Shared.Utils.Services;
@@ -90,9 +91,10 @@ public class PluginFailureNotificationService : IPluginFailureNotificationServic
                 await _emailService.SendEmailAsync(tenantId, recipient, subject, body);
                 sent++;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (SmtpEmailSender.IsDeliveryFailure(ex))
             {
-                // One bad address or a transient SMTP error must not stop the other contacts hearing about it.
+                // One bad address or a transient SMTP error must not stop the other contacts hearing
+                // about it. Anything else is a bug and propagates.
                 _logger.LogWarning(ex, "Plugin failure alert for tenant {TenantId} could not be sent to a contact",
                     LogSanitizer.Sanitize(tenantId));
             }

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging.Abstractions;
+using MailKit.Net.Smtp;
 using Moq;
 using Shared.Data.Models;
 using Shared.Repositories;
@@ -91,7 +92,7 @@ public class PluginFailureNotificationServiceTests
         _contacts.Setup(r => r.ListAsync(TenantId, null)).ReturnsAsync(
             [NewContact("bad@example.com"), NewContact("good@example.com")]);
         _emailService.Setup(e => e.SendEmailAsync(TenantId, "bad@example.com", It.IsAny<string>(), It.IsAny<string>(), false))
-            .ThrowsAsync(new InvalidOperationException("smtp down"));
+            .ThrowsAsync(new SmtpCommandException(SmtpErrorCode.RecipientNotAccepted, SmtpStatusCode.MailboxUnavailable, "rejected"));
 
         var result = await CreateService().NotifyAsync(TenantId, Notification());
 
@@ -104,12 +105,22 @@ public class PluginFailureNotificationServiceTests
     {
         _contacts.Setup(r => r.ListAsync(TenantId, null)).ReturnsAsync([NewContact("a@example.com")]);
         _emailService.Setup(e => e.SendEmailAsync(TenantId, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), false))
-            .ThrowsAsync(new InvalidOperationException("smtp down"));
+            .ThrowsAsync(new IOException("smtp down"));
 
         var result = await CreateService().NotifyAsync(TenantId, Notification());
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCode.InternalServerError, result.StatusCode);
+    }
+
+    [Fact]
+    public async Task NotifyAsync_UnexpectedError_IsNotSwallowed()
+    {
+        _contacts.Setup(r => r.ListAsync(TenantId, null)).ReturnsAsync([NewContact("a@example.com")]);
+        _emailService.Setup(e => e.SendEmailAsync(TenantId, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), false))
+            .ThrowsAsync(new NullReferenceException("bug"));
+
+        await Assert.ThrowsAsync<NullReferenceException>(() => CreateService().NotifyAsync(TenantId, Notification()));
     }
 
     [Fact]
