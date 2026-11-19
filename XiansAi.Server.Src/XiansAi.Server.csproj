@@ -30,7 +30,6 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.AzureAppConfiguration" Version="8.1.2" />
     <PackageReference Include="Microsoft.Extensions.Logging.AzureAppServices" Version="10.0.5" />
     <PackageReference Include="Microsoft.Identity.Web" Version="3.13.0" />
-    <!-- MongoDB.Driver 3.13.0 brings MongoDB.Bson 3.13.0, which fixes CVE-2026-114644 (unbounded symbol interning DoS) -->
     <PackageReference Include="MongoDB.Driver" Version="3.13.0" />
     <PackageReference Include="MongoDB.Driver.Core.Extensions.DiagnosticSources" Version="3.0.0" />
     <!-- Pin patched versions to override vulnerable transitive dependencies from MongoDB.Driver -->
