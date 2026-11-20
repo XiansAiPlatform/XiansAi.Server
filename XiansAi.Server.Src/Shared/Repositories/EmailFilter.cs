@@ -17,7 +17,11 @@ internal static class EmailFilter
     /// never as a pattern. Null when no usable email is given, so callers can skip the query.
     /// </summary>
     public static FilterDefinition<T>? MatchAnyIgnoringCase<T>(
-        Expression<Func<T, object>> field, IEnumerable<string> emails)
+        Expression<Func<T, object>> field, IEnumerable<string> emails) =>
+        MatchAnyIgnoringCase(new ExpressionFieldDefinition<T>(field), emails);
+
+    /// <inheritdoc cref="MatchAnyIgnoringCase{T}(Expression{Func{T, object}}, IEnumerable{string})"/>
+    public static FilterDefinition<T>? MatchAnyIgnoringCase<T>(FieldDefinition<T> field, IEnumerable<string> emails)
     {
         var filters = emails
             .Where(email => !string.IsNullOrWhiteSpace(email))

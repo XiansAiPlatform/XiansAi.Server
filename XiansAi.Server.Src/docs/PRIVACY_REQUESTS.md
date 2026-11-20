@@ -16,6 +16,8 @@ Everything is off unless `Privacy:Enabled` is `true`.
 | `IPrivacyRequestRepository` | Creates, lists, cancels, claims, updates and closes requests |
 | `IPrivacySubjectResolver` | Turns one identifier into every identifier of the person within a scope |
 | `IPersonalDataContributor` | Contract for exporting and erasing one data area |
+| `IPersonalDataSource` | Counts a person's records in one data area |
+| `IPersonalDataDiscovery` | Lists every data source holding a person's data, with record counts |
 | `IExportWriter` | Contract for writing export entries (JSON and files) |
 | `IPseudonymiser` | HMAC-SHA256 of an identifier, used for the hashes kept on a request |
 
@@ -169,6 +171,80 @@ in DI as `IPersonalDataContributor`:
   [Stored errors](#stored-errors)). Return the number of items affected and any notes. Notes must not contain
   the person's identifiers.
 - `ExportAsync` writes entries through `IExportWriter`.
+- Find records with the same filters as the data area's entry in `MongoPersonalDataSources`, so export and
+  erasure cover exactly what [discovery](#discovery) counted.
+
+## Discovery
+
+`IPersonalDataDiscovery.DiscoverAsync(subject, scope)` asks every registered `IPersonalDataSource` for its
+counts and returns one row per source and collection with the number of the person's records. Rows with no
+records are included, so the result lists every place that was checked. Nothing is changed.
+
+The MongoDB sources are listed in `MongoPersonalDataSources`, one `PersonalDataArea` per data area, each with
+the filter for every collection. Filters are built with `PrivacyFilters`:
+
+- `InScope` limits a query to the request's tenants. A request covering all tenants also reaches documents with
+  no tenant.
+- `AnyOf` matches a field against a list of values. `PersonIds` gives the person's participant IDs, user IDs and
+  provider subjects.
+- Every builder returns null instead of a filter built from an empty list, and a null filter skips the query.
+  An empty filter matches every document, so it would report, and later erase, other people's records.
+
+To add a data source, add a collection to `MongoPersonalDataSources` or register another `IPersonalDataSource`
+(such as one for Temporal) in `AddPrivacyServices`. Discovery only uses the interface, so nothing else changes.
+Add the store to the record of processing below.
+
+## Record of processing
+
+Every MongoDB collection in the server, classified for the GDPR record of processing (Art. 30). **Personal**
+collections hold data about the person. **Reference** collections belong to the tenant and record who created,
+changed or can use something. **None** collections hold no personal data.
+
+| Collection | Kind | Personal fields | Found by | Source |
+|---|---|---|---|---|
+| `conversation_thread` | Personal | `participant_id`, `created_by` | `participant_id` | `conversations`, `ownership` |
+| `conversation_message` | Personal | `participant_id`, `text` (encrypted), `created_by` | `thread_id` of the person's threads, `participant_id` | `conversations`, `ownership` |
+| `message_feedback` | Personal | `participant_id`, `submitted_by`, `comment` | `thread_id`, `participant_id`, `submitted_by` | `conversations` |
+| `contacts` | Personal | `email`, `name`, `phone`, `created_by`, `updated_by` | `email` (ignoring case) | `contacts`, `ownership` |
+| `user_invitations` | Personal | `email` | `email` (ignoring case), every status | `invitations` |
+| `documents` | Personal | `participant_id`, `content`, `created_by`, `updated_by` | `participant_id` | `documents`, `ownership` |
+| `logs` | Personal | `participant_id`, `message`, `workflow_id` | `participant_id`, the person's own workflows | `activity-and-logs` |
+| `activity_history` | Personal | `inputs`, `result` | The person's own workflows (no tenant field) | `activity-and-logs` |
+| `usage_metrics` | Personal | `participant_id` | `participant_id` | `usage` |
+| `audit_logs` | Personal | `participant_id`, `logged_in_user` | Either field | `audit` |
+| `webhook_incomings` | Personal | `body`, `headers_encrypted` | The person's own workflows | `webhooks` |
+| `webhook_deliveries` | Personal | `actor_user_id`, `payload` | `actor_user_id` | `webhooks` |
+| `users` | Personal | `user_id`, `email`, `name`, `tenant_roles` | `user_id`; with a tenant scope, only accounts with a membership in it | `account` |
+| `api_keys` | Reference | `participant_id`, `created_by` | Either field | `credentials`, `ownership` |
+| `certificates` | Reference | `IssuedTo` | `IssuedTo` (user ID) | `credentials` |
+| `secret_vault` | Reference | `user_id`, `created_by`, `updated_by` | Any of the fields | `credentials`, `ownership` |
+| `agents` | Reference | `created_by`, `owner_access`, `read_access`, `write_access` | Any of the fields | `ownership` |
+| `activations` | Reference | `created_by`, `participant_id` | Either field | `ownership` |
+| `flow_definitions` | Reference | `created_by` | `created_by` | `ownership` |
+| `knowledge` | Reference | `created_by` | `created_by` | `ownership` |
+| `app_integrations` | Reference | `created_by`, `updated_by` | Either field | `ownership` |
+| `tenants` | Reference | `created_by` | `created_by` | `ownership` |
+| `secret_vault_values` | Reference | Secret values, keyed by `secret_vault._id` | Through `secret_vault` | |
+| `processed_events` | None | | | |
+| `tenant_oidc_config`, `tenant_smtp_config`, `tenant_temporal_config` | None | Tenant settings | | |
+| `admin_capability_matrix` | None | Permission matrix | | |
+| `privacy_requests` | None | The request records themselves | | Own retention, see [What is kept](#what-is-kept-after-a-request-closes) |
+
+Rules that apply across the table:
+
+- **Own workflows.** A conversation workflow can hold several participants' threads. `activity_history`,
+  `webhook_incomings` and workflow-keyed `logs` are counted only for the person's workflows that no other
+  participant has a thread in within the scope.
+- **Account.** A request covering all tenants counts the person's accounts. A request limited to some tenants
+  counts only accounts with a membership in those tenants.
+- **Free text.** Names or emails typed into free text, such as audit `details`, knowledge content or
+  agent-written documents, cannot be found by identifier.
+
+### Other stores
+
+- **Temporal workflow history** is not covered yet. It gets its own `IPersonalDataSource` and contributor in epic item 2.
+- **Blob storage and vector stores:** the server uses none. `documents` and `knowledge` serve as the knowledge
+  base and are covered above.
 
 ## Indexes
 
@@ -191,5 +267,9 @@ in DI as `IPersonalDataContributor`:
 | Repository | `Shared/Repositories/PrivacyRequestRepository.cs` |
 | Identifier resolution | `Shared/Services/Privacy/PrivacySubjectResolver.cs` |
 | Contributor and export writer contracts | `Shared/Services/Privacy/IPersonalDataContributor.cs` |
+| Data source contract | `Shared/Services/Privacy/IPersonalDataSource.cs` |
+| Discovery | `Shared/Services/Privacy/PersonalDataDiscovery.cs` |
+| MongoDB sources | `Shared/Services/Privacy/MongoPersonalDataSources.cs` |
+| Filter helpers | `Shared/Services/Privacy/PrivacyFilters.cs` |
 | HMAC hashing | `Shared/Services/Privacy/Pseudonymiser.cs` |
 | Storable errors | `Shared/Services/Privacy/PrivacyRequestException.cs` |
