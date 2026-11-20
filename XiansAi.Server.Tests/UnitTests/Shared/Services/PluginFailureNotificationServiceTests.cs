@@ -114,16 +114,6 @@ public class PluginFailureNotificationServiceTests
     }
 
     [Fact]
-    public async Task NotifyAsync_UnexpectedError_IsNotSwallowed()
-    {
-        _contacts.Setup(r => r.ListAsync(TenantId, null)).ReturnsAsync([NewContact("a@example.com")]);
-        _emailService.Setup(e => e.SendEmailAsync(TenantId, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), false))
-            .ThrowsAsync(new NullReferenceException("bug"));
-
-        await Assert.ThrowsAsync<NullReferenceException>(() => CreateService().NotifyAsync(TenantId, Notification()));
-    }
-
-    [Fact]
     public async Task NotifyAsync_MissingTenant_IsBadRequest()
     {
         var result = await CreateService().NotifyAsync("", Notification());

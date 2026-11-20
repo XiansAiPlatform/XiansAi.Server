@@ -35,23 +35,6 @@ public class SmtpEmailSender : ISmtpEmailSender
         _checkCertificateRevocation = checkCertificateRevocation;
     }
 
-    /// <summary>
-    /// True when a send failed because the message could not be delivered (rejected or invalid
-    /// address, SMTP server unreachable, refused login, TLS failure, timeout) rather than because
-    /// of a bug. Lets callers skip one recipient without swallowing unexpected exceptions.
-    /// </summary>
-    public static bool IsDeliveryFailure(Exception ex) => ex is
-        MailKit.CommandException or
-        MailKit.ProtocolException or
-        MailKit.ServiceNotConnectedException or
-        MailKit.ServiceNotAuthenticatedException or
-        AuthenticationException or
-        SslHandshakeException or
-        System.Net.Sockets.SocketException or
-        IOException or
-        TimeoutException or
-        ArgumentException;
-
     public async Task SendAsync(SmtpSettings settings, IEnumerable<string> to, string subject, string body, bool isHtml, CancellationToken cancellationToken = default)
     {
         var message = BuildMessage(settings, to, subject, body, isHtml);
