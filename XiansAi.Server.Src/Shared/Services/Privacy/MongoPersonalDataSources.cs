@@ -119,7 +119,18 @@ internal static class MongoPersonalDataSources
             Authored("api_keys", TenantId, "created_by"),
             Authored("secret_vault", TenantId, "created_by", "updated_by"),
             Authored("conversation_thread", TenantId, "created_by"),
-            Authored("conversation_message", TenantId, "created_by")
+            Authored("conversation_message", TenantId, "created_by"),
+            Authored("tenant_oidc_config", TenantId, "created_by", "updated_by"),
+            Authored("tenant_smtp_config", TenantId, "created_by", "updated_by"),
+            Authored("tenant_temporal_config", TenantId, "created_by", "updated_by", "reverted_by"),
+            // The capability matrix is platform-wide and has no tenant field, so only all-tenant requests reach it.
+            Authored("admin_capability_matrix", TenantId, "updated_by"),
+            // Health checks also name the person's contacts as the people to notify.
+            new("agent_health_checks", async (database, subject, scope, cancellationToken) =>
+                PrivacyFilters.All(InScope(subject, scope), PrivacyFilters.Either(
+                    ByPerson("created_by", subject),
+                    ByPerson("updated_by", subject),
+                    PrivacyFilters.AnyOf("notify_contact_ids", await ContactIdsAsync(database, subject, scope, cancellationToken)))))
         ]),
         new("account", [new("users", Sync(Accounts))])
     ];
@@ -163,6 +174,23 @@ internal static class MongoPersonalDataSources
             .Project(Builders<BsonDocument>.Projection.Include("_id"))
             .ToListAsync(cancellationToken);
         return threads.Select(thread => thread["_id"].ToString()!).ToList();
+    }
+
+    // Health checks store the contact's _id as a string.
+    private static async Task<List<string>> ContactIdsAsync(
+        IMongoDatabase database, PrivacySubject subject, PrivacyScope scope, CancellationToken cancellationToken)
+    {
+        var filter = ByEmail(subject, scope);
+        if (filter == null)
+        {
+            return [];
+        }
+
+        var contacts = await database.GetCollection<BsonDocument>("contacts")
+            .Find(filter)
+            .Project(Builders<BsonDocument>.Projection.Include("_id"))
+            .ToListAsync(cancellationToken);
+        return contacts.Select(contact => contact["_id"].ToString()!).ToList();
     }
 
     /// <summary>

@@ -95,8 +95,12 @@ public class MongoPersonalDataSourcesTests : IClassFixture<MongoDbFixture>
         {
             foreach (var collection in Area("ownership").Collections)
             {
-                var tenantField = collection.Name is "agents" or "flow_definitions" ? "tenant" : "tenant_id";
-                var document = new BsonDocument { [tenantField] = tenant, ["created_by"] = person.UserId };
+                var document = new BsonDocument { ["created_by"] = person.UserId, ["updated_by"] = person.UserId };
+                if (!PlatformCollections.Contains(collection.Name))
+                {
+                    document[collection.Name is "agents" or "flow_definitions" ? "tenant" : "tenant_id"] = tenant;
+                }
+
                 if (collection.Name == "tenants")
                 {
                     document["domain"] = $"{tenant}.example.com";
@@ -112,6 +116,9 @@ public class MongoPersonalDataSourcesTests : IClassFixture<MongoDbFixture>
             ["tenant_roles"] = new BsonArray { new BsonDocument { ["tenant"] = tenant, ["roles"] = new BsonArray { "TenantUser" } } }
         })
     };
+
+    /// <summary>Platform-wide collections with no tenant field, so only all-tenant requests reach them.</summary>
+    private static readonly HashSet<string> PlatformCollections = ["admin_capability_matrix"];
 
     public static TheoryData<string> AreaNames() => new(MongoPersonalDataSources.Areas.Select(area => area.Name));
 
@@ -168,9 +175,11 @@ public class MongoPersonalDataSourcesTests : IClassFixture<MongoDbFixture>
         await Seeds[area](_database, person, tenant);
 
         var counts = await CountAsync(area, person.Subject(tenant), Scope(tenant));
+        var allTenants = await CountAsync(area, person.Subject(tenant), new() { TenantIds = [tenant], AllTenants = true });
 
         Assert.Equal(Area(area).Collections.Select(collection => collection.Name), counts.Keys);
-        Assert.All(counts, count => Assert.Equal(1, count.Value));
+        Assert.All(counts, count => Assert.Equal(PlatformCollections.Contains(count.Key) ? 0 : 1, count.Value));
+        Assert.All(allTenants, count => Assert.Equal(1, count.Value));
     }
 
     [Theory]
@@ -304,5 +313,26 @@ public class MongoPersonalDataSourcesTests : IClassFixture<MongoDbFixture>
         var counts = await CountAsync("ownership", person.Subject(tenant), Scope(tenant));
 
         Assert.Equal(1, counts["agents"]);
+    }
+
+    [Fact]
+    public async Task HealthChecks_AreFoundThroughThePersonsContacts()
+    {
+        var tenant = TestPerson.NewTenant();
+        var elsewhere = TestPerson.NewTenant();
+        var person = TestPerson.New();
+        foreach (var contactTenant in new[] { tenant, elsewhere })
+        {
+            var contactId = ObjectId.GenerateNewId();
+            await Insert(_database, "contacts", new() { ["_id"] = contactId, ["tenant_id"] = contactTenant, ["email"] = person.Email });
+            await Insert(_database, "agent_health_checks", new()
+            {
+                ["tenant_id"] = contactTenant, ["created_by"] = "admin", ["notify_contact_ids"] = new BsonArray { "other", contactId.ToString() }
+            });
+        }
+
+        var counts = await CountAsync("ownership", person.Subject(tenant), Scope(tenant));
+
+        Assert.Equal(1, counts["agent_health_checks"]);
     }
 }

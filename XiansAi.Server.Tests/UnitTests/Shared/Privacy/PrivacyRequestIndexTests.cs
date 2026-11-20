@@ -69,4 +69,18 @@ public class PrivacyRequestIndexTests
 
         Assert.Equal(["participant_id", "tenant_id", "workflow_id"], index.Keys.Keys);
     }
+
+    [Theory]
+    [InlineData("activity_history", "activity_history_workflow_lookup", new[] { "workflow_id" })]
+    [InlineData("documents", "document_participant_lookup", new[] { "participant_id", "tenant_id" })]
+    [InlineData("api_keys", "api_key_participant_lookup", new[] { "participant_id", "tenant_id" })]
+    [InlineData("message_feedback", "feedback_thread_lookup", new[] { "thread_id", "tenant_id" })]
+    [InlineData("message_feedback", "feedback_participant_lookup", new[] { "participant_id", "tenant_id" })]
+    [InlineData("message_feedback", "feedback_submitter_lookup", new[] { "submitted_by", "tenant_id" })]
+    public void PersonalDataLookups_LeadWithThePersonField(string collection, string name, string[] keys)
+    {
+        var index = Assert.Single(Indexes(collection), index => index.Name == name);
+
+        Assert.Equal(keys, index.Keys.Keys);
+    }
 }

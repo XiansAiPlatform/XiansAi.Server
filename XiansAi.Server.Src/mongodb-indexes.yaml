@@ -293,6 +293,22 @@ message_feedback:
       star_rating: asc
       submitted_at: desc
     background: true
+  # Find a person's feedback by thread, participant or submitter, for GDPR discovery.
+  - name: feedback_thread_lookup
+    keys:
+      thread_id: asc
+      tenant_id: asc
+    background: true
+  - name: feedback_participant_lookup
+    keys:
+      participant_id: asc
+      tenant_id: asc
+    background: true
+  - name: feedback_submitter_lookup
+    keys:
+      submitted_by: asc
+      tenant_id: asc
+    background: true
 
 contacts:
   - name: tenant_id_idx
@@ -316,6 +332,12 @@ api_keys:
   - name: hashed_key_idx
     keys:
       hashed_key: asc
+  # Finds a person's API keys by participant ID, for GDPR discovery.
+  - name: api_key_participant_lookup
+    keys:
+      participant_id: asc
+      tenant_id: asc
+    background: true
 
 users:
   - name: user_id_1
@@ -413,6 +435,12 @@ documents:
     expire_after: 0s
     background: true
     sparse: true
+  # Finds a person's documents by participant ID, for GDPR discovery.
+  - name: document_participant_lookup
+    keys:
+      participant_id: asc
+      tenant_id: asc
+    background: true
 
 secret_vault:
   # NOTE: key_tenant is a prefix of key_scope_unique below and is a candidate for removal
@@ -740,6 +768,11 @@ activity_history:
     keys:
       started_time: asc
     expire_after: 90d
+    background: true
+  # Finds a person's activity history by workflow ID, for GDPR discovery. It has no tenant field.
+  - name: activity_history_workflow_lookup
+    keys:
+      workflow_id: asc
     background: true
 
 tenant_smtp_config:

@@ -224,10 +224,14 @@ changed or can use something. **None** collections hold no personal data.
 | `knowledge` | Reference | `created_by` | `created_by` | `ownership` |
 | `app_integrations` | Reference | `created_by`, `updated_by` | Either field | `ownership` |
 | `tenants` | Reference | `created_by` | `created_by` | `ownership` |
+| `tenant_oidc_config` | Reference | `created_by`, `updated_by` | Either field | `ownership` |
+| `tenant_smtp_config` | Reference | `created_by`, `updated_by` | Either field | `ownership` |
+| `tenant_temporal_config` | Reference | `created_by`, `updated_by`, `reverted_by` | Any of the fields | `ownership` |
+| `admin_capability_matrix` | Reference | `updated_by` | `updated_by`; platform-wide, so only all-tenant requests | `ownership` |
+| `agent_health_checks` | Reference | `created_by`, `updated_by`, `notify_contact_ids` | Either person field, or the `_id` of the person's contacts | `ownership` |
 | `secret_vault_values` | Reference | Secret values, keyed by `secret_vault._id` | Through `secret_vault` | |
+| `agent_health_check_runs` | None | Results of scripted checks, keyed by `check_id` | | |
 | `processed_events` | None | | | |
-| `tenant_oidc_config`, `tenant_smtp_config`, `tenant_temporal_config` | None | Tenant settings | | |
-| `admin_capability_matrix` | None | Permission matrix | | |
 | `privacy_requests` | None | The request records themselves | | Own retention, see [What is kept](#what-is-kept-after-a-request-closes) |
 
 Rules that apply across the table:
@@ -256,6 +260,12 @@ Rules that apply across the table:
 | `privacy_request_ttl` | `closed_at`, expires after 1095 days | Record retention |
 | `privacy_request_failed_ttl` | `failed_at`, expires after 90 days | Retention of failed requests |
 | `conversation_thread.thread_participant_lookup` | `participant_id`, `tenant_id`, `workflow_id` | Finding a person's threads and their workflow IDs from the index alone |
+| `activity_history.activity_history_workflow_lookup` | `workflow_id` | Finding activity history of the person's own workflows (no tenant field) |
+| `documents.document_participant_lookup` | `participant_id`, `tenant_id` | Finding a person's documents |
+| `api_keys.api_key_participant_lookup` | `participant_id`, `tenant_id` | Finding a person's API keys |
+| `message_feedback.feedback_thread_lookup` | `thread_id`, `tenant_id` | Finding feedback in the person's threads |
+| `message_feedback.feedback_participant_lookup` | `participant_id`, `tenant_id` | Finding a person's feedback |
+| `message_feedback.feedback_submitter_lookup` | `submitted_by`, `tenant_id` | Finding feedback the person submitted |
 
 ## Implementation
 

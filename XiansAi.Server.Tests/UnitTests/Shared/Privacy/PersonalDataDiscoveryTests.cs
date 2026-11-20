@@ -23,7 +23,8 @@ public class PersonalDataDiscoveryTests(MongoDbFixture fixture) : IClassFixture<
         "conversation_thread", "conversation_message", "message_feedback", "contacts", "user_invitations", "documents",
         "logs", "activity_history", "usage_metrics", "audit_logs", "webhook_incomings", "webhook_deliveries", "users",
         "api_keys", "certificates", "secret_vault", "agents", "activations", "flow_definitions", "knowledge",
-        "app_integrations", "tenants"
+        "app_integrations", "tenants", "tenant_oidc_config", "tenant_smtp_config", "tenant_temporal_config",
+        "admin_capability_matrix", "agent_health_checks"
     ];
 
     private IPersonalDataDiscovery Discovery()
