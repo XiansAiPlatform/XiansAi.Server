@@ -11,9 +11,11 @@ internal delegate Task<FilterDefinition<BsonDocument>?> PersonalDataFilter(
     IMongoDatabase database, PrivacySubject subject, PrivacyScope scope, CancellationToken cancellationToken);
 
 /// <param name="Name">The MongoDB collection.</param>
+/// <param name="Filter">Finds the person's documents in the collection.</param>
 internal sealed record PersonalDataCollection(string Name, PersonalDataFilter Filter);
 
 /// <param name="Name">The data area, reported as <see cref="IPersonalDataSource.Name"/>.</param>
+/// <param name="Collections">The collections of the area, counted in this order.</param>
 internal sealed record PersonalDataArea(string Name, IReadOnlyList<PersonalDataCollection> Collections);
 
 /// <summary>Counts the person's documents in each collection of one MongoDB data area.</summary>
