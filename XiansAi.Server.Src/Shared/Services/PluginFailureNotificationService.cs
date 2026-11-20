@@ -90,9 +90,10 @@ public class PluginFailureNotificationService : IPluginFailureNotificationServic
                 await _emailService.SendEmailAsync(tenantId, recipient, subject, body);
                 sent++;
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                // One bad address or a transient SMTP error must not stop the other contacts hearing about it.
+                // One bad address or a transient SMTP error must not stop the other contacts hearing
+                // about it. Cancellation still propagates.
                 _logger.LogWarning(ex, "Plugin failure alert for tenant {TenantId} could not be sent to a contact",
                     LogSanitizer.Sanitize(tenantId));
             }
