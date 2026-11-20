@@ -165,6 +165,16 @@ public static class SharedServices
         services.AddSingleton<IPseudonymiser, HmacPseudonymiser>();
         services.AddScoped<IPrivacyRequestRepository, PrivacyRequestRepository>();
         services.AddScoped<IPrivacySubjectResolver, PrivacySubjectResolver>();
+        services.AddScoped<IPersonalDataDiscovery, PersonalDataDiscovery>();
+
+        // The registered sources are the registry of personal data. Another store, such as Temporal, is added by
+        // registering its own IPersonalDataSource. See the record of processing in docs/PRIVACY_REQUESTS.md.
+        foreach (var area in MongoPersonalDataSources.Areas)
+        {
+            services.AddScoped<IPersonalDataSource>(provider =>
+                new MongoPersonalDataSource(area, provider.GetRequiredService<IDatabaseService>()));
+        }
+
         return services;
     }
 
