@@ -120,7 +120,7 @@ public class PersonalDataDiscoveryTests(MongoDbFixture fixture) : IClassFixture<
     {
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory != null; directory = directory.Parent)
         {
-            var path = Path.Combine(directory.FullName, "XiansAi.Server.Src", "docs", "PRIVACY_REQUESTS.md");
+            var path = Path.Join(directory.FullName, "XiansAi.Server.Src", "docs", "PRIVACY_REQUESTS.md");
             if (File.Exists(path))
             {
                 return path;
