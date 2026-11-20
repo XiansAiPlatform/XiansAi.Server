@@ -62,4 +62,20 @@ public class PrivacyFiltersTests
 
         Assert.Equal(["AbC", "Auth0|AbC", "abc", "auth0|abc", "jane@example.com"], PrivacyFilters.PersonIds(subject));
     }
+
+    [Fact]
+    public void PersonIds_HaveNoProviderSubjectWhenThePipeIsAtAnEnd()
+    {
+        var subject = new PrivacySubject { UserIds = ["|start", "end|"] };
+
+        Assert.Equal(["end|", "|start"], PrivacyFilters.PersonIds(subject));
+    }
+
+    [Fact]
+    public void PersonIds_TakeTheProviderSubjectAfterTheFirstPipe()
+    {
+        var subject = new PrivacySubject { UserIds = ["provider|sub|part"] };
+
+        Assert.Equal(["provider|sub|part", "sub|part"], PrivacyFilters.PersonIds(subject));
+    }
 }
