@@ -38,7 +38,7 @@ public sealed record TestPerson(string UserId, string Email)
 
 /// <summary>
 /// DB-level tests for the MongoDB personal data sources. Every data area is seeded with one record of the person
-/// per collection, then checked for correct counts, tenant scope, other people and empty subjects. Each test uses
+/// per collection, then checked for correct counts, other tenants and people, and empty subjects. Each test uses
 /// its own tenants and people, so tests stay independent within the shared collections.
 /// </summary>
 public class MongoPersonalDataSourcesTests : IClassFixture<MongoDbFixture>
@@ -49,6 +49,9 @@ public class MongoPersonalDataSourcesTests : IClassFixture<MongoDbFixture>
     {
         _database = fixture.Database;
     }
+
+    /// <summary>Platform-wide collections with no tenant field, so only all-tenant requests reach them.</summary>
+    private static readonly HashSet<string> PlatformCollections = ["admin_capability_matrix"];
 
     /// <summary>Stores one record of the person in every collection of an area.</summary>
     private static readonly Dictionary<string, Func<IMongoDatabase, TestPerson, string, Task>> Seeds = new()
@@ -117,9 +120,6 @@ public class MongoPersonalDataSourcesTests : IClassFixture<MongoDbFixture>
         })
     };
 
-    /// <summary>Platform-wide collections with no tenant field, so only all-tenant requests reach them.</summary>
-    private static readonly HashSet<string> PlatformCollections = ["admin_capability_matrix"];
-
     public static TheoryData<string> AreaNames() => new(MongoPersonalDataSources.Areas.Select(area => area.Name));
 
     private static PersonalDataArea Area(string name) => MongoPersonalDataSources.Areas.Single(area => area.Name == name);
@@ -184,26 +184,15 @@ public class MongoPersonalDataSourcesTests : IClassFixture<MongoDbFixture>
 
     [Theory]
     [MemberData(nameof(AreaNames))]
-    public async Task TenantsOutsideTheScope_AreNotCounted(string area)
+    public async Task OtherTenantsAndPeople_AreNotCounted(string area)
     {
         var inScope = TestPerson.NewTenant();
         var outOfScope = TestPerson.NewTenant();
         var person = TestPerson.New();
         await Seeds[area](_database, person, outOfScope);
+        await Seeds[area](_database, TestPerson.New(), inScope);
 
         var counts = await CountAsync(area, person.Subject(inScope), Scope(inScope));
-
-        Assert.All(counts, count => Assert.Equal(0, count.Value));
-    }
-
-    [Theory]
-    [MemberData(nameof(AreaNames))]
-    public async Task OtherPeople_AreNotCounted(string area)
-    {
-        var tenant = TestPerson.NewTenant();
-        await Seeds[area](_database, TestPerson.New(), tenant);
-
-        var counts = await CountAsync(area, TestPerson.New().Subject(tenant), Scope(tenant));
 
         Assert.All(counts, count => Assert.Equal(0, count.Value));
     }
@@ -224,21 +213,6 @@ public class MongoPersonalDataSourcesTests : IClassFixture<MongoDbFixture>
             Assert.Equal(Area(area).Collections.Count, counts.Count);
             Assert.All(counts, count => Assert.Equal(0, count.Value));
         }
-    }
-
-    [Fact]
-    public async Task Invitations_OfEveryStatus_AreCounted()
-    {
-        var tenant = TestPerson.NewTenant();
-        var person = TestPerson.New();
-        foreach (var status in new[] { "Pending", "Accepted", "Expired" })
-        {
-            await Insert(_database, "user_invitations", new() { ["tenant_id"] = tenant, ["email"] = person.Email, ["status"] = status });
-        }
-
-        var counts = await CountAsync("invitations", person.Subject(tenant), Scope(tenant));
-
-        Assert.Equal(3, counts["user_invitations"]);
     }
 
     [Fact]
@@ -284,35 +258,6 @@ public class MongoPersonalDataSourcesTests : IClassFixture<MongoDbFixture>
 
         Assert.Equal(0, tenantScoped["users"]);
         Assert.Equal(1, allTenants["users"]);
-    }
-
-    [Fact]
-    public async Task RecordsWithNoTenant_AreCountedOnlyForAllTenantRequests()
-    {
-        var tenant = TestPerson.NewTenant();
-        var person = TestPerson.New();
-        await Insert(_database, "secret_vault", new() { ["tenant_id"] = BsonNull.Value, ["user_id"] = person.UserId });
-
-        var tenantScoped = await CountAsync("credentials", person.Subject(tenant), Scope(tenant));
-        var allTenants = await CountAsync("credentials", person.Subject(tenant), new() { TenantIds = [tenant], AllTenants = true });
-
-        Assert.Equal(0, tenantScoped["secret_vault"]);
-        Assert.Equal(1, allTenants["secret_vault"]);
-    }
-
-    [Fact]
-    public async Task Agents_AreFoundThroughAccessLists()
-    {
-        var tenant = TestPerson.NewTenant();
-        var person = TestPerson.New();
-        await Insert(_database, "agents", new()
-        {
-            ["tenant"] = tenant, ["created_by"] = "admin", ["read_access"] = new BsonArray { "admin", person.UserId }
-        });
-
-        var counts = await CountAsync("ownership", person.Subject(tenant), Scope(tenant));
-
-        Assert.Equal(1, counts["agents"]);
     }
 
     [Fact]

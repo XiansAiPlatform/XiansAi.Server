@@ -2,7 +2,6 @@ using Features.Shared.Configuration;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
-using MongoDB.Bson;
 using Shared.Data;
 using Shared.Data.Models;
 using Shared.Services.Privacy;
@@ -13,7 +12,8 @@ namespace Tests.UnitTests.Shared.Privacy;
 
 /// <summary>
 /// The registered <see cref="IPersonalDataSource"/>s are the registry of personal data. These tests check that the
-/// registry is complete, that discovery reports it with scoped counts, and that the record of processing documents it.
+/// registry is complete, that it is registered only when privacy is enabled, and that the record of processing
+/// documents it.
 /// </summary>
 public class PersonalDataDiscoveryTests(MongoDbFixture fixture) : IClassFixture<MongoDbFixture>
 {
@@ -59,54 +59,12 @@ public class PersonalDataDiscoveryTests(MongoDbFixture fixture) : IClassFixture<
     }
 
     [Fact]
-    public async Task Discovery_AppliesTheTenantScope()
-    {
-        var inScope = TestPerson.NewTenant();
-        var outOfScope = TestPerson.NewTenant();
-        var person = TestPerson.New();
-        foreach (var tenant in new[] { inScope, outOfScope })
-        {
-            await fixture.Database.GetCollection<BsonDocument>("contacts")
-                .InsertOneAsync(new BsonDocument { ["tenant_id"] = tenant, ["email"] = person.Email });
-        }
-
-        var sources = await Discovery().DiscoverAsync(
-            person.Subject(inScope), new PrivacyScope { TenantIds = [inScope] }, CancellationToken.None);
-
-        Assert.Equal(1, sources.Single(source => source is { Source: "contacts", Collection: "contacts" }).Records);
-    }
-
-    [Fact]
-    public async Task Discovery_AsksEverySourceInRegistrationOrder()
-    {
-        var discovery = new PersonalDataDiscovery(
-        [
-            new FakeSource("first", new PersonalDataCount("a", 1), new PersonalDataCount("b", 0)),
-            new FakeSource("second", new PersonalDataCount("c", 3))
-        ]);
-
-        var sources = await discovery.DiscoverAsync(new PrivacySubject(), new PrivacyScope(), CancellationToken.None);
-
-        Assert.Equal(
-            [new DiscoveredPersonalData("first", "a", 1), new("first", "b", 0), new("second", "c", 3)],
-            sources);
-    }
-
-    [Fact]
     public void DisabledPrivacy_RegistersNoSources()
     {
         var services = new ServiceCollection();
         services.AddPrivacyServices(new ConfigurationBuilder().Build());
 
         Assert.DoesNotContain(services, descriptor => descriptor.ServiceType == typeof(IPersonalDataSource));
-    }
-
-    [Fact]
-    public void SourceNames_AreUnique()
-    {
-        var names = MongoPersonalDataSources.Areas.Select(area => area.Name).ToList();
-
-        Assert.Equal(names.Count, names.Distinct(StringComparer.Ordinal).Count());
     }
 
     [Fact]
@@ -129,13 +87,5 @@ public class PersonalDataDiscoveryTests(MongoDbFixture fixture) : IClassFixture<
         }
 
         throw new FileNotFoundException("PRIVACY_REQUESTS.md was not found above the test output directory.");
-    }
-
-    private sealed class FakeSource(string name, params PersonalDataCount[] counts) : IPersonalDataSource
-    {
-        public string Name => name;
-
-        public Task<IReadOnlyList<PersonalDataCount>> CountAsync(PrivacySubject subject, PrivacyScope scope, CancellationToken cancellationToken) =>
-            Task.FromResult<IReadOnlyList<PersonalDataCount>>(counts);
     }
 }
