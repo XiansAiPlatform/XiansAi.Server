@@ -262,7 +262,6 @@ public static class SharedConfiguration
         builder.Services.AddScoped<IGlobalUserAdminService, GlobalUserAdminService>();
         builder.Services.AddScoped<ITenantParticipantUserService, TenantParticipantUserService>();
         builder.Services.AddScoped<IContactService, ContactService>();
-        builder.Services.AddScoped<IPluginFailureNotificationService, PluginFailureNotificationService>();
         builder.Services.AddScoped<ITenantOidcConfigService, TenantOidcConfigService>();
         builder.Services.AddScoped<ITenantTemporalConfigService, TenantTemporalConfigService>();
         builder.Services.AddScoped<ITenantSmtpConfigService, TenantSmtpConfigService>();
