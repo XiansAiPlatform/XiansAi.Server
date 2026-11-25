@@ -40,7 +40,8 @@ public class RateLimitSettings
 
     /// <summary>
     /// Agent notification rate limit settings (emails to the tenant's contacts), counted per authenticated
-    /// tenant by <c>NotificationRateLimiter</c> rather than by this middleware.
+    /// tenant by <c>NotificationRateLimiter</c> rather than by this middleware. Always a fixed window
+    /// with no queue, so only <c>PermitLimit</c> and <c>WindowSeconds</c> apply.
     /// </summary>
     public RateLimitPolicySettings Notification { get; set; } = new() { PermitLimit = 10, WindowSeconds = 60 };
 }
@@ -326,8 +327,6 @@ public static class RateLimitingConfiguration
         {
             settings.Notification.PermitLimit = 10;
             settings.Notification.WindowSeconds = 60;
-            settings.Notification.SegmentsPerWindow = 0; // Fixed window
-            settings.Notification.QueueLimit = 0;
         }
     }
 }
