@@ -91,15 +91,22 @@ public class EmailServiceSendToEachTests
     [Fact]
     public async Task SendToEachAsync_KeepsAtMostMaxParallelSendsOpen()
     {
+        var counter = new object();
         var open = 0;
         var maxOpen = 0;
         _smtpSender.Setup(s => s.SendAsync(It.IsAny<SmtpSettings>(), It.IsAny<IEnumerable<string>>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
             .Returns(async () =>
             {
-                var now = Interlocked.Increment(ref open);
-                InterlockedMax(ref maxOpen, now);
+                lock (counter)
+                {
+                    open++;
+                    maxOpen = Math.Max(maxOpen, open);
+                }
                 await Task.Delay(20);
-                Interlocked.Decrement(ref open);
+                lock (counter)
+                {
+                    open--;
+                }
             });
         var recipients = Enumerable.Range(0, 20).Select(i => $"user{i}@example.com").ToList();
 
@@ -107,14 +114,5 @@ public class EmailServiceSendToEachTests
 
         Assert.Equal(20, result.Sent);
         Assert.InRange(maxOpen, 2, EmailService.MaxParallelSends);
-    }
-
-    private static void InterlockedMax(ref int target, int value)
-    {
-        int current;
-        while ((current = Volatile.Read(ref target)) < value &&
-               Interlocked.CompareExchange(ref target, value, current) != current)
-        {
-        }
     }
 }
