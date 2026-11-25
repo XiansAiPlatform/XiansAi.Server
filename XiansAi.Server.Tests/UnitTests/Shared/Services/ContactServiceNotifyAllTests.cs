@@ -1,5 +1,4 @@
 using Microsoft.Extensions.Logging.Abstractions;
-using MailKit.Net.Smtp;
 using Moq;
 using Shared.Auth;
 using Shared.Data.Models;
@@ -12,6 +11,7 @@ namespace XiansAi.Server.Tests.UnitTests.Shared.Services;
 
 /// <summary>
 /// Covers who gets a contact notification, when it is skipped, and how the subject is kept safe.
+/// Per-recipient sending itself is covered by <see cref="EmailServiceSendToEachTests"/>.
 /// </summary>
 public class ContactServiceNotifyAllTests
 {
@@ -24,7 +24,9 @@ public class ContactServiceNotifyAllTests
 
     public ContactServiceNotifyAllTests()
     {
-        _emailService.Setup(e => e.IsEnabledAsync(TenantId)).ReturnsAsync(true);
+        _emailService
+            .Setup(e => e.SendToEachAsync(TenantId, It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<string>(), It.IsAny<string>(), false))
+            .ReturnsAsync((string? _, IReadOnlyCollection<string> to, string _, string _, bool _) => new EmailBatchResult(true, to.Count, 0));
     }
 
     private ContactService CreateService() => new(
@@ -42,8 +44,11 @@ public class ContactServiceNotifyAllTests
         CreatedBy = "admin",
     };
 
+    private void VerifyNothingSent() =>
+        _emailService.Verify(e => e.SendToEachAsync(It.IsAny<string?>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>()), Times.Never);
+
     [Fact]
-    public async Task NotifyAllAsync_EmailsEachContactSeparately()
+    public async Task NotifyAllAsync_SendsToEachContactOnce()
     {
         _contacts.Setup(r => r.ListAsync(TenantId, null)).ReturnsAsync(
             [NewContact("a@example.com"), NewContact("b@example.com"), NewContact("A@example.com")]);
@@ -52,20 +57,23 @@ public class ContactServiceNotifyAllTests
 
         Assert.True(result.IsSuccess);
         Assert.Equal(2, result.Data);
-        _emailService.Verify(e => e.SendEmailAsync(TenantId, "a@example.com", Subject, Body, false), Times.Once);
-        _emailService.Verify(e => e.SendEmailAsync(TenantId, "b@example.com", Subject, Body, false), Times.Once);
+        _emailService.Verify(e => e.SendToEachAsync(TenantId,
+            It.Is<IReadOnlyCollection<string>>(to => to.SequenceEqual(new[] { "a@example.com", "b@example.com" })),
+            Subject, Body, false), Times.Once);
     }
 
     [Fact]
-    public async Task NotifyAllAsync_EmailOff_SkipsWithoutReadingContacts()
+    public async Task NotifyAllAsync_EmailOff_ReturnsZero()
     {
-        _emailService.Setup(e => e.IsEnabledAsync(TenantId)).ReturnsAsync(false);
+        _contacts.Setup(r => r.ListAsync(TenantId, null)).ReturnsAsync([NewContact("a@example.com")]);
+        _emailService
+            .Setup(e => e.SendToEachAsync(TenantId, It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<string>(), It.IsAny<string>(), false))
+            .ReturnsAsync(EmailBatchResult.Off);
 
         var result = await CreateService().NotifyAllAsync(TenantId, Subject, Body);
 
         Assert.True(result.IsSuccess);
         Assert.Equal(0, result.Data);
-        _contacts.Verify(r => r.ListAsync(It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
     }
 
     [Fact]
@@ -77,16 +85,17 @@ public class ContactServiceNotifyAllTests
 
         Assert.True(result.IsSuccess);
         Assert.Equal(0, result.Data);
-        _emailService.Verify(e => e.SendEmailAsync(It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>()), Times.Never);
+        VerifyNothingSent();
     }
 
     [Fact]
-    public async Task NotifyAllAsync_OneRecipientFails_OthersStillSent()
+    public async Task NotifyAllAsync_SomeRecipientsFail_ReturnsHowManyWereSent()
     {
         _contacts.Setup(r => r.ListAsync(TenantId, null)).ReturnsAsync(
             [NewContact("bad@example.com"), NewContact("good@example.com")]);
-        _emailService.Setup(e => e.SendEmailAsync(TenantId, "bad@example.com", It.IsAny<string>(), It.IsAny<string>(), false))
-            .ThrowsAsync(new SmtpCommandException(SmtpErrorCode.RecipientNotAccepted, SmtpStatusCode.MailboxUnavailable, "rejected"));
+        _emailService
+            .Setup(e => e.SendToEachAsync(TenantId, It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<string>(), It.IsAny<string>(), false))
+            .ReturnsAsync(new EmailBatchResult(true, 1, 1));
 
         var result = await CreateService().NotifyAllAsync(TenantId, Subject, Body);
 
@@ -98,23 +107,14 @@ public class ContactServiceNotifyAllTests
     public async Task NotifyAllAsync_AllRecipientsFail_ReturnsError()
     {
         _contacts.Setup(r => r.ListAsync(TenantId, null)).ReturnsAsync([NewContact("a@example.com")]);
-        _emailService.Setup(e => e.SendEmailAsync(TenantId, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), false))
-            .ThrowsAsync(new IOException("smtp down"));
+        _emailService
+            .Setup(e => e.SendToEachAsync(TenantId, It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<string>(), It.IsAny<string>(), false))
+            .ReturnsAsync(new EmailBatchResult(true, 0, 1));
 
         var result = await CreateService().NotifyAllAsync(TenantId, Subject, Body);
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCode.InternalServerError, result.StatusCode);
-    }
-
-    [Fact]
-    public async Task NotifyAllAsync_Cancelled_IsNotSwallowed()
-    {
-        _contacts.Setup(r => r.ListAsync(TenantId, null)).ReturnsAsync([NewContact("a@example.com"), NewContact("b@example.com")]);
-        _emailService.Setup(e => e.SendEmailAsync(TenantId, It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), false))
-            .ThrowsAsync(new OperationCanceledException());
-
-        await Assert.ThrowsAsync<OperationCanceledException>(() => CreateService().NotifyAllAsync(TenantId, Subject, Body));
     }
 
     [Fact]
@@ -124,7 +124,7 @@ public class ContactServiceNotifyAllTests
 
         await CreateService().NotifyAllAsync(TenantId, "Plugin failed\r\nBcc: x@evil.com", Body);
 
-        _emailService.Verify(e => e.SendEmailAsync(TenantId, "a@example.com",
+        _emailService.Verify(e => e.SendToEachAsync(TenantId, It.IsAny<IReadOnlyCollection<string>>(),
             It.Is<string>(s => !s.Contains('\r') && !s.Contains('\n')), Body, false), Times.Once);
     }
 
@@ -138,7 +138,7 @@ public class ContactServiceNotifyAllTests
 
         Assert.False(result.IsSuccess);
         Assert.Equal(StatusCode.BadRequest, result.StatusCode);
-        _emailService.Verify(e => e.SendEmailAsync(It.IsAny<string?>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>()), Times.Never);
+        VerifyNothingSent();
     }
 
     [Fact]

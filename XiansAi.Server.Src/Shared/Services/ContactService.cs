@@ -138,13 +138,6 @@ public class ContactService : IContactService
         if (subject.Length > MaxSubjectLength)
             subject = subject[..MaxSubjectLength] + "…";
 
-        if (!await _emailService.IsEnabledAsync(tenantId))
-        {
-            _logger.LogInformation("Contact notification for tenant {TenantId} skipped: no email server is configured",
-                LogSanitizer.Sanitize(tenantId));
-            return ServiceResult<int>.Success(0);
-        }
-
         var recipients = (await _repository.ListAsync(tenantId))
             .Select(c => c.Email)
             .Where(e => !string.IsNullOrWhiteSpace(e))
@@ -158,29 +151,20 @@ public class ContactService : IContactService
             return ServiceResult<int>.Success(0);
         }
 
-        var sent = 0;
-        foreach (var recipient in recipients)
+        var result = await _emailService.SendToEachAsync(tenantId, recipients, subject, body);
+        if (!result.Enabled)
         {
-            try
-            {
-                await _emailService.SendEmailAsync(tenantId, recipient, subject, body);
-                sent++;
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            {
-                // One bad address or a transient SMTP error must not stop the other contacts hearing
-                // about it. Cancellation still propagates.
-                _logger.LogWarning(ex, "Contact notification for tenant {TenantId} could not be sent to a contact",
-                    LogSanitizer.Sanitize(tenantId));
-            }
+            _logger.LogInformation("Contact notification for tenant {TenantId} skipped: no email server is configured",
+                LogSanitizer.Sanitize(tenantId));
+            return ServiceResult<int>.Success(0);
         }
 
-        if (sent == 0)
+        if (result.Sent == 0)
             return ServiceResult<int>.InternalServerError("The notification could not be sent to any contact");
 
         _logger.LogInformation("Contact notification for tenant {TenantId} sent to {Sent}/{Total} contact(s)",
-            LogSanitizer.Sanitize(tenantId), sent, recipients.Count);
-        return ServiceResult<int>.Success(sent);
+            LogSanitizer.Sanitize(tenantId), result.Sent, recipients.Count);
+        return ServiceResult<int>.Success(result.Sent);
     }
 
     private string CurrentUser => string.IsNullOrEmpty(_tenantContext.LoggedInUser) ? "system" : _tenantContext.LoggedInUser;

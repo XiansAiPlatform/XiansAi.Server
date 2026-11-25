@@ -53,6 +53,15 @@ public static class RateLimitingExtensions
     }
 
     /// <summary>
+    /// Applies the per-tenant agent notification rate limiting policy to an endpoint.
+    /// </summary>
+    public static TBuilder WithNotificationRateLimit<TBuilder>(this TBuilder builder) 
+        where TBuilder : IEndpointConventionBuilder
+    {
+        return builder.RequireRateLimiting(RateLimitingConfiguration.NotificationPolicy);
+    }
+
+    /// <summary>
     /// Disables rate limiting for an endpoint.
     /// Use sparingly and only for endpoints that have other protection mechanisms.
     /// </summary>

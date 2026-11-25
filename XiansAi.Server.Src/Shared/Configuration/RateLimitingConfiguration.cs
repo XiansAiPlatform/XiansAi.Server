@@ -37,6 +37,11 @@ public class RateLimitSettings
     /// Tenant SMTP test-email rate limit settings, counted per tenant.
     /// </summary>
     public RateLimitPolicySettings SmtpTest { get; set; } = new() { PermitLimit = 5, WindowSeconds = 300 };
+
+    /// <summary>
+    /// Agent notification rate limit settings (emails to the tenant's contacts), counted per tenant.
+    /// </summary>
+    public RateLimitPolicySettings Notification { get; set; } = new() { PermitLimit = 10, WindowSeconds = 60 };
 }
 
 /// <summary>
@@ -76,6 +81,7 @@ public static class RateLimitingConfiguration
     public const string PublicApiPolicy = "PublicApiRateLimit";
     public const string AgentUserApiPolicy = "AgentUserApiRateLimit";
     public const string SmtpTestPolicy = "SmtpTestRateLimit";
+    public const string NotificationPolicy = "NotificationRateLimit";
 
     /// <summary>
     /// Adds rate limiting services with configured policies.
@@ -166,6 +172,19 @@ public static class RateLimitingConfiguration
                     SmtpTestPolicy,
                     $"{SmtpTestPolicy}:tenant:{context.GetRouteValue("tenantId")}"
                 ));
+
+            // Agent notification policy - counted per tenant, so a buggy or compromised agent cannot
+            // mass-email its tenant's contacts. Rate limiting runs before authentication, so the tenant
+            // comes from X-Tenant-Id; a header that doesn't match the API key's tenant is rejected by auth.
+            options.AddPolicy(NotificationPolicy, context =>
+            {
+                var tenantId = context.Request.Headers["X-Tenant-Id"].FirstOrDefault();
+                return CreateRateLimitPartition(
+                    context,
+                    rateLimitSettings.Notification,
+                    NotificationPolicy,
+                    string.IsNullOrWhiteSpace(tenantId) ? null : $"{NotificationPolicy}:tenant:{tenantId.Trim().ToLowerInvariant()}");
+            });
         });
 
         builder.Services.AddSingleton(rateLimitSettings);
@@ -313,6 +332,15 @@ public static class RateLimitingConfiguration
             settings.SmtpTest.WindowSeconds = 300;
             settings.SmtpTest.SegmentsPerWindow = 0; // Fixed window
             settings.SmtpTest.QueueLimit = 0;
+        }
+
+        // Agent notification defaults - 10 requests per minute per tenant
+        if (settings.Notification.PermitLimit == 0)
+        {
+            settings.Notification.PermitLimit = 10;
+            settings.Notification.WindowSeconds = 60;
+            settings.Notification.SegmentsPerWindow = 0; // Fixed window
+            settings.Notification.QueueLimit = 0;
         }
     }
 }

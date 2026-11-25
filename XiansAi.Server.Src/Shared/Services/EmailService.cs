@@ -51,6 +51,29 @@ public interface IEmailService
     /// <param name="body">The email body content</param>
     /// <param name="isHtml">Whether the body content is HTML formatted</param>
     Task SendEmailAsync(string? tenantId, IEnumerable<string> to, string subject, string body, bool isHtml = false);
+
+    /// <summary>
+    /// Sends the same email to each recipient separately, so recipients never see each other's addresses.
+    /// The tenant's SMTP settings are looked up once, and a few emails are sent at a time. A recipient that
+    /// fails is logged and skipped, so the others still get it.
+    /// </summary>
+    /// <param name="tenantId">The tenant, or null for platform-level email (server default only).</param>
+    /// <param name="to">The recipient email addresses</param>
+    /// <param name="subject">The email subject</param>
+    /// <param name="body">The email body content</param>
+    /// <param name="isHtml">Whether the body content is HTML formatted</param>
+    Task<EmailBatchResult> SendToEachAsync(string? tenantId, IReadOnlyCollection<string> to, string subject, string body, bool isHtml = false);
+}
+
+/// <summary>
+/// Outcome of <see cref="IEmailService.SendToEachAsync"/>.
+/// </summary>
+/// <param name="Enabled">False when email is off for the tenant; nothing was sent.</param>
+/// <param name="Sent">Recipients the email was sent to.</param>
+/// <param name="Failed">Recipients the email could not be sent to.</param>
+public sealed record EmailBatchResult(bool Enabled, int Sent, int Failed)
+{
+    public static readonly EmailBatchResult Off = new(false, 0, 0);
 }
 
 /// <summary>
@@ -58,6 +81,12 @@ public interface IEmailService
 /// </summary>
 public class EmailService : IEmailService
 {
+    /// <summary>
+    /// Most SMTP connections <see cref="SendToEachAsync"/> opens at once. Mail providers throttle or
+    /// block senders that open many at a time.
+    /// </summary>
+    internal const int MaxParallelSends = 5;
+
     private readonly ITenantSmtpConfigRepository _tenantSmtpConfigRepository;
     private readonly ISmtpEmailSender _smtpSender;
     private readonly SmtpSettings? _serverSmtp;
@@ -107,11 +136,7 @@ public class EmailService : IEmailService
         var recipients = to.ToList();
         try
         {
-            var tenantConfig = string.IsNullOrWhiteSpace(tenantId)
-                ? null
-                : await _tenantSmtpConfigRepository.GetAsync(tenantId);
-
-            var settings = tenantConfig?.ToSettings() ?? _serverSmtp;
+            var settings = await GetSettingsAsync(tenantId);
             if (settings == null)
             {
                 _logger.LogInformation("Email for tenant {TenantId} was not sent: no email server is configured (SubjectLength: {SubjectLength})",
@@ -127,5 +152,54 @@ public class EmailService : IEmailService
                 LogSanitizer.Sanitize(tenantId), recipients.Count, subject?.Length ?? 0);
             throw;
         }
+    }
+
+    public async Task<EmailBatchResult> SendToEachAsync(string? tenantId, IReadOnlyCollection<string> to, string subject, string body, bool isHtml = false)
+    {
+        ArgumentNullException.ThrowIfNull(to);
+
+        var settings = await GetSettingsAsync(tenantId);
+        if (settings == null)
+        {
+            _logger.LogInformation("Email for tenant {TenantId} was not sent: no email server is configured (SubjectLength: {SubjectLength})",
+                LogSanitizer.Sanitize(tenantId), subject?.Length ?? 0);
+            return EmailBatchResult.Off;
+        }
+
+        using var gate = new SemaphoreSlim(MaxParallelSends);
+        var results = await Task.WhenAll(to.Select(async recipient =>
+        {
+            await gate.WaitAsync();
+            try
+            {
+                await _smtpSender.SendAsync(settings, [recipient], subject, body, isHtml);
+                return true;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // One bad address or a transient SMTP error must not stop the other recipients.
+                // Cancellation still propagates.
+                _logger.LogWarning(ex, "Email for tenant {TenantId} could not be sent to a recipient",
+                    LogSanitizer.Sanitize(tenantId));
+                return false;
+            }
+            finally
+            {
+                gate.Release();
+            }
+        }));
+
+        var sent = results.Count(r => r);
+        return new EmailBatchResult(true, sent, results.Length - sent);
+    }
+
+    /// <summary>The tenant's own SMTP settings, otherwise the server default; null when email is off.</summary>
+    private async Task<SmtpSettings?> GetSettingsAsync(string? tenantId)
+    {
+        var tenantConfig = string.IsNullOrWhiteSpace(tenantId)
+            ? null
+            : await _tenantSmtpConfigRepository.GetAsync(tenantId);
+
+        return tenantConfig?.ToSettings() ?? _serverSmtp;
     }
 }
