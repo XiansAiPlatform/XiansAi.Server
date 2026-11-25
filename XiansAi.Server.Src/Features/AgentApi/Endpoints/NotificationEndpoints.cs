@@ -1,6 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
 using Features.AgentApi.Auth;
-using Features.Shared.Configuration;
 using Shared.Auth;
 using Shared.Services;
 using Shared.Utils.Services;
@@ -17,12 +16,13 @@ public static class NotificationEndpoints
         var group = app.MapGroup("/api/agent/notifications")
             .WithTags("AgentAPI - Notifications")
             .RequiresCertificate()
-            .WithNotificationRateLimit();
+            .AddEndpointFilter<NotificationRateLimitFilter>();
 
         group.MapPost("/plugin-failure", async (
             [FromBody] PluginFailureNotification request,
             [FromServices] ITenantContext tenantContext,
-            [FromServices] IContactService contactService) =>
+            [FromServices] IContactService contactService,
+            CancellationToken cancellationToken) =>
         {
             if (request == null)
                 return Results.BadRequest("Request payload is required");
@@ -32,7 +32,8 @@ public static class NotificationEndpoints
             var tenantId = tenantContext.TenantId;
             var result = await contactService.NotifyAllAsync(tenantId,
                 PluginFailureEmail.BuildSubject(request),
-                PluginFailureEmail.BuildBody(tenantId, request));
+                PluginFailureEmail.BuildBody(tenantId, request),
+                cancellationToken);
             return result.IsSuccess
                 ? Results.Ok(new { recipients = result.Data })
                 : result.ToHttpResult();
@@ -40,7 +41,7 @@ public static class NotificationEndpoints
         .WithName("NotifyPluginFailure")
         .Produces(StatusCodes.Status200OK)
         .ProducesProblem(StatusCodes.Status400BadRequest)
-        .ProducesProblem(StatusCodes.Status429TooManyRequests)
+        .Produces(StatusCodes.Status429TooManyRequests)
         .ProducesProblem(StatusCodes.Status500InternalServerError)
         .WithSummary("Email the tenant's contacts about a failed plugin run")
         .WithDescription("Builds a failure alert from the reported run and sends it to every contact of the calling agent's tenant, " +

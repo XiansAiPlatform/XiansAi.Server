@@ -55,14 +55,17 @@ public interface IEmailService
     /// <summary>
     /// Sends the same email to each recipient separately, so recipients never see each other's addresses.
     /// The tenant's SMTP settings are looked up once, and a few emails are sent at a time. A recipient that
-    /// fails is logged and skipped, so the others still get it.
+    /// fails is logged and skipped, so the others still get it. Cancelling the token stops the sends
+    /// that have not finished.
     /// </summary>
     /// <param name="tenantId">The tenant, or null for platform-level email (server default only).</param>
     /// <param name="to">The recipient email addresses</param>
     /// <param name="subject">The email subject</param>
     /// <param name="body">The email body content</param>
     /// <param name="isHtml">Whether the body content is HTML formatted</param>
-    Task<EmailBatchResult> SendToEachAsync(string? tenantId, IReadOnlyCollection<string> to, string subject, string body, bool isHtml = false);
+    /// <param name="cancellationToken">Stops the remaining sends, e.g. when the caller disconnects</param>
+    Task<EmailBatchResult> SendToEachAsync(string? tenantId, IReadOnlyCollection<string> to, string subject, string body, bool isHtml = false,
+        CancellationToken cancellationToken = default);
 }
 
 /// <summary>
@@ -154,7 +157,8 @@ public class EmailService : IEmailService
         }
     }
 
-    public async Task<EmailBatchResult> SendToEachAsync(string? tenantId, IReadOnlyCollection<string> to, string subject, string body, bool isHtml = false)
+    public async Task<EmailBatchResult> SendToEachAsync(string? tenantId, IReadOnlyCollection<string> to, string subject, string body, bool isHtml = false,
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(to);
 
@@ -169,16 +173,16 @@ public class EmailService : IEmailService
         using var gate = new SemaphoreSlim(MaxParallelSends);
         var results = await Task.WhenAll(to.Select(async recipient =>
         {
-            await gate.WaitAsync();
+            await gate.WaitAsync(cancellationToken);
             try
             {
-                await _smtpSender.SendAsync(settings, [recipient], subject, body, isHtml);
+                await _smtpSender.SendAsync(settings, [recipient], subject, body, isHtml, cancellationToken);
                 return true;
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 // One bad address or a transient SMTP error must not stop the other recipients.
-                // Cancellation still propagates.
+                // A cancelled token is not a recipient failure, so it ends the whole batch.
                 _logger.LogWarning(ex, "Email for tenant {TenantId} could not be sent to a recipient",
                     LogSanitizer.Sanitize(tenantId));
                 return false;

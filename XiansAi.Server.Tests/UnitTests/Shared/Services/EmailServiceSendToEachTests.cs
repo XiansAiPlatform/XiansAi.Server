@@ -85,12 +85,14 @@ public class EmailServiceSendToEachTests
     }
 
     [Fact]
-    public async Task SendToEachAsync_Cancelled_IsNotSwallowed()
+    public async Task SendToEachAsync_TokenCancelled_StopsTheSends()
     {
-        _smtpSender.Setup(AnySend).ThrowsAsync(new OperationCanceledException());
+        _smtpSender.Setup(AnySend).Returns((SmtpSettings _, IEnumerable<string> _, string _, string _, bool _, CancellationToken ct) =>
+            Task.Delay(Timeout.Infinite, ct));
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
 
-        await Assert.ThrowsAsync<OperationCanceledException>(() =>
-            CreateService().SendToEachAsync(TenantId, ["a@example.com", "b@example.com"], Subject, Body));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            CreateService().SendToEachAsync(TenantId, ["a@example.com", "b@example.com"], Subject, Body, cancellationToken: cts.Token));
     }
 
     [Fact]

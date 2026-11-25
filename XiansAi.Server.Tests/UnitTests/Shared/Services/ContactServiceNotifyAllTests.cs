@@ -21,7 +21,7 @@ public class ContactServiceNotifyAllTests
     private const string Body = "A plugin run failed and did not complete.";
 
     private static readonly Expression<Func<IEmailService, Task<EmailBatchResult>>> SendToEach = e =>
-        e.SendToEachAsync(It.IsAny<string?>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>());
+        e.SendToEachAsync(It.IsAny<string?>(), It.IsAny<IReadOnlyCollection<string>>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>());
 
     private readonly Mock<IContactRepository> _contacts = new();
     private readonly Mock<IEmailService> _emailService = new();
@@ -29,7 +29,7 @@ public class ContactServiceNotifyAllTests
     public ContactServiceNotifyAllTests()
     {
         _emailService.Setup(SendToEach)
-            .ReturnsAsync((string? _, IReadOnlyCollection<string> to, string _, string _, bool _) => new EmailBatchResult(true, to.Count, 0));
+            .ReturnsAsync((string? _, IReadOnlyCollection<string> to, string _, string _, bool _, CancellationToken _) => new EmailBatchResult(true, to.Count, 0));
     }
 
     private ContactService CreateService() => new(
@@ -51,16 +51,17 @@ public class ContactServiceNotifyAllTests
     private void SetupSend(EmailBatchResult result) => _emailService.Setup(SendToEach).ReturnsAsync(result);
 
     [Fact]
-    public async Task NotifyAllAsync_SendsToEachContactOnce()
+    public async Task NotifyAllAsync_SendsToEachContactOnce_WithTheCallersToken()
     {
         SetupContacts("a@example.com", "b@example.com", "A@example.com");
+        using var cts = new CancellationTokenSource();
 
-        var result = await CreateService().NotifyAllAsync(TenantId, Subject, Body);
+        var result = await CreateService().NotifyAllAsync(TenantId, Subject, Body, cts.Token);
 
         Assert.Equal(2, result.Data);
         _emailService.Verify(e => e.SendToEachAsync(TenantId,
             It.Is<IReadOnlyCollection<string>>(to => to.SequenceEqual(new[] { "a@example.com", "b@example.com" })),
-            Subject, Body, false), Times.Once);
+            Subject, Body, false, cts.Token), Times.Once);
     }
 
     [Fact]
@@ -105,7 +106,7 @@ public class ContactServiceNotifyAllTests
         await CreateService().NotifyAllAsync(TenantId, "Plugin failed\r\nBcc: x@evil.com", Body);
 
         _emailService.Verify(e => e.SendToEachAsync(TenantId, It.IsAny<IReadOnlyCollection<string>>(),
-            It.Is<string>(s => !s.Contains('\r') && !s.Contains('\n')), Body, false), Times.Once);
+            It.Is<string>(s => !s.Contains('\r') && !s.Contains('\n')), Body, false, It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Theory]

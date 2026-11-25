@@ -3,6 +3,7 @@ using Features.AgentApi.Services;
 using Features.AgentApi.Services.Lib;
 using Features.AgentApi.Auth;
 using Features.AgentApi.Endpoints;
+using Features.Shared.Configuration;
 using Shared.Utils;
 using Shared.Services;
 using Shared.Auth;
@@ -35,6 +36,7 @@ public static class AgentApiConfiguration
 
         // Register the certificate service
         builder.Services.AddScoped<CertificateService>();
+        builder.Services.AddSingleton(sp => new NotificationRateLimiter(sp.GetService<RateLimitSettings>() ?? new RateLimitSettings()));
 
         return builder;
     }

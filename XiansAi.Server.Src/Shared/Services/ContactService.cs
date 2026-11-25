@@ -21,8 +21,9 @@ public interface IContactService
     /// <summary>
     /// Emails every contact of the tenant, one email each so recipients never see each other's addresses.
     /// Returns how many contacts were emailed (0 when the tenant has no contacts or email is off).
+    /// Cancelling the token stops the emails that have not been sent yet.
     /// </summary>
-    Task<ServiceResult<int>> NotifyAllAsync(string tenantId, string subject, string body);
+    Task<ServiceResult<int>> NotifyAllAsync(string tenantId, string subject, string body, CancellationToken cancellationToken = default);
 }
 
 public class ContactService : IContactService
@@ -122,7 +123,7 @@ public class ContactService : IContactService
             : ServiceResult<bool>.NotFound("Contact not found");
     }
 
-    public async Task<ServiceResult<int>> NotifyAllAsync(string tenantId, string subject, string body)
+    public async Task<ServiceResult<int>> NotifyAllAsync(string tenantId, string subject, string body, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(tenantId))
             return ServiceResult<int>.BadRequest("Tenant context is not available");
@@ -151,7 +152,7 @@ public class ContactService : IContactService
             return ServiceResult<int>.Success(0);
         }
 
-        var result = await _emailService.SendToEachAsync(tenantId, recipients, subject, body);
+        var result = await _emailService.SendToEachAsync(tenantId, recipients, subject, body, cancellationToken: cancellationToken);
         if (!result.Enabled)
         {
             _logger.LogInformation("Contact notification for tenant {TenantId} skipped: no email server is configured",

@@ -39,7 +39,8 @@ public class RateLimitSettings
     public RateLimitPolicySettings SmtpTest { get; set; } = new() { PermitLimit = 5, WindowSeconds = 300 };
 
     /// <summary>
-    /// Agent notification rate limit settings (emails to the tenant's contacts), counted per tenant.
+    /// Agent notification rate limit settings (emails to the tenant's contacts), counted per authenticated
+    /// tenant by <c>NotificationRateLimiter</c> rather than by this middleware.
     /// </summary>
     public RateLimitPolicySettings Notification { get; set; } = new() { PermitLimit = 10, WindowSeconds = 60 };
 }
@@ -81,7 +82,6 @@ public static class RateLimitingConfiguration
     public const string PublicApiPolicy = "PublicApiRateLimit";
     public const string AgentUserApiPolicy = "AgentUserApiRateLimit";
     public const string SmtpTestPolicy = "SmtpTestRateLimit";
-    public const string NotificationPolicy = "NotificationRateLimit";
 
     /// <summary>
     /// Adds rate limiting services with configured policies.
@@ -172,19 +172,6 @@ public static class RateLimitingConfiguration
                     SmtpTestPolicy,
                     $"{SmtpTestPolicy}:tenant:{context.GetRouteValue("tenantId")}"
                 ));
-
-            // Agent notification policy - counted per tenant, so a buggy or compromised agent cannot
-            // mass-email its tenant's contacts. Rate limiting runs before authentication, so the tenant
-            // comes from X-Tenant-Id; a header that doesn't match the API key's tenant is rejected by auth.
-            options.AddPolicy(NotificationPolicy, context =>
-            {
-                var tenantId = context.Request.Headers["X-Tenant-Id"].FirstOrDefault();
-                return CreateRateLimitPartition(
-                    context,
-                    rateLimitSettings.Notification,
-                    NotificationPolicy,
-                    string.IsNullOrWhiteSpace(tenantId) ? null : $"{NotificationPolicy}:tenant:{tenantId.Trim().ToLowerInvariant()}");
-            });
         });
 
         builder.Services.AddSingleton(rateLimitSettings);
