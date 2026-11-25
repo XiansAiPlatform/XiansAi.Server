@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using MailKit.Net.Smtp;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -19,6 +20,9 @@ public class EmailServiceSendToEachTests
     private const string Subject = "Subject";
     private const string Body = "Body";
 
+    private static readonly Expression<Func<ISmtpEmailSender, Task>> AnySend = s =>
+        s.SendAsync(It.IsAny<SmtpSettings>(), It.IsAny<IEnumerable<string>>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>());
+
     private readonly Mock<ITenantSmtpConfigRepository> _smtpConfigs = new();
     private readonly Mock<ISmtpEmailSender> _smtpSender = new();
 
@@ -36,18 +40,20 @@ public class EmailServiceSendToEachTests
         });
     }
 
-    private EmailService CreateService(SmtpSettings? serverSmtp = null) =>
-        new(_smtpConfigs.Object, _smtpSender.Object, NullLogger<EmailService>.Instance, serverSmtp);
+    private EmailService CreateService() =>
+        new(_smtpConfigs.Object, _smtpSender.Object, NullLogger<EmailService>.Instance, serverSmtp: null);
 
     private static bool OnlyRecipient(IEnumerable<string> to, string recipient) => to.SequenceEqual(new[] { recipient });
 
     [Fact]
     public async Task SendToEachAsync_SendsOneEmailPerRecipient_LooksUpSettingsOnce()
     {
-        var result = await CreateService().SendToEachAsync(TenantId, ["a@example.com", "b@example.com", "c@example.com"], Subject, Body);
+        string[] recipients = ["a@example.com", "b@example.com", "c@example.com"];
+
+        var result = await CreateService().SendToEachAsync(TenantId, recipients, Subject, Body);
 
         Assert.Equal(new EmailBatchResult(true, 3, 0), result);
-        foreach (var recipient in new[] { "a@example.com", "b@example.com", "c@example.com" })
+        foreach (var recipient in recipients)
         {
             _smtpSender.Verify(s => s.SendAsync(It.Is<SmtpSettings>(x => x.Host == "smtp.example.com"),
                 It.Is<IEnumerable<string>>(to => OnlyRecipient(to, recipient)), Subject, Body, false, default), Times.Once);
@@ -60,10 +66,10 @@ public class EmailServiceSendToEachTests
     {
         _smtpConfigs.Setup(r => r.GetAsync(TenantId)).ReturnsAsync((TenantSmtpConfig?)null);
 
-        var result = await CreateService(serverSmtp: null).SendToEachAsync(TenantId, ["a@example.com"], Subject, Body);
+        var result = await CreateService().SendToEachAsync(TenantId, ["a@example.com"], Subject, Body);
 
         Assert.Equal(EmailBatchResult.Off, result);
-        _smtpSender.Verify(s => s.SendAsync(It.IsAny<SmtpSettings>(), It.IsAny<IEnumerable<string>>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()), Times.Never);
+        _smtpSender.Verify(AnySend, Times.Never);
     }
 
     [Fact]
@@ -81,8 +87,7 @@ public class EmailServiceSendToEachTests
     [Fact]
     public async Task SendToEachAsync_Cancelled_IsNotSwallowed()
     {
-        _smtpSender.Setup(s => s.SendAsync(It.IsAny<SmtpSettings>(), It.IsAny<IEnumerable<string>>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
-            .ThrowsAsync(new OperationCanceledException());
+        _smtpSender.Setup(AnySend).ThrowsAsync(new OperationCanceledException());
 
         await Assert.ThrowsAsync<OperationCanceledException>(() =>
             CreateService().SendToEachAsync(TenantId, ["a@example.com", "b@example.com"], Subject, Body));
@@ -94,20 +99,12 @@ public class EmailServiceSendToEachTests
         var counter = new object();
         var open = 0;
         var maxOpen = 0;
-        _smtpSender.Setup(s => s.SendAsync(It.IsAny<SmtpSettings>(), It.IsAny<IEnumerable<string>>(), It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<CancellationToken>()))
-            .Returns(async () =>
-            {
-                lock (counter)
-                {
-                    open++;
-                    maxOpen = Math.Max(maxOpen, open);
-                }
-                await Task.Delay(20);
-                lock (counter)
-                {
-                    open--;
-                }
-            });
+        _smtpSender.Setup(AnySend).Returns(async () =>
+        {
+            lock (counter) { maxOpen = Math.Max(maxOpen, ++open); }
+            await Task.Delay(20);
+            lock (counter) { open--; }
+        });
         var recipients = Enumerable.Range(0, 20).Select(i => $"user{i}@example.com").ToList();
 
         var result = await CreateService().SendToEachAsync(TenantId, recipients, Subject, Body);
