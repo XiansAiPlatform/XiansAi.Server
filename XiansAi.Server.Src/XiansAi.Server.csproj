@@ -30,7 +30,7 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.AzureAppConfiguration" Version="8.1.2" />
     <PackageReference Include="Microsoft.Extensions.Logging.AzureAppServices" Version="10.0.5" />
     <PackageReference Include="Microsoft.Identity.Web" Version="3.13.0" />
-    <PackageReference Include="MongoDB.Driver" Version="3.4.0" />
+    <PackageReference Include="MongoDB.Driver" Version="3.13.0" />
     <PackageReference Include="MongoDB.Driver.Core.Extensions.DiagnosticSources" Version="3.0.0" />
     <!-- Pin patched versions to override vulnerable transitive dependencies from MongoDB.Driver -->
     <!-- SharpCompress 0.49.1 fixes GHSA-6c8g-7p36-r338 (CVE-2026-44788) -->

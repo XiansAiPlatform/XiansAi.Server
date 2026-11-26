@@ -3,8 +3,12 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 WORKDIR /app
 EXPOSE 8080
 
-# Install curl for health checks
-RUN apt-get update && apt-get install -y curl zlib1g && rm -rf /var/lib/apt/lists/*
+# Apply Ubuntu security updates on top of the base image (apt, libc, pcre2, perl, ...)
+# and install curl for health checks
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && apt-get install -y --no-install-recommends curl zlib1g \
+    && rm -rf /var/lib/apt/lists/*
 
 # Build stage with multi-platform support
 FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS build
