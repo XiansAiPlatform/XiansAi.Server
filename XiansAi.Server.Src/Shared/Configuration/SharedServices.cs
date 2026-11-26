@@ -6,7 +6,9 @@ using Shared.Utils.Temporal;
 using Shared.Data;
 using Shared.Repositories;
 using Shared.Services;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Shared.Services.Privacy;
+using Shared.Services.Privacy.Export;
 using Shared.Configuration;
 
 namespace Features.Shared.Configuration;
@@ -166,6 +168,8 @@ public static class SharedServices
         services.AddScoped<IPrivacyRequestRepository, PrivacyRequestRepository>();
         services.AddScoped<IPrivacySubjectResolver, PrivacySubjectResolver>();
         services.AddScoped<IPersonalDataDiscovery, PersonalDataDiscovery>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<IPrivacyExporter, PrivacyExporter>();
 
         // The registered sources are the registry of personal data. Another store, such as Temporal, is added by
         // registering its own IPersonalDataSource. See the record of processing in docs/PRIVACY_REQUESTS.md.
