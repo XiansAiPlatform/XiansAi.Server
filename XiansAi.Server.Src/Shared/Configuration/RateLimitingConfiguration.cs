@@ -37,6 +37,13 @@ public class RateLimitSettings
     /// Tenant SMTP test-email rate limit settings, counted per tenant.
     /// </summary>
     public RateLimitPolicySettings SmtpTest { get; set; } = new() { PermitLimit = 5, WindowSeconds = 300 };
+
+    /// <summary>
+    /// Agent notification rate limit settings (emails to the tenant's contacts), counted per authenticated
+    /// tenant by <c>NotificationRateLimiter</c> rather than by this middleware. Always a fixed window
+    /// with no queue, so only <c>PermitLimit</c> and <c>WindowSeconds</c> apply.
+    /// </summary>
+    public RateLimitPolicySettings Notification { get; set; } = new() { PermitLimit = 10, WindowSeconds = 60 };
 }
 
 /// <summary>
@@ -313,6 +320,13 @@ public static class RateLimitingConfiguration
             settings.SmtpTest.WindowSeconds = 300;
             settings.SmtpTest.SegmentsPerWindow = 0; // Fixed window
             settings.SmtpTest.QueueLimit = 0;
+        }
+
+        // Agent notification defaults - 10 requests per minute per tenant
+        if (settings.Notification.PermitLimit == 0)
+        {
+            settings.Notification.PermitLimit = 10;
+            settings.Notification.WindowSeconds = 60;
         }
     }
 }
