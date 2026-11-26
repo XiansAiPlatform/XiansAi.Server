@@ -19,6 +19,8 @@ Everything is off unless `Privacy:Enabled` is `true`.
 | `IPersonalDataSource` | Counts a person's records in one data area |
 | `IPersonalDataDiscovery` | Lists every data source holding a person's data, with record counts |
 | `IExportWriter` | Contract for writing export entries (JSON and files) |
+| `IPrivacyExporter` | Streams a person's export as a ZIP: every contributor, then a manifest |
+| `ZipExportWriter` | `IExportWriter` that streams entries into a ZIP archive |
 | `IPseudonymiser` | HMAC-SHA256 of an identifier, used for the hashes kept on a request |
 
 ## Configuration
@@ -33,8 +35,8 @@ Settings live under the `Privacy` section. Environment variables use `__` in pla
 | `Privacy:PollIntervalSeconds` | `60` | Polling interval, in seconds, for due erasures. |
 | `Privacy:MaxAttempts` | `10` | Attempts allowed for an erasure before it is marked `Failed`. |
 
-When enabled, `IPseudonymiser` (singleton), `IPrivacyRequestRepository` and `IPrivacySubjectResolver`
-(scoped) are registered by `SharedServices.AddPrivacyServices`.
+When enabled, `IPseudonymiser` (singleton), `IPrivacyRequestRepository`, `IPrivacySubjectResolver`,
+`IPersonalDataDiscovery` and `IPrivacyExporter` (scoped) are registered by `SharedServices.AddPrivacyServices`.
 
 ### Startup checks
 
@@ -194,6 +196,46 @@ To add a data source, add a collection to `MongoPersonalDataSources` or register
 (such as one for Temporal) in `AddPrivacyServices`. Discovery only uses the interface, so nothing else changes.
 Add the store to the record of processing below.
 
+## Export format
+
+`IPrivacyExporter.ExportAsync(context, output, cancellationToken)` streams the export ZIP straight to `output`,
+usually the HTTP response. Nothing is stored on the server. The archive holds:
+
+```text
+<contributor name>/<path>   everything each contributor writes, in ascending Order
+manifest.json               written last: format version, request ID, generation time, scope, entries per contributor
+```
+
+- **Folders.** A contributor writes paths relative to its own folder, and the exporter adds `<Name>/` in front.
+  Contributors cannot collide with each other or overwrite `manifest.json`. Contributor names
+  must be valid path segments and unique ignoring case; this is checked before anything is written.
+- **Path rules** (`ExportEntryPath`). Forward slashes, no leading or trailing slash, no empty segment, at most
+  255 characters. Each segment has only letters, digits, `.`, `_` and `-`, is at most 100 characters, is not made
+  only of dots and is not a Windows device name such as `CON` or `com1.json`. A path already written, compared
+  without case, is rejected rather than renamed. `ExportEntryPath.ToSegment(value)` turns any value, such as a
+  workflow ID with `:`, into a valid segment, adding a short hash so two values never map to the same name.
+- **JSON.** `WriteJsonAsync` writes a `BsonDocument`, another `BsonValue` or a sequence of `BsonDocument` as
+  MongoDB relaxed extended JSON, one document at a time. Anything else is written with System.Text.Json:
+  indented, camelCase, enums as strings. All JSON is UTF-8 without a byte order mark.
+- **Files.** `WriteFileAsync` copies the stream into the entry in chunks; neither the export nor a file is held
+  in memory.
+- **No README yet.** The export holds only the data and `manifest.json`. A human-readable README explaining
+  the layout and the extended JSON fields may be added later.
+
+### Writing to an HTTP response
+
+The response body is not seekable and rejects synchronous writes. The archive is opened with the async
+`ZipArchive` API, but on .NET 10 `ZipArchive` still writes a few bytes synchronously when an entry closes
+(`DeflateStream.PurgeBuffers`). `AsyncOutputStream` sits between the archive and the output: async writes go
+straight through, and synchronous writes are buffered (up to 64 KiB, about 130 bytes in practice) and sent with
+the next async write. No thread blocks on the network.
+
+### When an export fails
+
+If a contributor throws, or the export is cancelled, the exception propagates and the archive is not closed,
+so its central directory is never written and the partial file cannot be opened as a ZIP. The caller must abort
+the response rather than end it normally.
+
 ## Record of processing
 
 Every MongoDB collection in the server, classified for the GDPR record of processing (Art. 30). **Personal**
@@ -281,5 +323,8 @@ Rules that apply across the table:
 | Discovery | `Shared/Services/Privacy/PersonalDataDiscovery.cs` |
 | MongoDB sources | `Shared/Services/Privacy/MongoPersonalDataSources.cs` |
 | Filter helpers | `Shared/Services/Privacy/PrivacyFilters.cs` |
-| HMAC hashing | `Shared/Services/Privacy/Pseudonymiser.cs` |
+| Exporter, context and manifest | `Shared/Services/Privacy/Export/PrivacyExporter.cs` |
+| ZIP export writer | `Shared/Services/Privacy/Export/ZipExportWriter.cs` |
+| Export entry path rules | `Shared/Services/Privacy/Export/ExportEntryPath.cs` |
+| Output adapter for HTTP responses | `Shared/Services/Privacy/Export/AsyncOutputStream.cs` || HMAC hashing | `Shared/Services/Privacy/Pseudonymiser.cs` |
 | Storable errors | `Shared/Services/Privacy/PrivacyRequestException.cs` |
