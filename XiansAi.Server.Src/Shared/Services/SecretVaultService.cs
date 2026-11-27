@@ -281,6 +281,8 @@ public class SecretVaultService : ISecretVaultService
     {
         if (string.IsNullOrWhiteSpace(id))
             return ServiceResult<SecretVaultGetResponse>.BadRequest("Id is required");
+        if (input.Value != null && string.IsNullOrWhiteSpace(input.Value))
+            return ServiceResult<SecretVaultGetResponse>.BadRequest("Value is required");
 
         var entity = await _repository.GetByIdAsync(id);
         if (entity == null)
@@ -309,24 +311,26 @@ public class SecretVaultService : ISecretVaultService
                 changedFields.Add("value");
             }
 
-            if (input.TenantId != null)
+            // Only record scope fields that actually change. Non-SysAdmin callers always have their
+            // tenant filled in by scope enforcement, so a value-only edit must not be audited as a tenant change.
+            if (newTenant != entity.TenantId)
             {
-                entity.TenantId = string.IsNullOrWhiteSpace(input.TenantId) ? null : input.TenantId;
+                entity.TenantId = newTenant;
                 changedFields.Add("tenant");
             }
-            if (input.AgentId != null)
+            if (newAgent != entity.AgentId)
             {
-                entity.AgentId = string.IsNullOrWhiteSpace(input.AgentId) ? null : input.AgentId;
+                entity.AgentId = newAgent;
                 changedFields.Add("agent");
             }
-            if (input.UserId != null)
+            if (newUser != entity.UserId)
             {
-                entity.UserId = string.IsNullOrWhiteSpace(input.UserId) ? null : input.UserId;
+                entity.UserId = newUser;
                 changedFields.Add("user");
             }
-            if (input.ActivationName != null)
+            if (newActivation != entity.ActivationName)
             {
-                entity.ActivationName = string.IsNullOrWhiteSpace(input.ActivationName) ? null : input.ActivationName;
+                entity.ActivationName = newActivation;
                 changedFields.Add("activation");
             }
             if (input.AdditionalData != null)
